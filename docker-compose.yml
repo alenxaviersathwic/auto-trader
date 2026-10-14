@@ -1,0 +1,3 @@
+# Root docker-compose configuration referencing docker/ setup
+include:
+  - docker/docker-compose.yml

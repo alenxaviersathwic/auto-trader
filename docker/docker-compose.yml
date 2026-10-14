@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: autotrader_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: autotrader
+      POSTGRES_USER: autotrader
+      POSTGRES_PASSWORD: autotrader_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-pgvector.sql:/docker-entrypoint-initdb.d/01-init-pgvector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autotrader -d autotrader"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: autotrader_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://autotrader:autotrader_secret@postgres:5432/autotrader
+      APP_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8000
+      MASTER_ENCRYPTION_KEY: autotrader_master_secret_key_32b!
+      SCHEDULER_TIMEZONE: Asia/Kolkata
+      CORS_ORIGINS: '["*"]'
+      LOG_LEVEL: INFO
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: autotrader_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres_data:
+    name: autotrader_postgres_data

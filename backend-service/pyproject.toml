@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auto-trader-backend"
+version = "0.1.0"
+description = "Core backend service for auto-trader"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "auto-trader team" }]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.9",
+    "pgvector>=0.3.0",
+    "alembic>=1.13.0",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.4.0",
+    "httpx>=0.27.0",
+    "cryptography>=43.0.0",
+    "apscheduler>=3.10.4",
+    "pytz>=2024.1",
+    "python-dotenv>=1.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.5.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+# Allow camelCase attributes in entity and schema folders per arch.md rules
+"app/modules/*/entity/*" = ["N815", "N802"]
+"app/modules/*/schema/*" = ["N815", "N802"]
+"app/core/db/*" = ["N815", "N802"]
+"app/core/response/*" = ["N815", "N802"]
+"app/core/filter/*" = ["N815", "N802"]
+"app/core/pagination/*" = ["N815", "N802"]

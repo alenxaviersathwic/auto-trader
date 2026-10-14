@@ -1,0 +1,31 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+# Install system dependencies including libpq and curl for healthchecks
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy pyproject.toml and README.md for dependency installation
+COPY backend-service/pyproject.toml backend-service/README.md /app/
+
+# Install python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir .
+
+# Copy application source code and Alembic migrations
+COPY backend-service/alembic.ini /app/
+COPY backend-service/alembic /app/alembic
+COPY backend-service/app /app/app
+
+EXPOSE 8000
+
+# Execute migrations and start single uvicorn worker
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"]

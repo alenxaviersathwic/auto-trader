@@ -1,0 +1,1 @@
+"""auto-trader application package."""

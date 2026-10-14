@@ -1,0 +1,9 @@
+.git
+backup
+docker/.env
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/tests
+**/*.md
