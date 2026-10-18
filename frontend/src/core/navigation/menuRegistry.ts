@@ -42,7 +42,18 @@ class MenuRegistry {
   }
 }
 
+import { Users } from "lucide-react";
+
 export const menuRegistry = new MenuRegistry();
+
+// Register Users Module navigation item
+menuRegistry.register({
+  id: "users-settings",
+  label: "Users & Accounts",
+  path: "/settings/users",
+  icon: Users,
+  order: 10,
+});
 
 /**
  * React hook to access registered menu items dynamically.

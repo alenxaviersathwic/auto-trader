@@ -22,4 +22,5 @@ class PageResult(BaseModel, Generic[T]):
 
     model_config = {
         "populate_by_name": True,
+        "arbitrary_types_allowed": True,
     }

@@ -3,12 +3,14 @@ import { Outlet } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { SideMenu } from "./SideMenu";
 import { httpClient } from "../../api/httpClient";
+import { useDefaultUser } from "../../../modules/users/hooks/useUsers";
 import {
   Database,
   Clock,
   ShieldCheck,
   Server,
   Layers,
+  Activity,
 } from "lucide-react";
 
 interface HealthData {
@@ -27,8 +29,11 @@ export const AppLayout: React.FC = () => {
   const { data: health, isSuccess } = useQuery<HealthData>({
     queryKey: ["system", "health"],
     queryFn: () => httpClient.get("/health"),
-    refetchInterval: 15000, // Refresh health status every 15s
+    refetchInterval: 15000,
   });
+
+  // Default trading user & token status telemetry
+  const { data: defaultUser } = useDefaultUser();
 
   const isDbUp = health?.database?.connected ?? false;
   const isVectorUp = health?.database?.pgvector ?? false;
@@ -52,6 +57,25 @@ export const AppLayout: React.FC = () => {
           </div>
 
           <div className="topbar-right">
+            {/* Market Data Default User & Token Status Telemetry */}
+            <div
+              className={`status-chip ${
+                defaultUser?.upstox?.authStatus === "VALID"
+                  ? "chip-ok"
+                  : defaultUser?.upstox?.authStatus === "EXPIRED"
+                  ? "chip-warn"
+                  : defaultUser?.upstox?.authStatus === "AUTH_FAILED"
+                  ? "chip-err"
+                  : "chip-neutral"
+              }`}
+            >
+              <Activity size={13} />
+              <span>
+                Market data: <strong>{defaultUser?.name || "None"}</strong>
+                {defaultUser?.upstox?.authStatus ? ` • ${defaultUser.upstox.authStatus}` : ""}
+              </span>
+            </div>
+
             {/* System Status Chips */}
             <div className={`status-chip ${isSuccess ? "chip-ok" : "chip-warn"}`}>
               <Server size={13} />

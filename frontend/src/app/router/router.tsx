@@ -166,6 +166,8 @@ const NotFoundPage: React.FC = () => {
   );
 };
 
+import { UsersPage } from "../../modules/users/pages/UsersPage";
+
 // Route Definitions
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -173,8 +175,24 @@ const indexRoute = createRoute({
   component: OverviewPage,
 });
 
+const settingsUsersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings/users",
+  component: UsersPage,
+});
+
+const usersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/users",
+  component: UsersPage,
+});
+
 // Build route tree
-const routeTree = rootRoute.addChildren([indexRoute]);
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  settingsUsersRoute,
+  usersRoute,
+]);
 
 export const router = createRouter({
   routeTree,

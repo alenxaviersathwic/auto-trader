@@ -109,6 +109,12 @@ def create_application() -> FastAPI:
 
         return success(data=health_data, message="System is operational")
 
+    # Feature Module Routers
+    from app.modules.users.controller import oauth_router, user_router
+    app.include_router(user_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(oauth_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(oauth_router)
+
     return app
 
 

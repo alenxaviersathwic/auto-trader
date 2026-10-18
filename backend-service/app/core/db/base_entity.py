@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, func
+from sqlalchemy import BigInteger, DateTime, Integer, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from app.core.db.entity_status import EntityStatus
 from app.core.db.status_type import StatusType
@@ -20,7 +20,11 @@ class BaseEntity(Base):
 
     __abstract__ = True
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     createdAt: Mapped[datetime] = mapped_column(
         "created_at",
         DateTime(timezone=True),
