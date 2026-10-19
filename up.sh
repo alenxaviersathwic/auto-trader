@@ -93,9 +93,16 @@ fi
 # Ensure vector extension is enabled in all cases
 docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS vector;" > /dev/null 2>&1 || true
 
-# Step 4: Start full project
+# Step 4: Start full project in background and stream ONLY backend logs
 echo "================================================================="
 echo "   Launching all services (Frontend, Backend, PostgreSQL)       "
+echo "   Frontend UI : http://localhost:3001                          "
+echo "   Backend API : http://localhost:8000/docs                     "
 echo "   Press Ctrl+C at any time to automatically back up and exit.  "
 echo "================================================================="
-docker compose -f "$COMPOSE_FILE" up
+docker compose -f "$COMPOSE_FILE" up -d
+
+echo ""
+echo "[LOGS] Streaming BACKEND logs only (Press Ctrl+C to stop & backup)..."
+echo "─────────────────────────────────────────────────────────────────"
+docker compose -f "$COMPOSE_FILE" logs -f --no-log-prefix backend

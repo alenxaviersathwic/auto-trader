@@ -39,6 +39,8 @@ services:
       LOG_LEVEL: INFO
     ports:
       - "8000:8000"
+    volumes:
+      - ../logs:/app/logs
 
   frontend:
     build:
@@ -49,7 +51,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "3000:80"
+      - "3001:80"
 
 volumes:
   postgres_data:

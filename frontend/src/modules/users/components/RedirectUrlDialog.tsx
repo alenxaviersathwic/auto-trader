@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Copy, Check, ExternalLink, X, KeyRound } from "lucide-react";
+import { copyToClipboard } from "../../../core/utils/clipboard";
 
 interface RedirectUrlDialogProps {
   isOpen: boolean;
@@ -19,18 +20,15 @@ export const RedirectUrlDialog: React.FC<RedirectUrlDialogProps> = ({
   if (!isOpen) return null;
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(redirectUri);
+    const ok = await copyToClipboard(redirectUri);
+    if (ok) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Fallback
-      setCopied(false);
+      setTimeout(() => setCopied(false), 2200);
     }
   };
 
   return (
-    <div className="modal-backdrop">
+    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-container modal-md">
         <div className="modal-header">
           <div className="modal-title-wrap">
@@ -42,7 +40,7 @@ export const RedirectUrlDialog: React.FC<RedirectUrlDialogProps> = ({
               {userName && <span className="modal-subtitle">For user: {userName}</span>}
             </div>
           </div>
-          <button type="button" className="modal-close-btn" onClick={onClose}>
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close">
             <X size={18} />
           </button>
         </div>
@@ -59,6 +57,7 @@ export const RedirectUrlDialog: React.FC<RedirectUrlDialogProps> = ({
               readOnly
               value={redirectUri}
               className="copy-input"
+              onClick={(e) => (e.target as HTMLInputElement).select()}
             />
             <button
               type="button"
@@ -73,7 +72,7 @@ export const RedirectUrlDialog: React.FC<RedirectUrlDialogProps> = ({
               ) : (
                 <>
                   <Copy size={14} />
-                  <span>Copy</span>
+                  <span>Copy URL</span>
                 </>
               )}
             </button>

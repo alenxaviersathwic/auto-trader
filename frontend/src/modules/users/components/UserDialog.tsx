@@ -12,6 +12,9 @@ import {
   Check,
   Zap,
   ExternalLink,
+  Eye,
+  EyeOff,
+  ClipboardPaste,
 } from "lucide-react";
 import { User, UserCreatePayload, UserUpdatePayload } from "../types/users.types";
 import {
@@ -21,6 +24,7 @@ import {
   UserUpdateFormValues,
 } from "../schemas/usersForm.schema";
 import { ApiError } from "../../../core/api/apiError";
+import { copyToClipboard, readFromClipboard } from "../../../core/utils/clipboard";
 
 interface UserDialogProps {
   isOpen: boolean;
@@ -44,10 +48,19 @@ export const UserDialog: React.FC<UserDialogProps> = ({
   const [copied, setCopied] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
+  // Field visibility toggles
+  const [showSecret, setShowSecret] = useState(false);
+  const [showPin, setShowPin] = useState(false);
+  const [showTotp, setShowTotp] = useState(false);
+
+  // Quick feedback state for pasted fields
+  const [pastedField, setPastedField] = useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
     reset,
+    setValue,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<UserCreateFormValues | UserUpdateFormValues>({
@@ -69,6 +82,10 @@ export const UserDialog: React.FC<UserDialogProps> = ({
       setServerError(null);
       setCopied(false);
       setCreatedUser(null);
+      setShowSecret(false);
+      setShowPin(false);
+      setShowTotp(false);
+      setPastedField(null);
 
       if (userToEdit) {
         reset({
@@ -96,14 +113,30 @@ export const UserDialog: React.FC<UserDialogProps> = ({
 
   if (!isOpen) return null;
 
+  const handlePasteIntoField = async (
+    fieldName: "apiKey" | "apiSecret" | "totpSecret" | "pin"
+  ) => {
+    const text = await readFromClipboard();
+    if (text !== null && text !== undefined) {
+      // Clean string: trim and remove spaces if TOTP
+      let cleaned = text.trim();
+      if (fieldName === "totpSecret") {
+        cleaned = cleaned.replace(/\s+/g, "").toUpperCase();
+      }
+      setValue(fieldName, cleaned, { shouldValidate: true, shouldDirty: true });
+      setPastedField(fieldName);
+      setTimeout(() => setPastedField(null), 1500);
+    }
+  };
+
   const onSubmit = async (values: any) => {
     setServerError(null);
     try {
       if (isEditing && userToEdit) {
         const updatePayload: UserUpdatePayload = {
-          name: values.name,
-          apiKey: values.apiKey,
-          mobile: values.mobile,
+          name: values.name.trim(),
+          apiKey: values.apiKey.trim(),
+          mobile: values.mobile.trim(),
           autoAuthEnabled: values.autoAuthEnabled,
         };
         // Only send secrets if modified
@@ -114,19 +147,19 @@ export const UserDialog: React.FC<UserDialogProps> = ({
           updatePayload.pin = values.pin.trim();
         }
         if (values.totpSecret && values.totpSecret.trim()) {
-          updatePayload.totpSecret = values.totpSecret.trim();
+          updatePayload.totpSecret = values.totpSecret.trim().replace(/\s+/g, "").toUpperCase();
         }
 
         await onUpdate(userToEdit.id, updatePayload);
         onClose();
       } else {
         const createPayload: UserCreatePayload = {
-          name: values.name,
-          apiKey: values.apiKey,
-          apiSecret: values.apiSecret,
-          mobile: values.mobile,
-          pin: values.pin,
-          totpSecret: values.totpSecret,
+          name: values.name.trim(),
+          apiKey: values.apiKey.trim(),
+          apiSecret: values.apiSecret.trim(),
+          mobile: values.mobile.trim(),
+          pin: values.pin.trim(),
+          totpSecret: values.totpSecret.trim().replace(/\s+/g, "").toUpperCase(),
           autoAuthEnabled: values.autoAuthEnabled ?? true,
         };
 
@@ -153,17 +186,15 @@ export const UserDialog: React.FC<UserDialogProps> = ({
 
   const handleCopyRedirectUri = async () => {
     if (!createdUser?.upstox?.redirectUri) return;
-    try {
-      await navigator.clipboard.writeText(createdUser.upstox.redirectUri);
+    const ok = await copyToClipboard(createdUser.upstox.redirectUri);
+    if (ok) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
+      setTimeout(() => setCopied(false), 2200);
     }
   };
 
   return (
-    <div className="modal-backdrop">
+    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-container modal-lg">
         {/* Modal Header */}
         <div className="modal-header">
@@ -193,6 +224,7 @@ export const UserDialog: React.FC<UserDialogProps> = ({
             className="modal-close-btn"
             onClick={onClose}
             disabled={isSubmitting}
+            aria-label="Close"
           >
             <X size={18} />
           </button>
@@ -208,18 +240,25 @@ export const UserDialog: React.FC<UserDialogProps> = ({
           )}
 
           {step === 1 ? (
-            <form id="user-form" onSubmit={handleSubmit(onSubmit)} className="user-form-grid">
+            <form
+              id="user-form"
+              onSubmit={handleSubmit(onSubmit)}
+              className="user-form-grid"
+              autoComplete="off"
+            >
               {/* Account Name */}
               <div className="form-group full-width">
                 <label className="form-label" htmlFor="name">
                   User / Account Name <span className="req">*</span>
                 </label>
-                <div className="input-wrap">
+                <div className={`input-wrap ${errors.name ? "input-err" : ""}`}>
                   <UserIcon size={16} className="input-icon" />
                   <input
                     id="name"
                     type="text"
-                    className={`form-input ${errors.name ? "input-err" : ""}`}
+                    autoComplete="off"
+                    spellCheck="false"
+                    className="form-input"
                     placeholder="e.g., Primary Trading Account"
                     {...register("name")}
                   />
@@ -231,18 +270,34 @@ export const UserDialog: React.FC<UserDialogProps> = ({
 
               {/* Upstox API Key */}
               <div className="form-group">
-                <label className="form-label" htmlFor="apiKey">
-                  Upstox API Key <span className="req">*</span>
-                </label>
-                <div className="input-wrap">
+                <div className="form-label-row">
+                  <label className="form-label" htmlFor="apiKey">
+                    Upstox API Key <span className="req">*</span>
+                  </label>
+                  {pastedField === "apiKey" && (
+                    <span className="field-pasted-tag">Pasted!</span>
+                  )}
+                </div>
+                <div className={`input-wrap ${errors.apiKey ? "input-err" : ""}`}>
                   <Key size={16} className="input-icon" />
                   <input
                     id="apiKey"
                     type="text"
-                    className={`form-input ${errors.apiKey ? "input-err" : ""}`}
+                    autoComplete="off"
+                    spellCheck="false"
+                    className="form-input font-mono"
                     placeholder="e.g., f8d2b7c4-..."
                     {...register("apiKey")}
                   />
+                  <button
+                    type="button"
+                    className="input-inline-btn"
+                    title="Paste API Key from Clipboard"
+                    onClick={() => handlePasteIntoField("apiKey")}
+                  >
+                    <ClipboardPaste size={14} />
+                    <span className="inline-btn-text">Paste</span>
+                  </button>
                 </div>
                 {errors.apiKey && (
                   <span className="field-error">{errors.apiKey.message}</span>
@@ -251,15 +306,22 @@ export const UserDialog: React.FC<UserDialogProps> = ({
 
               {/* Upstox API Secret */}
               <div className="form-group">
-                <label className="form-label" htmlFor="apiSecret">
-                  Upstox API Secret {isEditing ? "(Optional)" : <span className="req">*</span>}
-                </label>
-                <div className="input-wrap">
+                <div className="form-label-row">
+                  <label className="form-label" htmlFor="apiSecret">
+                    Upstox API Secret {isEditing ? "(Optional)" : <span className="req">*</span>}
+                  </label>
+                  {pastedField === "apiSecret" && (
+                    <span className="field-pasted-tag">Pasted!</span>
+                  )}
+                </div>
+                <div className={`input-wrap ${errors.apiSecret ? "input-err" : ""}`}>
                   <Lock size={16} className="input-icon" />
                   <input
                     id="apiSecret"
-                    type="password"
-                    className={`form-input ${errors.apiSecret ? "input-err" : ""}`}
+                    type={showSecret ? "text" : "password"}
+                    autoComplete="new-password"
+                    spellCheck="false"
+                    className="form-input font-mono"
                     placeholder={
                       isEditing
                         ? userToEdit?.upstox?.hasApiSecret
@@ -269,6 +331,23 @@ export const UserDialog: React.FC<UserDialogProps> = ({
                     }
                     {...register("apiSecret")}
                   />
+                  <button
+                    type="button"
+                    className="input-inline-btn"
+                    title="Paste Secret from Clipboard"
+                    onClick={() => handlePasteIntoField("apiSecret")}
+                  >
+                    <ClipboardPaste size={14} />
+                    <span className="inline-btn-text">Paste</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="input-inline-icon-btn"
+                    onClick={() => setShowSecret(!showSecret)}
+                    title={showSecret ? "Hide secret" : "Show secret"}
+                  >
+                    {showSecret ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
                 </div>
                 {errors.apiSecret && (
                   <span className="field-error">{errors.apiSecret.message}</span>
@@ -280,12 +359,14 @@ export const UserDialog: React.FC<UserDialogProps> = ({
                 <label className="form-label" htmlFor="mobile">
                   Registered Mobile <span className="req">*</span>
                 </label>
-                <div className="input-wrap">
+                <div className={`input-wrap ${errors.mobile ? "input-err" : ""}`}>
                   <Smartphone size={16} className="input-icon" />
                   <input
                     id="mobile"
-                    type="text"
-                    className={`form-input ${errors.mobile ? "input-err" : ""}`}
+                    type="tel"
+                    autoComplete="off"
+                    maxLength={10}
+                    className="form-input"
                     placeholder="e.g., 9876543210"
                     {...register("mobile")}
                   />
@@ -300,22 +381,32 @@ export const UserDialog: React.FC<UserDialogProps> = ({
                 <label className="form-label" htmlFor="pin">
                   Upstox Login PIN {isEditing ? "(Optional)" : <span className="req">*</span>}
                 </label>
-                <div className="input-wrap">
+                <div className={`input-wrap ${errors.pin ? "input-err" : ""}`}>
                   <Lock size={16} className="input-icon" />
                   <input
                     id="pin"
-                    type="password"
+                    type={showPin ? "text" : "password"}
+                    inputMode="numeric"
                     maxLength={6}
-                    className={`form-input ${errors.pin ? "input-err" : ""}`}
+                    autoComplete="new-password"
+                    className="form-input tracking-widest"
                     placeholder={
                       isEditing
                         ? userToEdit?.upstox?.hasPin
-                          ? "••••• saved (leave blank to keep)"
-                          : "Enter 6-digit PIN"
+                          ? "•••••• saved (leave blank)"
+                          : "6-digit PIN"
                         : "6-digit PIN"
                     }
                     {...register("pin")}
                   />
+                  <button
+                    type="button"
+                    className="input-inline-icon-btn"
+                    onClick={() => setShowPin(!showPin)}
+                    title={showPin ? "Hide PIN" : "Show PIN"}
+                  >
+                    {showPin ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
                 </div>
                 {errors.pin && (
                   <span className="field-error">{errors.pin.message}</span>
@@ -324,15 +415,22 @@ export const UserDialog: React.FC<UserDialogProps> = ({
 
               {/* TOTP Secret */}
               <div className="form-group full-width">
-                <label className="form-label" htmlFor="totpSecret">
-                  TOTP Secret Key {isEditing ? "(Optional)" : <span className="req">*</span>}
-                </label>
-                <div className="input-wrap">
+                <div className="form-label-row">
+                  <label className="form-label" htmlFor="totpSecret">
+                    TOTP Secret Key {isEditing ? "(Optional)" : <span className="req">*</span>}
+                  </label>
+                  {pastedField === "totpSecret" && (
+                    <span className="field-pasted-tag">Pasted!</span>
+                  )}
+                </div>
+                <div className={`input-wrap ${errors.totpSecret ? "input-err" : ""}`}>
                   <Key size={16} className="input-icon" />
                   <input
                     id="totpSecret"
-                    type="password"
-                    className={`form-input ${errors.totpSecret ? "input-err" : ""}`}
+                    type={showTotp ? "text" : "password"}
+                    autoComplete="new-password"
+                    spellCheck="false"
+                    className="form-input font-mono"
                     placeholder={
                       isEditing
                         ? userToEdit?.upstox?.hasTotpSecret
@@ -342,12 +440,29 @@ export const UserDialog: React.FC<UserDialogProps> = ({
                     }
                     {...register("totpSecret")}
                   />
+                  <button
+                    type="button"
+                    className="input-inline-btn"
+                    title="Paste TOTP Secret from Clipboard"
+                    onClick={() => handlePasteIntoField("totpSecret")}
+                  >
+                    <ClipboardPaste size={14} />
+                    <span className="inline-btn-text">Paste</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="input-inline-icon-btn"
+                    onClick={() => setShowTotp(!showTotp)}
+                    title={showTotp ? "Hide TOTP" : "Show TOTP"}
+                  >
+                    {showTotp ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
                 </div>
                 {errors.totpSecret && (
                   <span className="field-error">{errors.totpSecret.message}</span>
                 )}
                 <span className="field-help">
-                  Needed for headless auto-authentication without manual OTP entry.
+                  Needed for headless auto-authentication without manual OTP entry. Spaces are automatically stripped.
                 </span>
               </div>
 
@@ -399,6 +514,7 @@ export const UserDialog: React.FC<UserDialogProps> = ({
                     readOnly
                     value={createdUser?.upstox?.redirectUri || ""}
                     className="copy-input"
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
                   />
                   <button
                     type="button"

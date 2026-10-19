@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -21,9 +21,12 @@ import {
   ChevronsRight,
   RefreshCw,
   AlertCircle,
+  Copy,
+  Check,
 } from "lucide-react";
 import { User } from "../types/users.types";
 import { PageResult } from "../../../core/types/pagination.types";
+import { copyToClipboard } from "../../../core/utils/clipboard";
 
 interface UserTableProps {
   pageResult: PageResult<User> | undefined;
@@ -54,6 +57,8 @@ export const UserTable: React.FC<UserTableProps> = ({
   onShowRedirectUrl,
   authenticatingUserId,
 }) => {
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
   const users = useMemo(() => pageResult?.list || [], [pageResult]);
   const totalItems = pageResult?.totalItems || 0;
   const totalPages = pageResult?.totalPages || 0;
@@ -72,6 +77,14 @@ export const UserTable: React.FC<UserTableProps> = ({
     }
   };
 
+  const handleCopyId = async (id: number, text: string) => {
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1800);
+    }
+  };
+
   const columns = useMemo<ColumnDef<User>[]>(
     () => [
       {
@@ -80,12 +93,31 @@ export const UserTable: React.FC<UserTableProps> = ({
         cell: ({ row }) => {
           const user = row.original;
           const upstox = user.upstox;
+          const isIdCopied = copiedId === user.id;
+
           return (
             <div className="table-user-cell">
               <div className="user-name-title">{user.name}</div>
               <div className="user-sub-details">
                 {upstox?.upstoxUserId && (
-                  <span className="user-sub-tag">ID: {upstox.upstoxUserId}</span>
+                  <button
+                    type="button"
+                    className={`user-sub-tag-btn ${isIdCopied ? "tag-copied" : ""}`}
+                    onClick={() => handleCopyId(user.id, upstox.upstoxUserId!)}
+                    title="Click to copy Upstox User ID"
+                  >
+                    {isIdCopied ? (
+                      <>
+                        <Check size={10} />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={10} />
+                        <span>ID: {upstox.upstoxUserId}</span>
+                      </>
+                    )}
+                  </button>
                 )}
                 {upstox?.profileName && (
                   <span className="user-sub-text">{upstox.profileName}</span>
@@ -249,7 +281,7 @@ export const UserTable: React.FC<UserTableProps> = ({
         },
       },
     ],
-    [totalItems, authenticatingUserId, onMakeDefault, onEdit, onDelete, onAutoAuth, onShowRedirectUrl]
+    [totalItems, authenticatingUserId, copiedId, onMakeDefault, onEdit, onDelete, onAutoAuth, onShowRedirectUrl]
   );
 
   const table = useReactTable({

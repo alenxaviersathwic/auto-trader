@@ -29,7 +29,10 @@ ENV/
 node_modules/
 frontend/dist/
 frontend/.temp/
+# Logs
 *.log
+logs/*.log
+!logs/.gitkeep
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
