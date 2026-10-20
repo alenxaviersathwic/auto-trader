@@ -1,108 +1,186 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# ==============================================================================
-# auto-trader Unified Startup & Auto-Backup Script
-# ==============================================================================
-# 1. Builds backend and frontend production images
-# 2. Starts PostgreSQL with pgvector and restores latest backup if available
-# 3. Boots all services via Docker Compose
-# 4. Traps Ctrl+C (SIGINT) to automatically dump database and pgvector to backup/
-# ==============================================================================
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$PROJECT_ROOT"
-
-COMPOSE_FILE="docker/docker-compose.yml"
-BACKUP_DIR="backup"
+COMPOSE_FILE="$ROOT/docker/docker-compose.yml"
+BACKUP_DIR="$ROOT/backup"
 POSTGRES_CONTAINER="autotrader_postgres"
 DB_USER="autotrader"
 DB_NAME="autotrader"
 
-mkdir -p "$BACKUP_DIR"
+echo "================================================================================"
+echo " ==> [PRE-FLIGHT] Checking Required Daemons (Docker & Ollama)..."
+echo "================================================================================"
 
-echo "================================================================="
-echo "   Starting auto-trader System (Production Build & Run)         "
-echo "================================================================="
-
-# Trap Ctrl+C (SIGINT) and SIGTERM to perform automatic backup
-cleanup_and_backup() {
-    echo ""
-    echo "================================================================="
-    echo " [Ctrl+C / Termination Detected] Initiating Auto-Backup...      "
-    echo "================================================================="
-
-    if docker ps --format '{{.Names}}' | grep -q "^${POSTGRES_CONTAINER}$"; then
-        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-        BACKUP_FILE="${BACKUP_DIR}/autotrader_backup_${TIMESTAMP}.sql"
-        LATEST_FILE="${BACKUP_DIR}/latest.sql"
-
-        echo "[BACKUP] Exporting database, pgvector embeddings, and tables..."
-        docker exec -t "$POSTGRES_CONTAINER" pg_dump \
-            -U "$DB_USER" \
-            -d "$DB_NAME" \
-            --clean \
-            --if-exists \
-            --no-owner \
-            --no-privileges > "$BACKUP_FILE"
-
-        cp "$BACKUP_FILE" "$LATEST_FILE"
-        echo "[BACKUP SUCCESS] Data safely saved to:"
-        echo "   -> $BACKUP_FILE"
-        echo "   -> $LATEST_FILE"
-    else
-        echo "[BACKUP WARNING] PostgreSQL container is not running; skipping backup."
+# 1. Docker Daemon Pre-flight & Auto-launch
+if ! docker info >/dev/null 2>&1; then
+    echo " [INFO] Docker daemon is not running. Launching Docker Desktop..."
+    if command -v open >/dev/null 2>&1; then
+        open -g -a Docker 2>/dev/null || open -g -a "Docker Desktop" 2>/dev/null || true
     fi
 
-    echo "[SHUTDOWN] Stopping all containers..."
-    docker compose -f "$COMPOSE_FILE" down
-    echo "================================================================="
-    echo "   auto-trader stopped cleanly.                                 "
-    echo "================================================================="
+    echo -n " [WAIT] Waiting for Docker daemon to become ready..."
+    DOCKER_READY=false
+    for i in $(seq 1 60); do
+        if docker info >/dev/null 2>&1; then
+            DOCKER_READY=true
+            echo " Ready!"
+            break
+        fi
+        echo -n "."
+        sleep 1
+    done
+
+    if [ "$DOCKER_READY" != true ]; then
+        echo ""
+        echo " [ERROR] Docker daemon did not start within 60s. Please start Docker manually."
+        exit 1
+    fi
+else
+    echo " [OK] Docker daemon is active and responsive."
+fi
+
+# 2. Ollama AI Service Pre-flight & Auto-launch
+if ! curl -fsS http://localhost:11434/api/tags >/dev/null 2>&1; then
+    echo " [INFO] Ollama service is not running. Starting Ollama daemon..."
+    if command -v ollama >/dev/null 2>&1; then
+        ollama serve >/dev/null 2>&1 &
+    elif command -v open >/dev/null 2>&1; then
+        open -g -a Ollama 2>/dev/null || true
+    fi
+
+    echo -n " [WAIT] Waiting for Ollama (http://localhost:11434) to become ready..."
+    OLLAMA_READY=false
+    for i in $(seq 1 30); do
+        if curl -fsS http://localhost:11434/api/tags >/dev/null 2>&1; then
+            OLLAMA_READY=true
+            echo " Ready!"
+            break
+        fi
+        echo -n "."
+        sleep 1
+    done
+
+    if [ "$OLLAMA_READY" != true ]; then
+        echo ""
+        echo " [WARN] Ollama could not be started automatically. Local AI features may be degraded."
+    else
+        echo " [OK] Ollama AI server is active and responsive."
+    fi
+else
+    echo " [OK] Ollama AI server is active and responsive."
+fi
+
+echo ""
+echo "================================================================================"
+echo " ==> [BUILD] Compiling Backend & Frontend Bundles..."
+echo "================================================================================"
+
+# Stop and remove backend container if currently running so it releases file mounts and builds clean
+if docker ps -a --format '{{.Names}}' | grep -q "^autotrader_backend$"; then
+    echo "     Removing stale autotrader_backend container..."
+    docker compose -p autotrader -f "$COMPOSE_FILE" rm -f -s backend >/dev/null 2>&1 || true
+fi
+
+# 1. Build Backend container
+echo " ==> [1/2] Building auto-trader Backend Container (FastAPI + Alembic)..."
+docker compose -p autotrader -f "$COMPOSE_FILE" build backend
+
+# 2. Build Frontend container (and optional host Vite build if node_modules exists)
+echo " ==> [2/2] Building auto-trader Frontend Container (React Vite SPA + Nginx)..."
+if command -v xattr >/dev/null 2>&1 && [ -d "$ROOT/frontend/node_modules" ]; then
+    xattr -r -d com.apple.quarantine "$ROOT/frontend/node_modules" >/dev/null 2>&1 || true
+fi
+if [ -d "$ROOT/frontend/node_modules" ]; then
+    (cd "$ROOT/frontend" && npm run build --silent 2>/dev/null || true)
+fi
+docker compose -p autotrader -f "$COMPOSE_FILE" build frontend
+
+mkdir -p "$BACKUP_DIR" "$ROOT/logs"
+
+# Check if detached mode requested (-d or --detach)
+DETACHED=false
+for arg in "$@"; do
+    if [ "$arg" == "-d" ] || [ "$arg" == "--detach" ]; then
+        DETACHED=true
+        break
+    fi
+done
+
+# Step 3: Boot PostgreSQL first and restore latest backup if database is uninitialized
+echo ""
+echo " ==> [DATABASE] Starting PostgreSQL with pgvector..."
+docker compose -p autotrader -f "$COMPOSE_FILE" up -d postgres
+
+echo -n " ==> [WAIT] Waiting for PostgreSQL (${POSTGRES_CONTAINER}) to be ready..."
+until docker exec "$POSTGRES_CONTAINER" pg_isready -U "$DB_USER" -d "$DB_NAME" > /dev/null 2>&1; do
+    echo -n "."
+    sleep 1
+done
+echo " Ready!"
+
+# Ensure vector extension is present
+docker exec "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS vector;" > /dev/null 2>&1 || true
+
+# Check if tables exist; if not, restore latest backup
+HAS_USERS_TABLE=$(docker exec "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -A -c "SELECT to_regclass('public.users');" 2>/dev/null || echo "")
+if [ -z "$HAS_USERS_TABLE" ] || [ "$HAS_USERS_TABLE" = "" ]; then
+    if [ -f "$ROOT/restore.sh" ] && ([ -f "$BACKUP_DIR/latest.sql.gz" ] || [ -f "$BACKUP_DIR/latest.sql" ]); then
+        echo " ==> [RESTORE] Fresh database detected. Restoring snapshot from backup/..."
+        "$ROOT/restore.sh" || echo " [WARN] Database restore completed with warnings."
+    fi
+fi
+
+echo ""
+echo "================================================================================"
+echo " ==> [SERVICES INITIALIZED & RUNNING]"
+echo "================================================================================"
+echo "   * Frontend UI (Production):  http://localhost:${FRONTEND_PORT:-3001}/   (Path: $ROOT/frontend)"
+echo "   * Frontend UI (Vite Dev):    http://localhost:5173/           (Path: $ROOT/frontend)"
+echo "   * Backend REST API:          http://localhost:${PORT:-8000}/api/v1 (Path: $ROOT/backend-service)"
+echo "   * Backend Swagger Docs:      http://localhost:${PORT:-8000}/docs"
+echo "   * Backend Health Check:      http://localhost:${PORT:-8000}/health"
+echo "   * PostgreSQL Database:       localhost:${POSTGRES_PORT:-5432} (DB: ${POSTGRES_DB:-autotrader})"
+echo "================================================================================"
+echo ""
+
+if [ "$DETACHED" = true ]; then
+    echo "==> Starting Docker Compose in detached mode..."
+    docker compose -p autotrader -f "$COMPOSE_FILE" up -d "$@"
+    echo "==> System is running in background. Use ./down.sh to stop and auto-backup."
+    exit 0
+fi
+
+# Cleanup and Auto-Backup Trap on Ctrl+C (SIGINT) or SIGTERM
+cleanup() {
+    echo ""
+    echo "================================================================================"
+    echo " ==> [AUTO-BACKUP] Ctrl+C detected! Backing up database before stopping..."
+    echo "================================================================================"
+    if [ -f "$ROOT/backup.sh" ]; then
+        "$ROOT/backup.sh" || echo " [WARN] Pre-shutdown backup completed with warnings."
+    elif [ -f "$ROOT/docker/backup.sh" ]; then
+        "$ROOT/docker/backup.sh" || echo " [WARN] Pre-shutdown backup completed with warnings."
+    fi
+    echo ""
+    echo " ==> [STOPPING] Bringing down Docker containers..."
+    docker compose -p autotrader -f "$COMPOSE_FILE" down > /dev/null 2>&1 || true
+    echo "================================================================================"
+    echo " ==> [SERVER STOPPED] All data & AI memory saved to:"
+    echo "     backup/latest.sql.gz"
+    echo "================================================================================"
     exit 0
 }
 
-trap cleanup_and_backup SIGINT SIGTERM
+trap cleanup INT TERM
 
-# Step 1: Build production images
-echo "[BUILD] Building backend and frontend production containers..."
-docker compose -f "$COMPOSE_FILE" build
+echo "==> Starting Docker Compose..."
+docker compose -p autotrader -f "$COMPOSE_FILE" up -d "$@"
 
-# Step 2: Start PostgreSQL first
-echo "[DATABASE] Starting PostgreSQL with pgvector..."
-docker compose -f "$COMPOSE_FILE" up -d postgres
+echo "==> Streaming live logs (Press Ctrl+C anytime to stop and auto-backup)..."
+docker compose -p autotrader -f "$COMPOSE_FILE" logs -f &
+LOGS_PID=$!
 
-echo "[DATABASE] Waiting for PostgreSQL to be healthy..."
-until docker exec "$POSTGRES_CONTAINER" pg_isready -U "$DB_USER" -d "$DB_NAME" > /dev/null 2>&1; do
-    sleep 1
-done
-echo "[DATABASE] PostgreSQL is online and ready."
-
-# Step 3: Check for existing backup and restore
-LATEST_BACKUP="${BACKUP_DIR}/latest.sql"
-
-if [ -f "$LATEST_BACKUP" ] && [ -s "$LATEST_BACKUP" ]; then
-    echo "[RESTORE] Found existing database backup: $LATEST_BACKUP"
-    echo "[RESTORE] Restoring tables, data, and pgvector embeddings..."
-    docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" < "$LATEST_BACKUP" > /dev/null 2>&1 || true
-    echo "[RESTORE SUCCESS] Database restored from $LATEST_BACKUP."
-else
-    echo "[DATABASE] No previous backup found. Initializing clean database."
-fi
-
-# Ensure vector extension is enabled in all cases
-docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS vector;" > /dev/null 2>&1 || true
-
-# Step 4: Start full project in background and stream ONLY backend logs
-echo "================================================================="
-echo "   Launching all services (Frontend, Backend, PostgreSQL)       "
-echo "   Frontend UI : http://localhost:3001                          "
-echo "   Backend API : http://localhost:8000/docs                     "
-echo "   Press Ctrl+C at any time to automatically back up and exit.  "
-echo "================================================================="
-docker compose -f "$COMPOSE_FILE" up -d
-
-echo ""
-echo "[LOGS] Streaming BACKEND logs only (Press Ctrl+C to stop & backup)..."
-echo "─────────────────────────────────────────────────────────────────"
-docker compose -f "$COMPOSE_FILE" logs -f --no-log-prefix backend
+wait "$LOGS_PID" 2>/dev/null || cleanup
