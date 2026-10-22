@@ -94,7 +94,9 @@ if command -v xattr >/dev/null 2>&1 && [ -d "$ROOT/frontend/node_modules" ]; the
     xattr -r -d com.apple.quarantine "$ROOT/frontend/node_modules" >/dev/null 2>&1 || true
 fi
 if [ -d "$ROOT/frontend/node_modules" ]; then
-    (cd "$ROOT/frontend" && npm run build --silent 2>/dev/null || true)
+    (cd "$ROOT/frontend" && npm run build)
+elif [ ! -f "$ROOT/frontend/dist/index.html" ]; then
+    (cd "$ROOT/frontend" && npm install && npm run build)
 fi
 docker compose -p autotrader -f "$COMPOSE_FILE" build frontend
 

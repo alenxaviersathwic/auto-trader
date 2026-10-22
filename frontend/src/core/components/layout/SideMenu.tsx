@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useMenuItems } from "../../navigation/menuRegistry";
-import { LayoutDashboard, Cpu, Activity } from "lucide-react";
+import { Cpu, Activity } from "lucide-react";
 
 export const SideMenu: React.FC = () => {
   const menuItems = useMenuItems();
@@ -23,15 +23,6 @@ export const SideMenu: React.FC = () => {
       <div className="sidebar-section-title">NAVIGATION</div>
 
       <nav className="sidebar-nav">
-        {/* Core default dashboard link */}
-        <Link
-          to="/"
-          className={`nav-item ${currentPath === "/" ? "active" : ""}`}
-        >
-          <LayoutDashboard size={18} className="nav-icon" />
-          <span className="nav-label">Overview</span>
-        </Link>
-
         {/* Dynamically registered module links */}
         {menuItems.map((item) => {
           const Icon = item.icon || Cpu;

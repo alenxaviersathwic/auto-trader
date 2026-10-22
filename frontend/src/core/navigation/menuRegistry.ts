@@ -42,9 +42,18 @@ class MenuRegistry {
   }
 }
 
-import { Users } from "lucide-react";
+import { Users, TrendingUp } from "lucide-react";
 
 export const menuRegistry = new MenuRegistry();
+
+// Register Strategy & Rules unified navigation item
+menuRegistry.register({
+  id: "strategies-module",
+  label: "Strategies & Rules",
+  path: "/strategies",
+  icon: TrendingUp,
+  order: 1,
+});
 
 // Register Users Module navigation item
 menuRegistry.register({

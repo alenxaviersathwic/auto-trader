@@ -4,51 +4,53 @@
    ========================================================================== */
 
 :root {
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-display: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Roboto Mono', monospace;
+  /* Eye-Comfort Pro Trading Dark Palette (from trading-engine) */
+  --bg-app: #0e1117;
+  --bg-header: #131722;
+  --bg-card: #161b26;
+  --bg-card-hover: #1c2230;
+  --bg-card-active: #222a3a;
+  --bg-panel: #121620;
+  --bg-input: #10141d;
+  --bg-modal: #151a27;
+  --bg-table-header: #111520;
+  --bg-stat: #19202e;
+  --bg-tile: #181e2b;
 
-  /* Kite Clean Dark Palette */
-  --bg-base: #141414;
-  --bg-surface: #1e1e1e;
-  --bg-elevated: #242424;
-  --bg-input: #181818;
-  --bg-glass: #1e1e1e;
-  --bg-glass-card: #222222;
+  --border-subtle: #232b3b;
+  --border-medium: #2e384d;
+  --border-focus: #3b82f6;
 
-  --border-subtle: #292929;
-  --border-light: #333333;
-  --border-hover: #444444;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-dim: #475569;
+  --text-heading: #f8fafc;
 
-  --text-primary: #e6e6e6;
-  --text-secondary: #999999;
-  --text-muted: #6b6b6b;
-  --text-dim: #4a4a4a;
+  /* Trading Colors */
+  --bullish-green: #00e676;
+  --bullish-green-tint: rgba(0, 230, 118, 0.12);
+  --bearish-red: #ff5252;
+  --bearish-red-tint: rgba(255, 82, 82, 0.12);
+  --warning-amber: #ff9800;
+  --warning-amber-tint: rgba(255, 152, 0, 0.12);
 
-  /* Zerodha Kite Signature Colors */
-  --kite-blue: #387ed1;
-  --kite-blue-hover: #2a6fc2;
-  --kite-orange: #ff5722;
-  --kite-green: #4caf50;
-  --kite-green-bg: rgba(76, 175, 80, 0.12);
-  --kite-red: #df514c;
-  --kite-red-bg: rgba(223, 81, 76, 0.12);
-  --kite-amber: #ff9800;
-
-  /* Backward compatible aliases */
-  --emerald: #4caf50;
-  --emerald-glow: rgba(76, 175, 80, 0.2);
-  --cyan: #387ed1;
-  --cyan-glow: rgba(56, 126, 209, 0.2);
-  --violet: #8b5cf6;
+  /* Legacy aliases for seamless compatibility */
+  --bg-base: #0e1117;
+  --bg-surface: #161b26;
+  --bg-elevated: #1c2230;
+  --border-light: #2e384d;
+  --emerald: #00e676;
+  --rose: #ff5252;
   --amber: #ff9800;
-  --rose: #df514c;
-  --rose-glow: rgba(223, 81, 76, 0.2);
+  --cyan: #38bdf8;
+  --kite-blue: #3b82f6;
+  --kite-orange: #ff5722;
 
-  --sidebar-width: 240px;
-  --topbar-height: 52px;
-  --transition-fast: 0.15s ease;
-  --transition-normal: 0.2s ease;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, Menlo, Monaco, monospace;
+  --radius-sm: 6px;
+  --radius-md: 10px;
 }
 
 /* Reset & Base */
@@ -108,9 +110,95 @@ input:-webkit-autofill:active {
 .app-container {
   display: flex;
   min-height: 100vh;
-  width: 100vw;
-  background-color: var(--bg-base);
+  width: 100%;
+  background-color: var(--bg-app);
 }
+
+.app-main-viewport {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background-color: var(--bg-app);
+}
+
+.app-content-area {
+  flex: 1;
+  padding: 24px 32px;
+  overflow-y: auto;
+  max-width: 1600px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-switch .slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #2a2a2a;
+  transition: 0.2s;
+  border-radius: 18px;
+}
+
+.toggle-switch .slider:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 2px;
+  bottom: 2px;
+  background-color: #888;
+  transition: 0.2s;
+  border-radius: 50%;
+}
+
+.toggle-switch input:checked + .slider {
+  background-color: #00e676;
+}
+
+.toggle-switch input:checked + .slider:before {
+  transform: translateX(14px);
+  background-color: #000;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--text-heading);
+}
+
+.brand-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 15px;
+}
+
 
 /* Sidebar */
 .app-sidebar {
@@ -1687,4 +1775,218 @@ input:checked + .slider:before {
 
 .spin {
   animation: spin 1s linear infinite;
+}
+
+/* Base Button Reset & Icon Buttons */
+button {
+  font-family: inherit;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  padding: 0;
+}
+
+.btn-icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  border-radius: 6px !important;
+  background: #18202e !important;
+  border: 1px solid #283449 !important;
+  color: #94a3b8 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.btn-icon:hover {
+  background: #253147 !important;
+  color: #ffffff !important;
+  border-color: #3b82f6 !important;
+  transform: translateY(-1px);
+}
+
+.btn-icon.danger:hover {
+  background: rgba(239, 68, 68, 0.18) !important;
+  color: #ef4444 !important;
+  border-color: rgba(239, 68, 68, 0.45) !important;
+}
+
+/* Needs Attention Banner */
+.needs-attention-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.04) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin-bottom: 16px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.needs-attention-banner:hover {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.08) 100%);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.needs-attention-banner.active-filter {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.18) 0%, rgba(245, 158, 11, 0.1) 100%);
+  border-color: #f59e0b;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.2);
+}
+
+.needs-attention-banner .banner-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.needs-attention-banner .banner-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.15);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #f59e0b;
+}
+
+.needs-attention-banner .banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.needs-attention-banner .banner-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.needs-attention-banner .banner-title strong {
+  color: #f59e0b;
+}
+
+.needs-attention-banner .banner-subtitle {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.needs-attention-banner .banner-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #f59e0b;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  padding: 5px 12px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.needs-attention-banner:hover .banner-right {
+  background: rgba(245, 158, 11, 0.22);
+}
+
+/* Executive Metric Cards Strip (from trading-engine) */
+.dashboard-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.dashboard-metric {
+  min-height: 94px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  background: linear-gradient(145deg, #171d29, #131822);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: all 0.15s ease;
+}
+
+.dashboard-metric:hover {
+  border-color: var(--border-medium);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.dashboard-metric__icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 9px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.dashboard-metric__icon.green {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+.dashboard-metric__icon.amber {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+.dashboard-metric__icon.purple {
+  background: rgba(139, 92, 246, 0.12);
+  color: #a78bfa;
+  border-color: rgba(139, 92, 246, 0.25);
+}
+
+.dashboard-metric > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-metric small {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.dashboard-metric strong {
+  color: var(--text-heading);
+  font: 700 22px var(--font-mono);
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.dashboard-metric span.metric-sub {
+  color: #64748b;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+@media (max-width: 1180px) {
+  .dashboard-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-metrics {
+    grid-template-columns: 1fr;
+  }
 }

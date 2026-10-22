@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Outlet } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { SideMenu } from "./SideMenu";
@@ -25,6 +25,26 @@ interface HealthData {
 }
 
 export const AppLayout: React.FC = () => {
+  const [istTime, setIstTime] = useState<string>("");
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setIstTime(
+        now.toLocaleTimeString("en-IN", {
+          timeZone: "Asia/Kolkata",
+          hour12: true,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Real-time backend system health query
   const { data: health, isSuccess } = useQuery<HealthData>({
     queryKey: ["system", "health"],
@@ -50,10 +70,10 @@ export const AppLayout: React.FC = () => {
           <div className="topbar-left">
             <div className="terminal-badge">
               <Layers size={14} />
-              <span>CORE ARCHITECTURE</span>
+              <span>AUTO-TRADER CORE</span>
             </div>
             <span className="topbar-divider">/</span>
-            <span className="topbar-context">High-Frequency Automated Engine</span>
+            <span className="topbar-context">Algorithmic Trading Platform</span>
           </div>
 
           <div className="topbar-right">
@@ -87,14 +107,14 @@ export const AppLayout: React.FC = () => {
               <span>PostgreSQL {isVectorUp ? "+ pgvector" : ""}</span>
             </div>
 
-            <div className="status-chip chip-neutral">
+            <div className="status-chip chip-neutral font-mono">
               <Clock size={13} />
-              <span>{health?.timezone || "Asia/Kolkata"}</span>
+              <span>IST {istTime || "--:--:--"}</span>
             </div>
 
             <div className="status-chip chip-accent">
               <ShieldCheck size={13} />
-              <span>AES-GCM Active</span>
+              <span>AES-GCM</span>
             </div>
           </div>
         </header>

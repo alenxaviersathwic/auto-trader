@@ -110,6 +110,10 @@ def create_application() -> FastAPI:
 
     # Base & Healthcheck Routes
     @app.get(
+        "/health",
+        include_in_schema=False,
+    )
+    @app.get(
         "/api/v1/health",
         response_model=ApiResponse[dict],
         status_code=status.HTTP_200_OK,
@@ -149,11 +153,16 @@ def create_application() -> FastAPI:
         return success(data=health_data, message="System is operational")
 
     # Feature Module Routers
-    import logging
     from app.modules.users.controller import oauth_router, user_router
+    from app.modules.strategies.controller import (
+        strategy_router,
+        rule_router,
+    )
     app.include_router(user_router, prefix=settings.API_V1_PREFIX)
     app.include_router(oauth_router, prefix=settings.API_V1_PREFIX)
-    app.include_router(oauth_router)
+
+    app.include_router(strategy_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(rule_router, prefix=settings.API_V1_PREFIX)
 
     return app
 

@@ -56,3 +56,4 @@ services:
 volumes:
   postgres_data:
     name: autotrader_postgres_data
+    external: true

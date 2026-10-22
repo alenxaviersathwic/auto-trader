@@ -1,0 +1,4827 @@
+{
+  "schemaVersion": 2,
+  "source": "LEGACY_IMPORT",
+  "strategies": [
+    {
+      "code": "crudeoil_momentum_breakout_v1",
+      "name": "Crude Oil Commodity Momentum Breakout V1",
+      "description": "Descriptive legacy definition only (entry label and indicator list). Entry and exit rules are not specified, so it cannot be executed or evaluated.",
+      "category": "MOMENTUM",
+      "structure": null,
+      "bias": null,
+      "optionSide": null,
+      "markets": [
+        "CRUDEOIL"
+      ],
+      "underlyingTypes": [
+        "COMMODITY"
+      ],
+      "exchange": "MCX",
+      "tradingModes": [
+        "SHORT_TERM",
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER"
+      ],
+      "lifecycleStatus": "DRAFT",
+      "health": "DEGRADED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "SUMMARY",
+      "riskProfile": {
+        "riskCategory": null,
+        "marginAmount": null,
+        "declaredMaxDrawdown": null,
+        "targetRr": 2.2,
+        "maxRiskPct": 20,
+        "lotSize": 100
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "MOMENTUM",
+          "status": "ACTIVE",
+          "health": "DEGRADED",
+          "optionType": null,
+          "tradingModesRaw": "SHORT_TERM,INTRADAY"
+        }
+      },
+      "reviewFlags": [
+        "NOT_EXECUTABLE_SUMMARY_ONLY"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "SUMMARY",
+        "summary": {
+          "entryLabel": "momentum_breakout",
+          "indicators": [
+            "VWAP",
+            "EMA_9",
+            "EMA_21",
+            "ATR_14"
+          ],
+          "targetRr": 2.2,
+          "maxRiskPct": 20,
+          "legs": 1,
+          "lotSize": 100,
+          "exchange": "MCX"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 1,
+          "winningTrades": 1,
+          "losingTrades": 0,
+          "winRatePct": 100.0,
+          "netPnl": 1810.6,
+          "profitFactor": 10.0,
+          "maxDrawdown": 0.0,
+          "legacyHealth": "DEGRADED",
+          "reliabilityFlags": [
+            "LOW_SAMPLE",
+            "PERFECT_RECORD_TINY_SAMPLE"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "nifty_expiry_day_selling_v1",
+      "name": "Nifty Expiry Day Selling",
+      "description": "Open the position: Shortly after the market opens, once early volatility settles, sells a call and a put and buys farther-out options on both sides as protection. Earn through the session: Holds the hedged position to collect premium as the options lose value through the day. Switch for the final hour: Closes the first position and opens a tighter second one to capture the faster decay near expiry. Exit before close: Each sold option has its own stop-loss \u2014 50% on each sell leg in the First setup and 70% in the Second setup* \u2014 and all positions are squared off before the market ends.",
+      "category": "PREMIUM_SELLING",
+      "structure": "IRON_CONDOR",
+      "bias": "NEUTRAL",
+      "optionSide": "BOTH",
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "ACTIVE",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 200000,
+        "declaredMaxDrawdown": 10000
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "IRON_CONDOR",
+          "status": "ACTIVE",
+          "health": "ACTIVE",
+          "optionType": null,
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 19,
+          "instrumentGroups": [
+            [
+              "NFO:NIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [
+        "TIME_EQUALS_NEEDS_REACHED_SEMANTICS"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "op": "ALL",
+                "items": [
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "EQUALS",
+                    "right": {
+                      "const": "09:29:00",
+                      "type": "TIME"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "CONTEXT",
+                      "field": "daysToExpire"
+                    },
+                    "operator": "EQUALS",
+                    "right": {
+                      "const": 0
+                    }
+                  }
+                ]
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "SELL",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": 2
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 50,
+                    "basis": "ENTRY_PREMIUM"
+                  },
+                  "target": {
+                    "type": "PERCENT",
+                    "value": 85,
+                    "basis": "ENTRY_PREMIUM"
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": [
+                        {
+                          "action": "CloseLeg",
+                          "targets": [
+                            "3"
+                          ],
+                          "trigger": "ExitedInLoss"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "legId": "2",
+                  "side": "SELL",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "PE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": -2
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 50,
+                    "basis": "ENTRY_PREMIUM"
+                  },
+                  "target": {
+                    "type": "PERCENT",
+                    "value": 85,
+                    "basis": "ENTRY_PREMIUM"
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": [
+                        {
+                          "action": "CloseLeg",
+                          "targets": [
+                            "4"
+                          ],
+                          "trigger": "ExitedInLoss"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "legId": "3",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": 10
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                },
+                {
+                  "legId": "4",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "PE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": -10
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                }
+              ]
+            },
+            "exit": null,
+            "adjustments": [
+              {
+                "key": "A1",
+                "when": {
+                  "left": {
+                    "source": "TIME",
+                    "field": "timeOfDay"
+                  },
+                  "operator": "EQUALS",
+                  "right": {
+                    "const": "14:24:00",
+                    "type": "TIME"
+                  }
+                },
+                "actions": [
+                  {
+                    "type": "CLOSE_LEG",
+                    "legId": "1"
+                  },
+                  {
+                    "type": "CLOSE_LEG",
+                    "legId": "2"
+                  },
+                  {
+                    "type": "CLOSE_LEG",
+                    "legId": "3"
+                  },
+                  {
+                    "type": "CLOSE_LEG",
+                    "legId": "4"
+                  }
+                ]
+              },
+              {
+                "key": "A2",
+                "when": {
+                  "op": "ALL",
+                  "items": [
+                    {
+                      "left": {
+                        "source": "TIME",
+                        "field": "timeOfDay"
+                      },
+                      "operator": "EQUALS",
+                      "right": {
+                        "const": "14:25:00",
+                        "type": "TIME"
+                      }
+                    },
+                    {
+                      "left": {
+                        "source": "CONTEXT",
+                        "field": "daysToExpire"
+                      },
+                      "operator": "EQUALS",
+                      "right": {
+                        "const": 0
+                      }
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "type": "OPEN_LEG",
+                    "legId": "9",
+                    "side": "SELL",
+                    "instrument": {
+                      "kind": "OPTION",
+                      "optionType": "CE",
+                      "expiry": {
+                        "cycle": "WEEKLY",
+                        "index": 1
+                      },
+                      "strike": {
+                        "selector": "ATM_OFFSET",
+                        "steps": -1
+                      }
+                    },
+                    "quantity": {
+                      "unit": "LOT",
+                      "value": 1
+                    },
+                    "stopLoss": {
+                      "type": "PERCENT",
+                      "value": 70,
+                      "basis": "ENTRY_PREMIUM"
+                    },
+                    "extras": {
+                      "uiConfigs": {
+                        "quickAdjustments": [
+                          {
+                            "action": "CloseLeg",
+                            "targets": [
+                              "11"
+                            ],
+                            "trigger": "ExitedInLoss"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "OPEN_LEG",
+                    "legId": "10",
+                    "side": "SELL",
+                    "instrument": {
+                      "kind": "OPTION",
+                      "optionType": "PE",
+                      "expiry": {
+                        "cycle": "WEEKLY",
+                        "index": 1
+                      },
+                      "strike": {
+                        "selector": "ATM_OFFSET",
+                        "steps": 1
+                      }
+                    },
+                    "quantity": {
+                      "unit": "LOT",
+                      "value": 1
+                    },
+                    "stopLoss": {
+                      "type": "PERCENT",
+                      "value": 70,
+                      "basis": "ENTRY_PREMIUM"
+                    },
+                    "extras": {
+                      "uiConfigs": {
+                        "quickAdjustments": [
+                          {
+                            "action": "CloseLeg",
+                            "targets": [
+                              "12"
+                            ],
+                            "trigger": "ExitedInLoss"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "OPEN_LEG",
+                    "legId": "11",
+                    "side": "BUY",
+                    "instrument": {
+                      "kind": "OPTION",
+                      "optionType": "CE",
+                      "expiry": {
+                        "cycle": "WEEKLY",
+                        "index": 1
+                      },
+                      "strike": {
+                        "selector": "ATM_OFFSET",
+                        "steps": 7
+                      }
+                    },
+                    "quantity": {
+                      "unit": "LOT",
+                      "value": 1
+                    },
+                    "extras": {
+                      "uiConfigs": {
+                        "quickAdjustments": []
+                      }
+                    }
+                  },
+                  {
+                    "type": "OPEN_LEG",
+                    "legId": "12",
+                    "side": "BUY",
+                    "instrument": {
+                      "kind": "OPTION",
+                      "optionType": "PE",
+                      "expiry": {
+                        "cycle": "WEEKLY",
+                        "index": 1
+                      },
+                      "strike": {
+                        "selector": "ATM_OFFSET",
+                        "steps": -7
+                      }
+                    },
+                    "quantity": {
+                      "unit": "LOT",
+                      "value": 1
+                    },
+                    "extras": {
+                      "uiConfigs": {
+                        "quickAdjustments": []
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "key": "A3",
+                "when": {
+                  "left": {
+                    "source": "POSITION",
+                    "caseKey": "0",
+                    "legId": "1",
+                    "field": "hasExitedInLoss"
+                  },
+                  "operator": "EQUALS",
+                  "right": {
+                    "const": 1
+                  }
+                },
+                "actions": [
+                  {
+                    "type": "CLOSE_LEG",
+                    "legId": "3"
+                  }
+                ],
+                "extras": {
+                  "uiConfigs": {
+                    "adjustmentMode": "quickAdjustment",
+                    "isAutoAdjustment": true
+                  }
+                }
+              },
+              {
+                "key": "A4",
+                "when": {
+                  "left": {
+                    "source": "POSITION",
+                    "caseKey": "0",
+                    "legId": "2",
+                    "field": "hasExitedInLoss"
+                  },
+                  "operator": "EQUALS",
+                  "right": {
+                    "const": 1
+                  }
+                },
+                "actions": [
+                  {
+                    "type": "CLOSE_LEG",
+                    "legId": "4"
+                  }
+                ],
+                "extras": {
+                  "uiConfigs": {
+                    "adjustmentMode": "quickAdjustment",
+                    "isAutoAdjustment": true
+                  }
+                }
+              },
+              {
+                "key": "A5",
+                "when": {
+                  "left": {
+                    "source": "POSITION",
+                    "caseKey": "0",
+                    "legId": "9",
+                    "field": "hasExitedInLoss"
+                  },
+                  "operator": "EQUALS",
+                  "right": {
+                    "const": 1
+                  }
+                },
+                "actions": [
+                  {
+                    "type": "CLOSE_LEG",
+                    "legId": "11"
+                  }
+                ],
+                "extras": {
+                  "uiConfigs": {
+                    "adjustmentMode": "quickAdjustment",
+                    "isAutoAdjustment": true
+                  }
+                }
+              },
+              {
+                "key": "A6",
+                "when": {
+                  "left": {
+                    "source": "POSITION",
+                    "caseKey": "0",
+                    "legId": "10",
+                    "field": "hasExitedInLoss"
+                  },
+                  "operator": "EQUALS",
+                  "right": {
+                    "const": 1
+                  }
+                },
+                "actions": [
+                  {
+                    "type": "CLOSE_LEG",
+                    "legId": "12"
+                  }
+                ],
+                "extras": {
+                  "uiConfigs": {
+                    "adjustmentMode": "quickAdjustment",
+                    "isAutoAdjustment": true
+                  }
+                }
+              }
+            ],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:15",
+            "exitTime": "15:28"
+          },
+          "maxTradesPerDay": 1,
+          "expiryHandling": {}
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 10,
+          "winningTrades": 7,
+          "losingTrades": 3,
+          "winRatePct": 70.0,
+          "netPnl": 3800.0,
+          "profitFactor": 2.2,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "ACTIVE",
+          "reliabilityFlags": [
+            "LOW_SAMPLE",
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Open the position",
+          "description": "Shortly after the market opens, once early volatility settles, sells a call and a put and buys farther-out options on both sides as protection."
+        },
+        {
+          "title": "Earn through the session",
+          "description": "Holds the hedged position to collect premium as the options lose value through the day."
+        },
+        {
+          "title": "Switch for the final hour",
+          "description": "Closes the first position and opens a tighter second one to capture the faster decay near expiry."
+        },
+        {
+          "title": "Exit before close",
+          "description": "Each sold option has its own stop-loss \u2014 50% on each sell leg in the First setup and 70% in the Second setup* \u2014 and all positions are squared off before the market ends."
+        }
+      ]
+    },
+    {
+      "code": "banknifty_bearish_buying_v1",
+      "name": "Bank Nifty Bearish Buying",
+      "description": "Confirms the bearish trend: Uses Bollinger Bands, RSI, EMA, and CCI to check that Bank Nifty is under strong selling pressure. Validates participation: Confirms enough traded volume is behind the move before committing to a trade. Buys the put: Enters a Bank Nifty ATM put option once the signals line up. Manages the risk: Exits on SL or Target, whichever comes first. Actual exit price may vary slightly from what's set as SL or Target.",
+      "category": "BREAKOUT",
+      "structure": "SINGLE_LONG",
+      "bias": "BEARISH",
+      "optionSide": "PUT",
+      "markets": [
+        "BANKNIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "ACTIVE",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 60000,
+        "declaredMaxDrawdown": 14730
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "BREAKDOWN",
+          "status": "ACTIVE",
+          "health": "ACTIVE",
+          "optionType": "PUT",
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 9,
+          "instrumentGroups": [
+            [
+              "NFO:BANKNIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [
+        "INDICATOR_PARAMS_UNSPECIFIED",
+        "TIME_EQUALS_NEEDS_REACHED_SEMANTICS"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "op": "ALL",
+                "items": [
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": "3m"
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "BBANDS",
+                      "output": "lower",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "RSI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "const": 24
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "CCI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "const": -150
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "const": "15:10:00",
+                      "type": "TIME"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": "09:24:00",
+                      "type": "TIME"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "volume",
+                      "bar": "CURRENT",
+                      "timeframe": "3m"
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": 50000
+                    }
+                  }
+                ]
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "PE",
+                    "expiry": {
+                      "cycle": "MONTHLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": 0
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 20,
+                    "basis": "ENTRY_PREMIUM",
+                    "trail": {
+                      "type": "LINEAR",
+                      "adjustValue": 10,
+                      "trailingValue": 10
+                    }
+                  },
+                  "target": {
+                    "type": "PERCENT",
+                    "value": 200,
+                    "basis": "ENTRY_PREMIUM"
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "left": {
+                  "source": "TIME",
+                  "field": "timeOfDay"
+                },
+                "operator": "EQUALS",
+                "right": {
+                  "const": "15:14:00",
+                  "type": "TIME"
+                }
+              }
+            },
+            "adjustments": [],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:15",
+            "exitTime": "15:14"
+          },
+          "maxTradesPerDay": 10,
+          "expiryHandling": {},
+          "dayStopGain": {
+            "type": "AMOUNT",
+            "value": 2000
+          },
+          "dayStopLoss": {
+            "type": "AMOUNT",
+            "value": 4000
+          }
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 51,
+          "winningTrades": 35,
+          "losingTrades": 16,
+          "winRatePct": 68.63,
+          "netPnl": 8529.5,
+          "profitFactor": 2.0,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "ACTIVE",
+          "reliabilityFlags": [
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Confirms the bearish trend",
+          "description": "Uses Bollinger Bands, RSI, EMA, and CCI to check that Bank Nifty is under strong selling pressure."
+        },
+        {
+          "title": "Validates participation",
+          "description": "Confirms enough traded volume is behind the move before committing to a trade."
+        },
+        {
+          "title": "Buys the put",
+          "description": "Enters a Bank Nifty ATM put option once the signals line up."
+        },
+        {
+          "title": "Manages the risk",
+          "description": "Exits on SL or Target, whichever comes first. Actual exit price may vary slightly from what's set as SL or Target."
+        }
+      ]
+    },
+    {
+      "code": "nifty_credit_spread_pe_v1",
+      "name": "Nifty Bull Put Credit Spread",
+      "description": "Checks for strength: Uses Super Trend and Pivot Points to confirm Nifty has pushed above a key resistance level and is turning bullish. Places both legs: Sells the ITM 2 option to collect premium, buys the OTM 8 option to keep risk defined. Exits: Closes the trade when Super Trend changes direction, or by the set exit time* \u2014 whichever comes first.",
+      "category": "PREMIUM_SELLING",
+      "structure": "BULL_PUT_SPREAD",
+      "bias": "BULLISH",
+      "optionSide": "PUT",
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "ACTIVE",
+      "health": "DEGRADED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 85000,
+        "declaredMaxDrawdown": 39753
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "BULL_PUT_SPREAD",
+          "status": "ACTIVE",
+          "health": "DEGRADED",
+          "optionType": "PUT",
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 8,
+          "instrumentGroups": [
+            [
+              "NFO:NIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [
+        "INDICATOR_PARAMS_UNSPECIFIED",
+        "TIMEFRAME_USES_ENGINE_DEFAULT"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "op": "ALL",
+                "items": [
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "SUPERTREND",
+                      "output": "value",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "PIVOT_POINTS",
+                      "output": "R1",
+                      "params": null
+                    }
+                  }
+                ]
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "SELL",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "PE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": 2
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                },
+                {
+                  "legId": "2",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "PE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": -8
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "left": {
+                  "source": "PRICE",
+                  "field": "close",
+                  "bar": "CURRENT",
+                  "timeframe": null
+                },
+                "operator": "CROSSES_BELOW",
+                "right": {
+                  "source": "INDICATOR",
+                  "code": "SUPERTREND",
+                  "output": "value",
+                  "params": null
+                }
+              }
+            },
+            "adjustments": [],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:15",
+            "exitTime": "15:14"
+          },
+          "maxTradesPerDay": 2,
+          "expiryHandling": {}
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 14,
+          "winningTrades": 9,
+          "losingTrades": 5,
+          "winRatePct": 64.29,
+          "netPnl": 3083.6,
+          "profitFactor": 0.65,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "DEGRADED",
+          "reliabilityFlags": [
+            "LOW_SAMPLE",
+            "PF_PNL_INCONSISTENT",
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Checks for strength",
+          "description": "Uses Super Trend and Pivot Points to confirm Nifty has pushed above a key resistance level and is turning bullish."
+        },
+        {
+          "title": "Places both legs",
+          "description": "Sells the ITM 2 option to collect premium, buys the OTM 8 option to keep risk defined."
+        },
+        {
+          "title": "Exits",
+          "description": "Closes the trade when Super Trend changes direction, or by the set exit time* \u2014 whichever comes first."
+        }
+      ]
+    },
+    {
+      "code": "nifty_trend_surge_buying_v1",
+      "name": "Trend Surge Buying",
+      "description": "Confirm the trend: Checks that price is holding above the day's VWAP, showing genuine bullish strength. Validate the breakout: Confirms price has pushed above the previous day's high and the day's highest high before committing to a trade. Buy the call: Enters a Nifty call option around \u20b9200 premium once the trend and breakout both line up. Manage the risk: Exits when price closes below VWAP or the option loses 30%, whichever comes first.",
+      "category": "BREAKOUT",
+      "structure": "SINGLE_LONG",
+      "bias": "BULLISH",
+      "optionSide": "CALL",
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "ACTIVE",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 45000,
+        "declaredMaxDrawdown": 26887
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "BREAKOUT",
+          "status": "ACTIVE",
+          "health": "ACTIVE",
+          "optionType": "CALL",
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 5,
+          "instrumentGroups": [
+            [
+              "NFO:NIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [
+        "INDICATOR_PARAMS_UNSPECIFIED",
+        "TIME_EQUALS_NEEDS_REACHED_SEMANTICS"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "op": "ALL",
+                "items": [
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": "5m"
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "DAY",
+                      "day": "YESTERDAY",
+                      "field": "high"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": "5m"
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "DAY",
+                      "day": "TODAY",
+                      "field": "previousHighestHigh"
+                    }
+                  }
+                ]
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "PREMIUM",
+                      "premium": 200,
+                      "comparison": "NEAREST"
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 30,
+                    "basis": "ENTRY_PREMIUM",
+                    "trail": {
+                      "type": "LINEAR",
+                      "adjustValue": 5,
+                      "trailingValue": 5
+                    }
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "op": "ANY",
+                "items": [
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": "5m"
+                    },
+                    "operator": "CROSSES_BELOW",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "VWAP",
+                      "output": "currentDay",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "EQUALS",
+                    "right": {
+                      "const": "15:14:00",
+                      "type": "TIME"
+                    }
+                  }
+                ]
+              }
+            },
+            "adjustments": [],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:15",
+            "exitTime": "15:14"
+          },
+          "maxTradesPerDay": 1,
+          "expiryHandling": {},
+          "strategyStopLoss": {
+            "type": "AMOUNT",
+            "value": 3000
+          }
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 52,
+          "winningTrades": 33,
+          "losingTrades": 19,
+          "winRatePct": 63.46,
+          "netPnl": 54839.3,
+          "profitFactor": 2.42,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "ACTIVE",
+          "reliabilityFlags": [
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Confirm the trend",
+          "description": "Checks that price is holding above the day's VWAP, showing genuine bullish strength."
+        },
+        {
+          "title": "Validate the breakout",
+          "description": "Confirms price has pushed above the previous day's high and the day's highest high before committing to a trade."
+        },
+        {
+          "title": "Buy the call",
+          "description": "Enters a Nifty call option around \u20b9200 premium once the trend and breakout both line up."
+        },
+        {
+          "title": "Manage the risk",
+          "description": "Exits when price closes below VWAP or the option loses 30%, whichever comes first."
+        }
+      ]
+    },
+    {
+      "code": "nifty_option_pulse_buying_v1",
+      "name": "Option Pulse Buying",
+      "description": "Confirm the trend: Checks that Nifty is in an uptrend with strong momentum behind it, using Signals such as Super Trend, RSI and CCI. Validate the breakout: Confirms price has pushed above key resistance and recent highs, using Signals such as Pivot Points, before committing to a trade. Buy the call: Enters a Nifty call option around \u20b9200 premium once the trend and breakout both line up. Manage the risk: Exits when price closes below Super Trend or the stop-loss triggers, whichever comes first.",
+      "category": "MOMENTUM",
+      "structure": "SINGLE_LONG",
+      "bias": "BULLISH",
+      "optionSide": "CALL",
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "SUSPENDED",
+      "health": "SUSPENDED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 45000,
+        "declaredMaxDrawdown": 20816
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "MOMENTUM",
+          "status": "ACTIVE",
+          "health": "SUSPENDED",
+          "optionType": "CALL",
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 6,
+          "instrumentGroups": [
+            [
+              "NFO:NIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [
+        "INDICATOR_PARAMS_UNSPECIFIED",
+        "TIMEFRAME_USES_ENGINE_DEFAULT",
+        "TIME_EQUALS_NEEDS_REACHED_SEMANTICS"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "op": "ALL",
+                "items": [
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": "09:21:00",
+                      "type": "TIME"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "SUPERTREND",
+                      "output": "value",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "PRICE",
+                      "field": "high",
+                      "bar": "PREVIOUS",
+                      "timeframe": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "RSI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": 70
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "PIVOT_POINTS",
+                      "output": "R1",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "CCI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": 100
+                    }
+                  }
+                ]
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "PREMIUM",
+                      "premium": 200,
+                      "comparison": "NEAREST"
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "POINTS",
+                    "value": 50,
+                    "basis": "ENTRY_PREMIUM",
+                    "trail": {
+                      "type": "LINEAR",
+                      "adjustValue": 15,
+                      "trailingValue": 15
+                    }
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "op": "ANY",
+                "items": [
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "CROSSES_BELOW",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "SUPERTREND",
+                      "output": "value",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "EQUALS",
+                    "right": {
+                      "const": "15:14:00",
+                      "type": "TIME"
+                    }
+                  }
+                ]
+              }
+            },
+            "adjustments": [],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:15",
+            "exitTime": "15:14"
+          },
+          "maxTradesPerDay": 10,
+          "expiryHandling": {}
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 86,
+          "winningTrades": 51,
+          "losingTrades": 35,
+          "winRatePct": 59.3,
+          "netPnl": -5710.8,
+          "profitFactor": 0.76,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "SUSPENDED",
+          "reliabilityFlags": [
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Confirm the trend",
+          "description": "Checks that Nifty is in an uptrend with strong momentum behind it, using Signals such as Super Trend, RSI and CCI."
+        },
+        {
+          "title": "Validate the breakout",
+          "description": "Confirms price has pushed above key resistance and recent highs, using Signals such as Pivot Points, before committing to a trade."
+        },
+        {
+          "title": "Buy the call",
+          "description": "Enters a Nifty call option around \u20b9200 premium once the trend and breakout both line up."
+        },
+        {
+          "title": "Manage the risk",
+          "description": "Exits when price closes below Super Trend or the stop-loss triggers, whichever comes first."
+        }
+      ]
+    },
+    {
+      "code": "breakout_trend_v1",
+      "name": "Breakout & Key Level Trend V1",
+      "description": "Descriptive legacy definition only (entry label and indicator list). Entry and exit rules are not specified, so it cannot be executed or evaluated.",
+      "category": "BREAKOUT",
+      "structure": null,
+      "bias": null,
+      "optionSide": null,
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER"
+      ],
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "SUMMARY",
+      "riskProfile": {
+        "riskCategory": null,
+        "marginAmount": null,
+        "declaredMaxDrawdown": null,
+        "targetRr": 2.2,
+        "maxRiskPct": 20,
+        "lotSize": null
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "BREAKOUT",
+          "status": "ACTIVE",
+          "health": "ACTIVE",
+          "optionType": null,
+          "tradingModesRaw": "INTRADAY"
+        }
+      },
+      "reviewFlags": [
+        "NOT_EXECUTABLE_SUMMARY_ONLY"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "SUMMARY",
+        "summary": {
+          "entryLabel": "breakout",
+          "indicators": [
+            "SUPPORT_RESISTANCE",
+            "DAY_HIGH_LOW",
+            "VOLUME"
+          ],
+          "targetRr": 2.2,
+          "maxRiskPct": 20,
+          "legs": null,
+          "lotSize": null,
+          "exchange": null
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 9,
+          "winningTrades": 5,
+          "losingTrades": 4,
+          "winRatePct": 55.56,
+          "netPnl": 1695.7,
+          "profitFactor": 2.1,
+          "maxDrawdown": 0.0,
+          "legacyHealth": "ACTIVE",
+          "reliabilityFlags": [
+            "LOW_SAMPLE"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "paper_research_orb15_v1",
+      "name": "Paper Research: Confirmed Opening-Range Breakout",
+      "description": "Experimental long-call/put adaptation. Requires a complete 09:15\u201309:30 range, two closed breakout bars, trend alignment and no extended chase. Not validated for Indian index options.",
+      "category": "BREAKOUT",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "NIFTY",
+        "BANKNIFTY",
+        "SENSEX"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": null,
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER"
+      ],
+      "lifecycleStatus": "ACTIVE",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "EVALUATOR",
+      "riskProfile": {
+        "riskCategory": null,
+        "marginAmount": null,
+        "declaredMaxDrawdown": null
+      },
+      "references": [
+        {
+          "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4729284",
+          "scope": "US stocks in play; results do not establish an edge in Indian index options.",
+          "title": "Zarattini, Barbon & Aziz: A Profitable Day Trading Strategy For The U.S. Equity Market"
+        },
+        {
+          "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7428398",
+          "scope": "2026 futures preprint with negative cost-adjusted results; a counterexample to universal ORB profitability.",
+          "title": "Fetna: Opening-Range Breakout Does Not Survive Trading Costs"
+        },
+        {
+          "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/atr",
+          "scope": "Volatility measurement and stop construction; not a return forecast.",
+          "title": "Fidelity: Average True Range"
+        }
+      ],
+      "riskNotes": [
+        "One long-option lot only; no averaging down or multi-leg execution.",
+        "No expiry-day entries. Bid/ask depth, real Greeks and costs are required.",
+        "Premium stop uses a delta-times-ATR approximation, not an option pricing forecast.",
+        "V3 position policy owns exits; local stops can fill worse after gaps."
+      ],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "BREAKOUT",
+          "status": "ACTIVE",
+          "health": "ACTIVE",
+          "optionType": null,
+          "tradingModesRaw": "INTRADAY",
+          "researchStatus": "PAPER_HYPOTHESIS",
+          "executionModes": [
+            "PAPER"
+          ]
+        }
+      },
+      "reviewFlags": [
+        "RESEARCH_HYPOTHESIS_NOT_VALIDATED",
+        "EVALUATOR_HANDLER_REQUIRED"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "EVALUATOR",
+        "evaluator": "ORB15",
+        "parameters": {
+          "fastEma": 9,
+          "slowEma": 21,
+          "atrPeriod": 14,
+          "rewardRisk": 2.0,
+          "entryCutoff": "14:30",
+          "maxAbsDelta": 0.7,
+          "minAbsDelta": 0.35,
+          "maxSpreadPct": 2.0,
+          "stopAtrMultiple": 1.5,
+          "minCompletedBars": 35,
+          "maxPremiumRiskPct": 20.0,
+          "minPremiumRiskPct": 5.0,
+          "maxQuoteAgeSeconds": 60,
+          "maxFrictionToReward": 0.25,
+          "openingRangeMinutes": 15,
+          "maxCapitalAllocationPct": 20.0
+        },
+        "riskPolicy": {
+          "stopMode": "EVALUATOR_OWNED"
+        },
+        "extras": {
+          "reviewedOn": "2026-09-25",
+          "version": 1,
+          "performanceClaims": null
+        }
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 19,
+          "winningTrades": 9,
+          "losingTrades": 10,
+          "winRatePct": 47.37,
+          "netPnl": 1549.81,
+          "profitFactor": 4.37,
+          "maxDrawdown": 460.04,
+          "legacyHealth": "ACTIVE",
+          "reliabilityFlags": [
+            "LOW_SAMPLE"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "nifty_momentum_option_buying_v1",
+      "name": "Momentum Option Buying",
+      "description": "Confirm the trend: Checks that Nifty is in a strong uptrend with expanding volatility, using Signals such as Super Trend and Bollinger Bands. Validate the breakout: Confirms momentum and a push above key resistance and recent highs, using Signals such as RSI, CCI, ADX and Pivot Points, along with a volume check for liquidity. Buy the call: Enters a Nifty call option around \u20b9240 premium once the trend and breakout both line up. Manage the risk: Exits when price closes below Super Trend or the leg-wise stop-loss is hit, whichever comes first.",
+      "category": "MOMENTUM",
+      "structure": "SINGLE_LONG",
+      "bias": "BULLISH",
+      "optionSide": "CALL",
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "ACTIVE",
+      "health": "DEGRADED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 40000,
+        "declaredMaxDrawdown": 15690
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "MOMENTUM",
+          "status": "ACTIVE",
+          "health": "DEGRADED",
+          "optionType": "CALL",
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 1,
+          "instrumentGroups": [
+            [
+              "NFO:NIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [
+        "INDICATOR_PARAMS_UNSPECIFIED",
+        "TIMEFRAME_USES_ENGINE_DEFAULT"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "op": "ALL",
+                "items": [
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "BBANDS",
+                      "output": "upper",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "SUPERTREND",
+                      "output": "value",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "RSI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": 70
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "CCI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": 141
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "PRICE",
+                      "field": "high",
+                      "bar": "PREVIOUS",
+                      "timeframe": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "PIVOT_POINTS",
+                      "output": "R1",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": "09:21:00",
+                      "type": "TIME"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "ADX",
+                      "output": "adx",
+                      "params": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "const": 33
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "volume",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": 100000
+                    }
+                  }
+                ]
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "PREMIUM",
+                      "premium": 240,
+                      "comparison": "NEAREST"
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "AMOUNT",
+                    "value": 13500,
+                    "basis": "POSITION_TOTAL"
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "left": {
+                  "source": "PRICE",
+                  "field": "close",
+                  "bar": "CURRENT",
+                  "timeframe": null
+                },
+                "operator": "IS_BELOW",
+                "right": {
+                  "source": "INDICATOR",
+                  "code": "SUPERTREND",
+                  "output": "value",
+                  "params": null
+                }
+              }
+            },
+            "adjustments": [],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:15",
+            "exitTime": "15:14"
+          },
+          "maxTradesPerDay": 10,
+          "expiryHandling": {}
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 26,
+          "winningTrades": 12,
+          "losingTrades": 14,
+          "winRatePct": 46.15,
+          "netPnl": -2694.05,
+          "profitFactor": 0.1,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "DEGRADED",
+          "reliabilityFlags": [
+            "LOW_SAMPLE",
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Confirm the trend",
+          "description": "Checks that Nifty is in a strong uptrend with expanding volatility, using Signals such as Super Trend and Bollinger Bands."
+        },
+        {
+          "title": "Validate the breakout",
+          "description": "Confirms momentum and a push above key resistance and recent highs, using Signals such as RSI, CCI, ADX and Pivot Points, along with a volume check for liquidity."
+        },
+        {
+          "title": "Buy the call",
+          "description": "Enters a Nifty call option around \u20b9240 premium once the trend and breakout both line up."
+        },
+        {
+          "title": "Manage the risk",
+          "description": "Exits when price closes below Super Trend or the leg-wise stop-loss is hit, whichever comes first."
+        }
+      ]
+    },
+    {
+      "code": "nifty_trend_catcher_v1",
+      "name": "Nifty Trend Catcher",
+      "description": "Watches both directions: Uses Super Trend, Bollinger Bands, RSI, and CCI to monitor Nifty for either a bullish breakout or a bearish breakdown, and commits to whichever triggers first. Validates the move: Confirms the breakout past key Pivot Point levels and recent highs or lows before committing to a trade. Buys the option: Enters a call for a bullish move or a put for a bearish move, around 0.66 delta, once the signals line up. Manages the risk: Exits when Super Trend reverses or the option loses 10% of its value, whichever comes first. If the trade exits in a loss, a defined opposite-side trade may follow with double the initial quantity if the reversal trade is confirmed.",
+      "category": "TREND",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "ACTIVE",
+      "health": "DEGRADED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 45000,
+        "declaredMaxDrawdown": 21037
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "TREND",
+          "status": "ACTIVE",
+          "health": "DEGRADED",
+          "optionType": null,
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 3,
+          "instrumentGroups": [
+            [
+              "NFO:NIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [
+        "INDICATOR_PARAMS_UNSPECIFIED",
+        "TIMEFRAME_USES_ENGINE_DEFAULT",
+        "TIME_EQUALS_NEEDS_REACHED_SEMANTICS"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "op": "ALL",
+                "items": [
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "BBANDS",
+                      "output": "middle",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "SUPERTREND",
+                      "output": "value",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "RSI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": 70
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "CCI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": 120
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "PRICE",
+                      "field": "high",
+                      "bar": "PREVIOUS",
+                      "timeframe": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": "09:19:00",
+                      "type": "TIME"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "const": "15:14:00",
+                      "type": "TIME"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "PRICE",
+                      "field": "open",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "PIVOT_POINTS",
+                      "output": "R1",
+                      "params": null
+                    }
+                  }
+                ]
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "DELTA",
+                      "delta": 0.66,
+                      "comparison": "NEAREST"
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 10,
+                    "basis": "ENTRY_PREMIUM"
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "op": "ANY",
+                "items": [
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "EQUALS",
+                    "right": {
+                      "const": "15:24:00",
+                      "type": "TIME"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "CROSSES_BELOW",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "SUPERTREND",
+                      "output": "value",
+                      "params": null
+                    }
+                  }
+                ]
+              }
+            },
+            "adjustments": [
+              {
+                "key": "A1",
+                "when": {
+                  "op": "ALL",
+                  "items": [
+                    {
+                      "left": {
+                        "source": "POSITION",
+                        "caseKey": "0",
+                        "legId": "1",
+                        "field": "hasExitedInLoss"
+                      },
+                      "operator": "EQUALS",
+                      "right": {
+                        "const": 1
+                      }
+                    },
+                    {
+                      "left": {
+                        "source": "PRICE",
+                        "field": "close",
+                        "bar": "CURRENT",
+                        "timeframe": null
+                      },
+                      "operator": "IS_BELOW",
+                      "right": {
+                        "source": "INDICATOR",
+                        "code": "PIVOT_POINTS",
+                        "output": "R1",
+                        "params": null
+                      }
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "type": "OPEN_LEG",
+                    "legId": "2",
+                    "side": "BUY",
+                    "instrument": {
+                      "kind": "OPTION",
+                      "optionType": "PE",
+                      "expiry": {
+                        "cycle": "WEEKLY",
+                        "index": 1
+                      },
+                      "strike": {
+                        "selector": "DELTA",
+                        "delta": 0.66,
+                        "comparison": "NEAREST"
+                      }
+                    },
+                    "quantity": {
+                      "unit": "LOT",
+                      "value": 2
+                    },
+                    "stopLoss": {
+                      "type": "PERCENT",
+                      "value": 10,
+                      "basis": "ENTRY_PREMIUM"
+                    },
+                    "extras": {
+                      "uiConfigs": {
+                        "quickAdjustments": []
+                      }
+                    }
+                  }
+                ]
+              }
+            ],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          },
+          {
+            "key": "1",
+            "entry": {
+              "when": {
+                "op": "ALL",
+                "items": [
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "BBANDS",
+                      "output": "middle",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "SUPERTREND",
+                      "output": "value",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "RSI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "const": 30
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "CCI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "const": -120
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "source": "PRICE",
+                      "field": "low",
+                      "bar": "PREVIOUS",
+                      "timeframe": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": "09:19:00",
+                      "type": "TIME"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "const": "15:14:00",
+                      "type": "TIME"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "source": "PRICE",
+                      "field": "open",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "PIVOT_POINTS",
+                      "output": "S1",
+                      "params": null
+                    }
+                  }
+                ]
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "PE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "DELTA",
+                      "delta": 0.66,
+                      "comparison": "NEAREST"
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 10,
+                    "basis": "ENTRY_PREMIUM"
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "op": "ANY",
+                "items": [
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "EQUALS",
+                    "right": {
+                      "const": "15:24:00",
+                      "type": "TIME"
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "CROSSES_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "SUPERTREND",
+                      "output": "value",
+                      "params": null
+                    }
+                  }
+                ]
+              }
+            },
+            "adjustments": [
+              {
+                "key": "A1",
+                "when": {
+                  "op": "ALL",
+                  "items": [
+                    {
+                      "left": {
+                        "source": "POSITION",
+                        "caseKey": "1",
+                        "legId": "1",
+                        "field": "hasExitedInLoss"
+                      },
+                      "operator": "EQUALS",
+                      "right": {
+                        "const": 1
+                      }
+                    },
+                    {
+                      "left": {
+                        "source": "PRICE",
+                        "field": "close",
+                        "bar": "CURRENT",
+                        "timeframe": null
+                      },
+                      "operator": "IS_ABOVE",
+                      "right": {
+                        "source": "INDICATOR",
+                        "code": "PIVOT_POINTS",
+                        "output": "S1",
+                        "params": null
+                      }
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "type": "OPEN_LEG",
+                    "legId": "2",
+                    "side": "BUY",
+                    "instrument": {
+                      "kind": "OPTION",
+                      "optionType": "CE",
+                      "expiry": {
+                        "cycle": "WEEKLY",
+                        "index": 1
+                      },
+                      "strike": {
+                        "selector": "DELTA",
+                        "delta": 0.66,
+                        "comparison": "NEAREST"
+                      }
+                    },
+                    "quantity": {
+                      "unit": "LOT",
+                      "value": 2
+                    },
+                    "stopLoss": {
+                      "type": "PERCENT",
+                      "value": 10,
+                      "basis": "ENTRY_PREMIUM"
+                    },
+                    "extras": {
+                      "uiConfigs": {
+                        "quickAdjustments": []
+                      }
+                    }
+                  }
+                ]
+              }
+            ],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:15",
+            "exitTime": "15:14"
+          },
+          "maxTradesPerDay": 2,
+          "expiryHandling": {},
+          "dayStopGain": {
+            "type": "AMOUNT",
+            "value": 1500
+          }
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 48,
+          "winningTrades": 22,
+          "losingTrades": 26,
+          "winRatePct": 45.83,
+          "netPnl": 3275.7,
+          "profitFactor": 0.96,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "DEGRADED",
+          "reliabilityFlags": [
+            "PF_PNL_INCONSISTENT",
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Watches both directions",
+          "description": "Uses Super Trend, Bollinger Bands, RSI, and CCI to monitor Nifty for either a bullish breakout or a bearish breakdown, and commits to whichever triggers first."
+        },
+        {
+          "title": "Validates the move",
+          "description": "Confirms the breakout past key Pivot Point levels and recent highs or lows before committing to a trade."
+        },
+        {
+          "title": "Buys the option",
+          "description": "Enters a call for a bullish move or a put for a bearish move, around 0.66 delta, once the signals line up."
+        },
+        {
+          "title": "Manages the risk",
+          "description": "Exits when Super Trend reverses or the option loses 10% of its value, whichever comes first. If the trade exits in a loss, a defined opposite-side trade may follow with double the initial quantity if the reversal trade is confirmed."
+        }
+      ]
+    },
+    {
+      "code": "banknifty_bullish_buying_v1",
+      "name": "Bank Nifty Bullish Buying",
+      "description": "Confirm the trend: Checks that Bank Nifty is in an uptrend with strong momentum behind it, using Signals such as Super Trend, Bollinger Bands, RSI and CCI. Validate the breakout: Confirms price has pushed above key resistance and recent highs, using Signals such as Camarilla Pivot Points, before committing to a trade. Buy the call: Enters a Bank Nifty call option around 0.61 delta once the trend and breakout both line up. Manage the risk: Exits when price closes below Super Trend or the option loses 30%, whichever comes first.",
+      "category": "MOMENTUM",
+      "structure": "SINGLE_LONG",
+      "bias": "BULLISH",
+      "optionSide": "CALL",
+      "markets": [
+        "BANKNIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "ACTIVE",
+      "health": "DEGRADED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 45000,
+        "declaredMaxDrawdown": 17580
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "MOMENTUM",
+          "status": "ACTIVE",
+          "health": "DEGRADED",
+          "optionType": "CALL",
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 4,
+          "instrumentGroups": [
+            [
+              "NFO:BANKNIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [
+        "INDICATOR_PARAMS_UNSPECIFIED",
+        "TIMEFRAME_USES_ENGINE_DEFAULT",
+        "TIME_EQUALS_NEEDS_REACHED_SEMANTICS"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "op": "ALL",
+                "items": [
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "SUPERTREND",
+                      "output": "value",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "BBANDS",
+                      "output": "upper",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "RSI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": 70
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "INDICATOR",
+                      "code": "CCI",
+                      "output": "value",
+                      "params": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "const": 120
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "PIVOT_POINTS",
+                      "output": "R4",
+                      "params": {
+                        "variant": "CAMARILLA"
+                      }
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_ABOVE",
+                    "right": {
+                      "source": "PRICE",
+                      "field": "high",
+                      "bar": "PREVIOUS",
+                      "timeframe": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "const": "15:24:00",
+                      "type": "TIME"
+                    }
+                  }
+                ]
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "MONTHLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "DELTA",
+                      "delta": 0.61,
+                      "comparison": "NEAREST"
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 30,
+                    "basis": "ENTRY_PREMIUM"
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "op": "ANY",
+                "items": [
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "SUPERTREND",
+                      "output": "value",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "TIME",
+                      "field": "timeOfDay"
+                    },
+                    "operator": "EQUALS",
+                    "right": {
+                      "const": "15:24:00",
+                      "type": "TIME"
+                    }
+                  }
+                ]
+              }
+            },
+            "adjustments": [],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:15",
+            "exitTime": "15:14"
+          },
+          "maxTradesPerDay": 2,
+          "expiryHandling": {}
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 26,
+          "winningTrades": 11,
+          "losingTrades": 15,
+          "winRatePct": 42.31,
+          "netPnl": -940.65,
+          "profitFactor": 0.08,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "DEGRADED",
+          "reliabilityFlags": [
+            "LOW_SAMPLE",
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Confirm the trend",
+          "description": "Checks that Bank Nifty is in an uptrend with strong momentum behind it, using Signals such as Super Trend, Bollinger Bands, RSI and CCI."
+        },
+        {
+          "title": "Validate the breakout",
+          "description": "Confirms price has pushed above key resistance and recent highs, using Signals such as Camarilla Pivot Points, before committing to a trade."
+        },
+        {
+          "title": "Buy the call",
+          "description": "Enters a Bank Nifty call option around 0.61 delta once the trend and breakout both line up."
+        },
+        {
+          "title": "Manage the risk",
+          "description": "Exits when price closes below Super Trend or the option loses 30%, whichever comes first."
+        }
+      ]
+    },
+    {
+      "code": "nifty_delta_strangle_v1",
+      "name": "Nifty Intraday Delta Based Strangle",
+      "description": "Open the position: At a fixed time in the session, sells a call and a put chosen by delta and buys farther-out options on both sides as protection. Earn through the session: Holds the hedged position to collect premium as the options lose value through the day. Manage the risk: Each sold option has its own stop-loss with trailing, and profit-booking locks in gains when the move goes its way. Exit before close: All positions are squared off before the market ends.",
+      "category": "PREMIUM_SELLING",
+      "structure": "IRON_CONDOR",
+      "bias": "NEUTRAL",
+      "optionSide": "BOTH",
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "SUSPENDED",
+      "health": "SUSPENDED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 250000,
+        "declaredMaxDrawdown": 25000
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "SHORT_STRANGLE",
+          "status": "ACTIVE",
+          "health": "SUSPENDED",
+          "optionType": null,
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 17,
+          "instrumentGroups": [
+            [
+              "NFO:NIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [
+        "TIME_EQUALS_NEEDS_REACHED_SEMANTICS",
+        "STRUCTURE_DERIVED_FROM_LEGS:SHORT_STRANGLE->IRON_CONDOR"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "left": {
+                  "source": "TIME",
+                  "field": "timeOfDay"
+                },
+                "operator": "EQUALS",
+                "right": {
+                  "const": "10:00:00",
+                  "type": "TIME"
+                }
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "SELL",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "PE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "DELTA",
+                      "delta": 0.4,
+                      "comparison": "NEAREST"
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 20,
+                    "basis": "ENTRY_PREMIUM",
+                    "trail": {
+                      "type": "LINEAR",
+                      "adjustValue": 5,
+                      "trailingValue": 10
+                    }
+                  },
+                  "target": {
+                    "type": "PERCENT",
+                    "value": 100,
+                    "basis": "ENTRY_PREMIUM"
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                },
+                {
+                  "legId": "2",
+                  "side": "SELL",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "DELTA",
+                      "delta": 0.4,
+                      "comparison": "NEAREST"
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 20,
+                    "basis": "ENTRY_PREMIUM",
+                    "trail": {
+                      "type": "LINEAR",
+                      "adjustValue": 5,
+                      "trailingValue": 10
+                    }
+                  },
+                  "target": {
+                    "type": "PERCENT",
+                    "value": 100,
+                    "basis": "ENTRY_PREMIUM"
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                },
+                {
+                  "legId": "3",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "PE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "DELTA",
+                      "delta": 0.15,
+                      "comparison": "NEAREST"
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                },
+                {
+                  "legId": "4",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "DELTA",
+                      "delta": 0.15,
+                      "comparison": "NEAREST"
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "left": {
+                  "source": "TIME",
+                  "field": "timeOfDay"
+                },
+                "operator": "EQUALS",
+                "right": {
+                  "const": "14:15:00",
+                  "type": "TIME"
+                }
+              }
+            },
+            "adjustments": [],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:15",
+            "exitTime": "15:14"
+          },
+          "maxTradesPerDay": 1,
+          "expiryHandling": {}
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 19,
+          "winningTrades": 8,
+          "losingTrades": 11,
+          "winRatePct": 42.11,
+          "netPnl": -1005.05,
+          "profitFactor": 0.13,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "SUSPENDED",
+          "reliabilityFlags": [
+            "LOW_SAMPLE",
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Open the position",
+          "description": "At a fixed time in the session, sells a call and a put chosen by delta and buys farther-out options on both sides as protection."
+        },
+        {
+          "title": "Earn through the session",
+          "description": "Holds the hedged position to collect premium as the options lose value through the day."
+        },
+        {
+          "title": "Manage the risk",
+          "description": "Each sold option has its own stop-loss with trailing, and profit-booking locks in gains when the move goes its way."
+        },
+        {
+          "title": "Exit before close",
+          "description": "All positions are squared off before the market ends."
+        }
+      ]
+    },
+    {
+      "code": "nifty_credit_spread_ce_v1",
+      "name": "Nifty Bear Call Credit Spread",
+      "description": "Checks for weakness: Uses Super Trend and Pivot Points to confirm Nifty has broken below a support level and is turning bearish. Places both legs: Sells the ITM 2 option to collect premium, buys the OTM 8 option to keep risk defined. Exits: Closes the trade when Super Trend flips direction, or by the set exit time* - whichever comes first.",
+      "category": "PREMIUM_SELLING",
+      "structure": "BEAR_CALL_SPREAD",
+      "bias": "BEARISH",
+      "optionSide": "CALL",
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "SUSPENDED",
+      "health": "SUSPENDED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 85000,
+        "declaredMaxDrawdown": 26002
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "BEAR_CALL_SPREAD",
+          "status": "ACTIVE",
+          "health": "SUSPENDED",
+          "optionType": "CALL",
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 7,
+          "instrumentGroups": [
+            [
+              "NFO:NIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [
+        "INDICATOR_PARAMS_UNSPECIFIED",
+        "TIMEFRAME_USES_ENGINE_DEFAULT"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "op": "ALL",
+                "items": [
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "SUPERTREND",
+                      "output": "value",
+                      "params": null
+                    }
+                  },
+                  {
+                    "left": {
+                      "source": "PRICE",
+                      "field": "close",
+                      "bar": "CURRENT",
+                      "timeframe": null
+                    },
+                    "operator": "IS_BELOW",
+                    "right": {
+                      "source": "INDICATOR",
+                      "code": "PIVOT_POINTS",
+                      "output": "S1",
+                      "params": null
+                    }
+                  }
+                ]
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "SELL",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": -2
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                },
+                {
+                  "legId": "2",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": 8
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "left": {
+                  "source": "PRICE",
+                  "field": "close",
+                  "bar": "CURRENT",
+                  "timeframe": null
+                },
+                "operator": "CROSSES_ABOVE",
+                "right": {
+                  "source": "INDICATOR",
+                  "code": "SUPERTREND",
+                  "output": "value",
+                  "params": null
+                }
+              }
+            },
+            "adjustments": [],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:15",
+            "exitTime": "15:14"
+          },
+          "maxTradesPerDay": 2,
+          "expiryHandling": {}
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 17,
+          "winningTrades": 7,
+          "losingTrades": 10,
+          "winRatePct": 41.18,
+          "netPnl": 3531.25,
+          "profitFactor": 0.0,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "SUSPENDED",
+          "reliabilityFlags": [
+            "LOW_SAMPLE",
+            "PF_PNL_INCONSISTENT",
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Checks for weakness",
+          "description": "Uses Super Trend and Pivot Points to confirm Nifty has broken below a support level and is turning bearish."
+        },
+        {
+          "title": "Places both legs",
+          "description": "Sells the ITM 2 option to collect premium, buys the OTM 8 option to keep risk defined."
+        },
+        {
+          "title": "Exits",
+          "description": "Closes the trade when Super Trend flips direction, or by the set exit time* - whichever comes first."
+        }
+      ]
+    },
+    {
+      "code": "paper_research_ema_pullback_v1",
+      "name": "Paper Research: EMA Trend Pullback",
+      "description": "Experimental long-call/put adaptation. Requires aligned rising/falling EMA 9/21, a pullback to EMA 9, then a closed-bar continuation. Not a proven profitable strategy.",
+      "category": "MOMENTUM",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "NIFTY",
+        "BANKNIFTY",
+        "SENSEX"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": null,
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER"
+      ],
+      "lifecycleStatus": "ACTIVE",
+      "health": "DEGRADED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "EVALUATOR",
+      "riskProfile": {
+        "riskCategory": null,
+        "marginAmount": null,
+        "declaredMaxDrawdown": null
+      },
+      "references": [
+        {
+          "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema",
+          "scope": "Indicator mechanics and trend/support interpretation, not evidence of profitable option trading.",
+          "title": "Fidelity: Exponential Moving Average"
+        },
+        {
+          "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/atr",
+          "scope": "Volatility measurement and stop construction; not a return forecast.",
+          "title": "Fidelity: Average True Range"
+        }
+      ],
+      "riskNotes": [
+        "One long-option lot only; no averaging down or multi-leg execution.",
+        "No expiry-day entries. Bid/ask depth, real Greeks and costs are required.",
+        "Premium stop uses a delta-times-ATR approximation, not an option pricing forecast.",
+        "V3 position policy owns exits; local stops can fill worse after gaps."
+      ],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "MOMENTUM",
+          "status": "ACTIVE",
+          "health": "DEGRADED",
+          "optionType": null,
+          "tradingModesRaw": "INTRADAY",
+          "researchStatus": "PAPER_HYPOTHESIS",
+          "executionModes": [
+            "PAPER"
+          ]
+        }
+      },
+      "reviewFlags": [
+        "RESEARCH_HYPOTHESIS_NOT_VALIDATED",
+        "EVALUATOR_HANDLER_REQUIRED"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "EVALUATOR",
+        "evaluator": "EMA_PULLBACK",
+        "parameters": {
+          "fastEma": 9,
+          "slowEma": 21,
+          "atrPeriod": 14,
+          "rewardRisk": 2.0,
+          "entryCutoff": "14:30",
+          "maxAbsDelta": 0.7,
+          "minAbsDelta": 0.35,
+          "maxSpreadPct": 2.0,
+          "stopAtrMultiple": 1.5,
+          "minCompletedBars": 35,
+          "maxPremiumRiskPct": 20.0,
+          "minPremiumRiskPct": 5.0,
+          "maxQuoteAgeSeconds": 60,
+          "maxFrictionToReward": 0.25,
+          "openingRangeMinutes": 15,
+          "maxCapitalAllocationPct": 20.0
+        },
+        "riskPolicy": {
+          "stopMode": "EVALUATOR_OWNED"
+        },
+        "extras": {
+          "reviewedOn": "2026-09-25",
+          "version": 1,
+          "performanceClaims": null
+        }
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 10,
+          "winningTrades": 4,
+          "losingTrades": 6,
+          "winRatePct": 40.0,
+          "netPnl": -2689.19,
+          "profitFactor": 0.15,
+          "maxDrawdown": 2689.19,
+          "legacyHealth": "DEGRADED",
+          "reliabilityFlags": [
+            "LOW_SAMPLE"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "nifty_ema_directional_put_v1",
+      "name": "EMA-Based Intraday Directional",
+      "description": "Check for bearish trend: Confirms Nifty is turning bearish when the 9 EMA crosses below the 36 EMA, signalling downward momentum. Buy the put: Enters a Nifty ATM put option once the crossover confirms. Manage the risk: Exits when the 9 EMA crosses back above the 36 EMA, or the stop loss hits, or the target is reached, whichever comes first.",
+      "category": "MOMENTUM",
+      "structure": "SINGLE_LONG",
+      "bias": "BEARISH",
+      "optionSide": "PUT",
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "SUSPENDED",
+      "health": "SUSPENDED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 30000,
+        "declaredMaxDrawdown": 15000
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "MOMENTUM",
+          "status": "ACTIVE",
+          "health": "SUSPENDED",
+          "optionType": "PUT",
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 16,
+          "instrumentGroups": [
+            [
+              "NFO:NIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "left": {
+                  "source": "INDICATOR",
+                  "code": "EMA",
+                  "output": "value",
+                  "instance": "fast",
+                  "params": {
+                    "period": 9
+                  },
+                  "paramsSource": "HOW_IT_WORKS_TEXT"
+                },
+                "operator": "IS_BELOW",
+                "right": {
+                  "source": "INDICATOR",
+                  "code": "EMA",
+                  "output": "value",
+                  "instance": "slow",
+                  "params": {
+                    "period": 36
+                  },
+                  "paramsSource": "HOW_IT_WORKS_TEXT"
+                }
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "PE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": 0
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 5,
+                    "basis": "ENTRY_PREMIUM",
+                    "trail": {
+                      "type": "LINEAR",
+                      "adjustValue": 5,
+                      "trailingValue": 10
+                    }
+                  },
+                  "target": {
+                    "type": "PERCENT",
+                    "value": 100,
+                    "basis": "ENTRY_PREMIUM"
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "left": {
+                  "source": "INDICATOR",
+                  "code": "EMA",
+                  "output": "value",
+                  "instance": "fast",
+                  "params": {
+                    "period": 9
+                  },
+                  "paramsSource": "HOW_IT_WORKS_TEXT"
+                },
+                "operator": "IS_ABOVE",
+                "right": {
+                  "source": "INDICATOR",
+                  "code": "EMA",
+                  "output": "value",
+                  "instance": "slow",
+                  "params": {
+                    "period": 36
+                  },
+                  "paramsSource": "HOW_IT_WORKS_TEXT"
+                }
+              }
+            },
+            "adjustments": [],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:30",
+            "exitTime": "14:15"
+          },
+          "maxTradesPerDay": 3,
+          "expiryHandling": {}
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 43,
+          "winningTrades": 17,
+          "losingTrades": 26,
+          "winRatePct": 39.53,
+          "netPnl": 2049.6,
+          "profitFactor": 1.05,
+          "maxDrawdown": 29997.3,
+          "legacyHealth": "SUSPENDED",
+          "reliabilityFlags": []
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Check for bearish trend",
+          "description": "Confirms Nifty is turning bearish when the 9 EMA crosses below the 36 EMA, signalling downward momentum."
+        },
+        {
+          "title": "Buy the put",
+          "description": "Enters a Nifty ATM put option once the crossover confirms."
+        },
+        {
+          "title": "Manage the risk",
+          "description": "Exits when the 9 EMA crosses back above the 36 EMA, or the stop loss hits, or the target is reached, whichever comes first."
+        }
+      ]
+    },
+    {
+      "code": "nifty_short_strangle_v1",
+      "name": "Nifty Short Strangle",
+      "description": "Open the position: At a fixed time after the open, once early volatility settles, sells a call and a put and buys farther-out options on both sides as protection. Earn through the session: Holds the hedged position to collect premium as the options lose value through the day. Manage the risk: Each sold option has its own stop-loss, and a strategy-level daily stop-loss caps the total loss for the day. Exit before close: All positions are squared off before the market ends.",
+      "category": "PREMIUM_SELLING",
+      "structure": "IRON_CONDOR",
+      "bias": "NEUTRAL",
+      "optionSide": "BOTH",
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "ACTIVE",
+      "health": "DEGRADED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 250000,
+        "declaredMaxDrawdown": 28376
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "SHORT_STRANGLE",
+          "status": "ACTIVE",
+          "health": "DEGRADED",
+          "optionType": null,
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 2,
+          "instrumentGroups": [
+            [
+              "NFO:NIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [
+        "TIME_EQUALS_NEEDS_REACHED_SEMANTICS",
+        "STRUCTURE_DERIVED_FROM_LEGS:SHORT_STRANGLE->IRON_CONDOR"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "left": {
+                  "source": "TIME",
+                  "field": "timeOfDay"
+                },
+                "operator": "EQUALS",
+                "right": {
+                  "const": "09:20:00",
+                  "type": "TIME"
+                }
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": 20
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                },
+                {
+                  "legId": "2",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "PE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": -20
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                },
+                {
+                  "legId": "3",
+                  "side": "SELL",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": 2
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 50,
+                    "basis": "ENTRY_PREMIUM"
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                },
+                {
+                  "legId": "4",
+                  "side": "SELL",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "PE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": -2
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 50,
+                    "basis": "ENTRY_PREMIUM"
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "left": {
+                  "source": "TIME",
+                  "field": "timeOfDay"
+                },
+                "operator": "EQUALS",
+                "right": {
+                  "const": "15:14:00",
+                  "type": "TIME"
+                }
+              }
+            },
+            "adjustments": [],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:15",
+            "exitTime": "15:14"
+          },
+          "maxTradesPerDay": 1,
+          "expiryHandling": {},
+          "strategyStopLoss": {
+            "type": "AMOUNT",
+            "value": 3000
+          }
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 29,
+          "winningTrades": 11,
+          "losingTrades": 18,
+          "winRatePct": 37.93,
+          "netPnl": -6486.65,
+          "profitFactor": 0.06,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "DEGRADED",
+          "reliabilityFlags": [
+            "LOW_SAMPLE",
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Open the position",
+          "description": "At a fixed time after the open, once early volatility settles, sells a call and a put and buys farther-out options on both sides as protection."
+        },
+        {
+          "title": "Earn through the session",
+          "description": "Holds the hedged position to collect premium as the options lose value through the day."
+        },
+        {
+          "title": "Manage the risk",
+          "description": "Each sold option has its own stop-loss, and a strategy-level daily stop-loss caps the total loss for the day."
+        },
+        {
+          "title": "Exit before close",
+          "description": "All positions are squared off before the market ends."
+        }
+      ]
+    },
+    {
+      "code": "vwap_pullback_v1",
+      "name": "VWAP Dynamic Pullback V1",
+      "description": "Descriptive legacy definition only (entry label and indicator list). Entry and exit rules are not specified, so it cannot be executed or evaluated.",
+      "category": "VWAP",
+      "structure": null,
+      "bias": null,
+      "optionSide": null,
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER"
+      ],
+      "lifecycleStatus": "DRAFT",
+      "health": "DEGRADED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "SUMMARY",
+      "riskProfile": {
+        "riskCategory": null,
+        "marginAmount": null,
+        "declaredMaxDrawdown": null,
+        "targetRr": 2.0,
+        "maxRiskPct": 18,
+        "lotSize": null
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "VWAP",
+          "status": "ACTIVE",
+          "health": "DEGRADED",
+          "optionType": null,
+          "tradingModesRaw": "INTRADAY"
+        }
+      },
+      "reviewFlags": [
+        "NOT_EXECUTABLE_SUMMARY_ONLY"
+      ],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "SUMMARY",
+        "summary": {
+          "entryLabel": "vwap_bounce",
+          "indicators": [
+            "VWAP",
+            "RSI_14",
+            "PRICE_ACTION"
+          ],
+          "targetRr": 2.0,
+          "maxRiskPct": 18,
+          "legs": null,
+          "lotSize": null,
+          "exchange": null
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 137,
+          "winningTrades": 51,
+          "losingTrades": 86,
+          "winRatePct": 37.23,
+          "netPnl": -8562.62,
+          "profitFactor": 0.87,
+          "maxDrawdown": 25809.75,
+          "legacyHealth": "DEGRADED",
+          "reliabilityFlags": []
+        }
+      ]
+    },
+    {
+      "code": "nifty_bearish_theta_capture_v1",
+      "name": "Nifty Bearish Theta Capture",
+      "description": "Check for bearish trend: Confirms Nifty is turning bearish when the 9 EMA crosses below the 20 EMA, signalling downward momentum. Place both legs: Sells the ATM option to collect the premium, then buys the OTM 20 option to keep risk defined. Manage the risk: Exits when the 9 EMA crosses back above the 20 EMA, the stop-loss hits, or by the set exit time, whichever comes first.",
+      "category": "PREMIUM_SELLING",
+      "structure": "BEAR_CALL_SPREAD",
+      "bias": "BEARISH",
+      "optionSide": "CALL",
+      "markets": [
+        "NIFTY"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "INTRADAY"
+      ],
+      "executionModes": [
+        "PAPER",
+        "LIVE"
+      ],
+      "lifecycleStatus": "SUSPENDED",
+      "health": "SUSPENDED",
+      "validationStatus": "UNTESTED",
+      "definitionFormat": "RULE_TREE",
+      "riskProfile": {
+        "riskCategory": "high_risk_high_reward",
+        "marginAmount": 85000,
+        "declaredMaxDrawdown": 20000
+      },
+      "references": [],
+      "riskNotes": [],
+      "tags": [],
+      "attributes": {},
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy": {
+          "originalType": "BEAR_CALL_SPREAD",
+          "status": "ACTIVE",
+          "health": "SUSPENDED",
+          "optionType": "CALL",
+          "tradingModesRaw": "INTRADAY",
+          "algoverse_id": 15,
+          "instrumentGroups": [
+            [
+              "NFO:NIFTY"
+            ]
+          ]
+        }
+      },
+      "reviewFlags": [],
+      "definition": {
+        "schemaVersion": 2,
+        "format": "RULE_TREE",
+        "isParallelCases": false,
+        "cases": [
+          {
+            "key": "0",
+            "entry": {
+              "when": {
+                "left": {
+                  "source": "INDICATOR",
+                  "code": "EMA",
+                  "output": "value",
+                  "instance": "fast",
+                  "params": {
+                    "period": 9
+                  },
+                  "paramsSource": "HOW_IT_WORKS_TEXT"
+                },
+                "operator": "IS_BELOW",
+                "right": {
+                  "source": "INDICATOR",
+                  "code": "EMA",
+                  "output": "value",
+                  "instance": "slow",
+                  "params": {
+                    "period": 20
+                  },
+                  "paramsSource": "HOW_IT_WORKS_TEXT"
+                }
+              },
+              "legs": [
+                {
+                  "legId": "1",
+                  "side": "SELL",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": 0
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "stopLoss": {
+                    "type": "PERCENT",
+                    "value": 15,
+                    "basis": "ENTRY_PREMIUM",
+                    "trail": {
+                      "type": "LINEAR",
+                      "adjustValue": 5,
+                      "trailingValue": 10
+                    }
+                  },
+                  "target": {
+                    "type": "PERCENT",
+                    "value": 100,
+                    "basis": "ENTRY_PREMIUM"
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": [
+                        {
+                          "action": "CloseLeg",
+                          "targets": [
+                            "2"
+                          ],
+                          "trigger": "ExitedInLoss"
+                        },
+                        {
+                          "action": "CloseLeg",
+                          "targets": [
+                            "2"
+                          ],
+                          "trigger": "ExitedInProfit"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "legId": "2",
+                  "side": "BUY",
+                  "instrument": {
+                    "kind": "OPTION",
+                    "optionType": "CE",
+                    "expiry": {
+                      "cycle": "WEEKLY",
+                      "index": 1
+                    },
+                    "strike": {
+                      "selector": "ATM_OFFSET",
+                      "steps": 20
+                    }
+                  },
+                  "quantity": {
+                    "unit": "LOT",
+                    "value": 1
+                  },
+                  "extras": {
+                    "uiConfigs": {
+                      "quickAdjustments": []
+                    }
+                  }
+                }
+              ]
+            },
+            "exit": {
+              "when": {
+                "left": {
+                  "source": "INDICATOR",
+                  "code": "EMA",
+                  "output": "value",
+                  "instance": "fast",
+                  "params": {
+                    "period": 9
+                  },
+                  "paramsSource": "HOW_IT_WORKS_TEXT"
+                },
+                "operator": "IS_ABOVE",
+                "right": {
+                  "source": "INDICATOR",
+                  "code": "EMA",
+                  "output": "value",
+                  "instance": "slow",
+                  "params": {
+                    "period": 20
+                  },
+                  "paramsSource": "HOW_IT_WORKS_TEXT"
+                }
+              }
+            },
+            "adjustments": [
+              {
+                "key": "A1",
+                "when": {
+                  "left": {
+                    "source": "POSITION",
+                    "caseKey": "0",
+                    "legId": "1",
+                    "field": "hasExitedInLoss"
+                  },
+                  "operator": "EQUALS",
+                  "right": {
+                    "const": 1
+                  }
+                },
+                "actions": [
+                  {
+                    "type": "CLOSE_LEG",
+                    "legId": "2"
+                  }
+                ],
+                "extras": {
+                  "uiConfigs": {
+                    "adjustmentMode": "quickAdjustment",
+                    "isAutoAdjustment": true
+                  }
+                }
+              },
+              {
+                "key": "A2",
+                "when": {
+                  "left": {
+                    "source": "POSITION",
+                    "caseKey": "0",
+                    "legId": "1",
+                    "field": "hasExitedInProfit"
+                  },
+                  "operator": "EQUALS",
+                  "right": {
+                    "const": 1
+                  }
+                },
+                "actions": [
+                  {
+                    "type": "CLOSE_LEG",
+                    "legId": "2"
+                  }
+                ],
+                "extras": {
+                  "uiConfigs": {
+                    "adjustmentMode": "quickAdjustment",
+                    "isAutoAdjustment": true
+                  }
+                }
+              }
+            ],
+            "extras": {
+              "uiConfigs": {
+                "isMoveToCost": false
+              }
+            }
+          }
+        ],
+        "bounds": {
+          "session": {
+            "entryTime": "09:45",
+            "exitTime": "14:15"
+          },
+          "maxTradesPerDay": 3,
+          "expiryHandling": {}
+        },
+        "riskPolicy": {
+          "stopMode": "STRATEGY_FIXED"
+        },
+        "extras": {}
+      },
+      "performanceSnapshots": [
+        {
+          "source": "LEGACY_IMPORT",
+          "domain": "UNKNOWN",
+          "asOf": null,
+          "totalTrades": 25,
+          "winningTrades": 9,
+          "losingTrades": 16,
+          "winRatePct": 36.0,
+          "netPnl": 1038.7,
+          "profitFactor": 0.54,
+          "maxDrawdown": 450.0,
+          "legacyHealth": "SUSPENDED",
+          "reliabilityFlags": [
+            "LOW_SAMPLE",
+            "PF_PNL_INCONSISTENT",
+            "DRAWDOWN_PLACEHOLDER"
+          ]
+        }
+      ],
+      "howItWorks": [
+        {
+          "title": "Check for bearish trend",
+          "description": "Confirms Nifty is turning bearish when the 9 EMA crosses below the 20 EMA, signalling downward momentum."
+        },
+        {
+          "title": "Place both legs",
+          "description": "Sells the ATM option to collect the premium, then buys the OTM 20 option to keep risk defined."
+        },
+        {
+          "title": "Manage the risk",
+          "description": "Exits when the 9 EMA crosses back above the 20 EMA, the stop-loss hits, or by the set exit time, whichever comes first."
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "code": "EMPIRICAL-CALL-REGIME-001",
+      "name": "Avoid calls outside a confirmed uptrend",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "MARKET_REGIME",
+      "action": "AVOID",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "NIFTY",
+          "BANKNIFTY",
+          "SENSEX"
+        ],
+        "optionSides": [
+          "CALL"
+        ],
+        "tradingModes": [
+          "INTRADAY",
+          "SHORT_TERM"
+        ],
+        "executionDomains": [
+          "LIVE",
+          "PAPER"
+        ]
+      },
+      "conditionText": "Avoid CALL option entries when market regime shows RANGING, BEARISH or SIDEWAYS conditions. Empirical data from 52 CALL paper trades shows 34.6% aggregate win rate (20-24% in bearish/ranging markets) vs 51.3% on PUT trades in same period. STRONG_COUNTER_TREND failure pattern detected 14 times on vwap_pullback_v1. Only enter CALL when regime is confirmed TRENDING_UP with ADX > 20 and spot > VWAP.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "INDICATOR",
+            "code": "MARKET_REGIME",
+            "output": "value",
+            "params": null
+          },
+          "operator": "IN",
+          "right": {
+            "const": [
+              "RANGING",
+              "SIDEWAYS",
+              "BEARISH"
+            ]
+          }
+        },
+        "unless": {
+          "op": "ALL",
+          "items": [
+            {
+              "left": {
+                "source": "INDICATOR",
+                "code": "MARKET_REGIME",
+                "output": "value",
+                "params": null
+              },
+              "operator": "EQUALS",
+              "right": {
+                "const": "TRENDING_UP"
+              }
+            },
+            {
+              "left": {
+                "source": "INDICATOR",
+                "code": "ADX",
+                "output": "adx",
+                "params": null
+              },
+              "operator": "IS_ABOVE",
+              "right": {
+                "param": "minAdx"
+              }
+            },
+            {
+              "left": {
+                "source": "PRICE",
+                "field": "close",
+                "bar": "CURRENT",
+                "timeframe": null
+              },
+              "operator": "IS_ABOVE",
+              "right": {
+                "source": "INDICATOR",
+                "code": "VWAP",
+                "output": "currentDay",
+                "params": null
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "minAdx": 20
+        },
+        "effect": null
+      },
+      "evidence": {
+        "count": 52,
+        "successRatePct": 35.0,
+        "failureRatePct": 65.0,
+        "justification": "Empirical data from 52 CALL paper trades shows 34.6% aggregate win rate."
+      },
+      "reviewBy": null,
+      "executable": false,
+      "reviewFlags": [
+        "REGIME_DEPENDENT_EVIDENCE"
+      ],
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy_ids": [
+          "EMPIRICAL-CALL-REGIME-001",
+          "EMPIRICAL-CALL-REGIME-001-PAPER"
+        ]
+      },
+      "enabled": true
+    },
+    {
+      "code": "EMPIRICAL-PUT-PREFERENCE-003",
+      "name": "Prefer puts over calls in sideways or bearish regimes",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "DIRECTION_PREFERENCE",
+      "action": "PREFER",
+      "priority": "MEDIUM",
+      "appliesTo": {
+        "markets": [
+          "NIFTY",
+          "BANKNIFTY",
+          "SENSEX"
+        ],
+        "optionSides": [
+          "CALL",
+          "PUT"
+        ],
+        "tradingModes": [
+          "INTRADAY",
+          "SHORT_TERM"
+        ],
+        "executionDomains": [
+          "LIVE"
+        ]
+      },
+      "conditionText": "Prefer PUT option entries over CALL entries when market regime is RANGING, SIDEWAYS, or BEARISH. In confirmed downtrend or sideways conditions, PUT entries have demonstrated significantly higher win rates and positive net P&L.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "INDICATOR",
+            "code": "MARKET_REGIME",
+            "output": "value",
+            "params": null
+          },
+          "operator": "IN",
+          "right": {
+            "const": [
+              "RANGING",
+              "SIDEWAYS",
+              "BEARISH"
+            ]
+          }
+        },
+        "effect": null
+      },
+      "evidence": {
+        "count": 91,
+        "successRatePct": 51.0,
+        "failureRatePct": 49.0,
+        "justification": "PUT win rate = 51.3% (net +7,089 INR) vs CALL win rate = 34.6% (net -10,533 INR)."
+      },
+      "reviewBy": null,
+      "executable": false,
+      "reviewFlags": [
+        "REGIME_DEPENDENT_EVIDENCE"
+      ],
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy_ids": [
+          "EMPIRICAL-PUT-PREFERENCE-003"
+        ]
+      },
+      "enabled": true
+    },
+    {
+      "code": "EMPIRICAL-SENSEX-NET-EV-002",
+      "name": "Require minimum gross premium movement for SENSEX trades",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "CAPITAL",
+      "action": "WATCH",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "SENSEX"
+        ],
+        "optionSides": [
+          "CALL",
+          "PUT"
+        ],
+        "tradingModes": [
+          "INTRADAY",
+          "SHORT_TERM"
+        ],
+        "executionDomains": [
+          "LIVE"
+        ]
+      },
+      "conditionText": "For SENSEX trades (BSE lot size = 10), require minimum gross premium target movement of 15 INR per unit (= 150 INR gross per lot) before entering. Round-trip transaction costs for SENSEX are ~83-90 INR per lot.",
+      "content": {
+        "require": {
+          "left": {
+            "source": "TRADE_PLAN",
+            "field": "grossTargetPerUnit"
+          },
+          "operator": "IS_ABOVE_OR_EQUAL",
+          "right": {
+            "const": 15
+          }
+        },
+        "effect": null
+      },
+      "evidence": {
+        "count": 3,
+        "successRatePct": 40.0,
+        "failureRatePct": 60.0,
+        "justification": "Observed in 3 recent SENSEX TARGET_HIT trades with negative net_pnl due to friction costs."
+      },
+      "reviewBy": null,
+      "executable": true,
+      "reviewFlags": [],
+      "provenance": {
+        "source": "LEGACY_IMPORT",
+        "legacy_ids": [
+          "EMPIRICAL-SENSEX-NET-EV-002"
+        ]
+      },
+      "enabled": true
+    }
+  ]
+}

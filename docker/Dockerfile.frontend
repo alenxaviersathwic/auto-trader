@@ -1,29 +1,11 @@
-# Stage 1: Build production React bundle
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-
-# Copy package descriptors
-COPY frontend/package*.json /app/
-
-# Install dependencies
-RUN npm install
-
-# Copy frontend source files
-COPY frontend/tsconfig.json frontend/tsconfig.node.json frontend/vite.config.ts frontend/index.html /app/
-COPY frontend/src /app/src
-
-# Build production assets
-RUN npm run build
-
-# Stage 2: Serve via Nginx
+# Production React SPA served via Nginx
 FROM nginx:alpine
 
 # Remove default nginx site
 RUN rm -rf /usr/share/nginx/html/*
 
-# Copy built artifacts from builder stage
-COPY --from=builder /app/dist /usr/share/nginx/html
+# Copy pre-built production bundle from frontend/dist
+COPY frontend/dist /usr/share/nginx/html
 
 # Copy custom Nginx configuration
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf

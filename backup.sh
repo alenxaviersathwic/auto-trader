@@ -40,7 +40,7 @@ docker exec "$POSTGRES_CONTAINER" pg_dump \
     --if-exists \
     --no-owner \
     --no-privileges \
-    "${EXCLUDE_FLAGS[@]}" \
+    ${EXCLUDE_FLAGS[@]+"${EXCLUDE_FLAGS[@]}"} \
     -d "$DB_NAME" | gzip -c > "$PENDING_BACKUP_GZ"
 
 gzip -t "$PENDING_BACKUP_GZ"
