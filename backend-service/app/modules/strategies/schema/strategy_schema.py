@@ -229,3 +229,31 @@ class RequirementsResponse(BaseModel):
     strategyId: int
     versionNo: int
     requirements: List[OperandRequirement] = Field(default_factory=list)
+
+
+class SimilarSearchRequest(BaseModel):
+    kind: str = "STRATEGY"
+    definition: Optional[Dict[str, Any]] = None
+    text: Optional[str] = None
+    meta: Optional[Dict[str, Any]] = None
+    topK: int = 5
+
+
+class AnalyzeStructureRequest(BaseModel):
+    definition: Dict[str, Any]
+
+
+class AnalyzeConflictsRequest(BaseModel):
+    kind: str = "STRATEGY"
+    definition: Dict[str, Any]
+    meta: Optional[Dict[str, Any]] = None
+
+
+class ExplainDefinitionRequest(BaseModel):
+    definition: Dict[str, Any]
+    meta: Optional[Dict[str, Any]] = None
+
+
+class DiffDefinitionsRequest(BaseModel):
+    before: Dict[str, Any]
+    after: Dict[str, Any]

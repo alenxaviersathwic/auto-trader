@@ -29,11 +29,21 @@ from app.modules.strategies.schema.strategy_schema import (
     StrategyVersionResponse,
     ValidateDefinitionRequest,
     ValidateDefinitionResponse,
+    SimilarSearchRequest,
+    AnalyzeStructureRequest,
+    AnalyzeConflictsRequest,
+    ExplainDefinitionRequest,
+    DiffDefinitionsRequest,
 )
 from app.modules.strategies.service.health_service import HealthService
 from app.modules.strategies.service.import_export_service import ImportExportService
 from app.modules.strategies.service.seed_service import SeedService
 from app.modules.strategies.service.strategy_service import StrategyService
+from app.modules.strategies.service.structure_analyzer import StructureAnalyzer
+from app.modules.strategies.service.conflict_analyzer import ConflictAnalyzer
+from app.modules.strategies.service.strategy_explainer import StrategyExplainer
+from app.modules.strategies.service.definition_differ import DefinitionDiffer
+from app.modules.strategies.service.similarity_service import SimilarityService
 
 strategy_router = APIRouter(prefix="/strategies", tags=["Strategies"])
 
@@ -41,6 +51,8 @@ _strategy_service = StrategyService()
 _health_service = HealthService()
 _seed_service = SeedService()
 _import_export_service = ImportExportService()
+_similarity_service = SimilarityService()
+_conflict_analyzer = ConflictAnalyzer()
 
 
 @strategy_router.post(
@@ -357,3 +369,80 @@ async def override_strategy_health(
 ):
     health_res = await _health_service.override_health(session, id, payload)
     return success(data=health_res, message="Strategy health overridden successfully")
+
+
+@strategy_router.post(
+    "/similar",
+    response_model=ApiResponse[list],
+    status_code=status.HTTP_200_OK,
+    summary="Find similar strategies by condition set, indicators, and structure",
+)
+async def find_similar_strategies(
+    payload: SimilarSearchRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    similars = await _similarity_service.find_similar_strategies(
+        session=session,
+        definition=payload.definition or {},
+        meta=payload.meta,
+        top_k=payload.topK,
+    )
+    return success(data=similars, message="Similar strategies found")
+
+
+@strategy_router.post(
+    "/analyze-structure",
+    response_model=ApiResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="Deterministic structure and risk analysis for strategy definition",
+)
+async def analyze_strategy_structure(
+    payload: AnalyzeStructureRequest,
+):
+    analysis = StructureAnalyzer.analyze(payload.definition)
+    return success(data=analysis, message="Structure analyzed successfully")
+
+
+@strategy_router.post(
+    "/analyze-conflicts",
+    response_model=ApiResponse[list],
+    status_code=status.HTTP_200_OK,
+    summary="Analyze conflicts against guardrails, time windows, and internal contradictions",
+)
+async def analyze_strategy_conflicts(
+    payload: AnalyzeConflictsRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    conflicts = await _conflict_analyzer.analyze_conflicts(
+        session=session,
+        kind="STRATEGY",
+        definition=payload.definition,
+        meta=payload.meta,
+    )
+    return success(data=conflicts, message="Strategy conflicts analyzed successfully")
+
+
+@strategy_router.post(
+    "/explain",
+    response_model=ApiResponse[str],
+    status_code=status.HTTP_200_OK,
+    summary="Deterministic English explanation (back-translation) of a strategy definition",
+)
+async def explain_strategy_definition(
+    payload: ExplainDefinitionRequest,
+):
+    explanation = StrategyExplainer.explain(payload.definition, payload.meta)
+    return success(data=explanation, message="Definition explained successfully")
+
+
+@strategy_router.post(
+    "/diff",
+    response_model=ApiResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="Compute structured diff and sentences between two strategy definitions",
+)
+async def diff_strategy_definitions(
+    payload: DiffDefinitionsRequest,
+):
+    diff_res = DefinitionDiffer.diff(payload.before, payload.after)
+    return success(data=diff_res, message="Definitions compared successfully")

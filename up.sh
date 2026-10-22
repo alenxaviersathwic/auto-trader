@@ -73,6 +73,14 @@ else
     echo " [OK] Ollama AI server is active and responsive."
 fi
 
+# Verify Qwen model on host Ollama
+if curl -fsS http://localhost:11434/api/tags 2>/dev/null | grep -q "qwen"; then
+    echo " [OK] Ollama Qwen model is ready on host system."
+else
+    echo " [INFO] Downloading Qwen model (qwen3:8b) into Ollama..."
+    ollama pull qwen3:8b || true
+fi
+
 echo ""
 echo "================================================================================"
 echo " ==> [BUILD] Compiling Backend & Frontend Bundles..."

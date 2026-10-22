@@ -42,7 +42,7 @@ class MenuRegistry {
   }
 }
 
-import { Users, TrendingUp } from "lucide-react";
+import { Users, TrendingUp, BotMessageSquare } from "lucide-react";
 
 export const menuRegistry = new MenuRegistry();
 
@@ -53,6 +53,15 @@ menuRegistry.register({
   path: "/strategies",
   icon: TrendingUp,
   order: 1,
+});
+
+// Register AI Master chat navigation item
+menuRegistry.register({
+  id: "master-chat",
+  label: "AI Master",
+  path: "/master",
+  icon: BotMessageSquare,
+  order: 5,
 });
 
 // Register Users Module navigation item

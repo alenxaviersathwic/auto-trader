@@ -24,6 +24,8 @@ dependencies = [
     "apscheduler>=3.10.4",
     "pytz>=2024.1",
     "python-dotenv>=1.0.1",
+    "langgraph>=0.2.0",
+    "langchain-core>=0.3.0",
 ]
 
 [project.optional-dependencies]

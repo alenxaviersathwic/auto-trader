@@ -37,6 +37,10 @@ services:
       SCHEDULER_TIMEZONE: Asia/Kolkata
       CORS_ORIGINS: '["*"]'
       LOG_LEVEL: INFO
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: qwen3:8b
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     volumes:

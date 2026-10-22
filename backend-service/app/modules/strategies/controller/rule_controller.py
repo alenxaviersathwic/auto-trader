@@ -16,11 +16,16 @@ from app.modules.strategies.schema.rule_schema import (
     RuleVersionFilter,
     RuleVersionResponse,
 )
+from app.modules.strategies.schema.strategy_schema import AnalyzeConflictsRequest, SimilarSearchRequest
+from app.modules.strategies.service.conflict_analyzer import ConflictAnalyzer
 from app.modules.strategies.service.rule_service import RuleService
+from app.modules.strategies.service.similarity_service import SimilarityService
 
 rule_router = APIRouter(prefix="/rules", tags=["Rules"])
 
 _rule_service = RuleService()
+_similarity_service = SimilarityService()
+_conflict_analyzer = ConflictAnalyzer()
 
 
 @rule_router.post(
@@ -121,3 +126,41 @@ async def list_rule_versions(
 ):
     versions_page = await _rule_service.list_versions(session, id, payload)
     return success(data=versions_page, message="Rule versions retrieved")
+
+
+@rule_router.post(
+    "/similar",
+    response_model=ApiResponse[list],
+    status_code=status.HTTP_200_OK,
+    summary="Find similar rules by conditions and triggers",
+)
+async def find_similar_rules(
+    payload: SimilarSearchRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    similars = await _similarity_service.find_similar_rules(
+        session=session,
+        definition=payload.definition or {},
+        meta=payload.meta,
+        top_k=payload.topK,
+    )
+    return success(data=similars, message="Similar rules found")
+
+
+@rule_router.post(
+    "/analyze-conflicts",
+    response_model=ApiResponse[list],
+    status_code=status.HTTP_200_OK,
+    summary="Analyze conflicts between rules and existing active rules",
+)
+async def analyze_rule_conflicts(
+    payload: AnalyzeConflictsRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    conflicts = await _conflict_analyzer.analyze_conflicts(
+        session=session,
+        kind="RULE",
+        definition=payload.definition,
+        meta=payload.meta,
+    )
+    return success(data=conflicts, message="Rule conflicts analyzed successfully")

@@ -7,7 +7,7 @@ import string
 import struct
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import parse_qs, quote, urlparse
 
 import httpx
@@ -317,6 +317,15 @@ class UpstoxService:
         except Exception as e:
             logger.error(f"Error fetching Upstox profile: {e}")
             return False, None
+
+    async def exchange_code(
+        self,
+        config: UpstoxConfig,
+        code: str,
+        redirect_uri: Optional[str] = None,
+    ) -> dict[str, Any]:
+        uri = redirect_uri or config.redirectUri or "http://localhost:8000/api/v1/upstox/callback"
+        return await self.exchange_code_for_token(config, code, uri)
 
     async def exchange_code_for_token(
         self,

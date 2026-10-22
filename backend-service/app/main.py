@@ -158,11 +158,15 @@ def create_application() -> FastAPI:
         strategy_router,
         rule_router,
     )
+    from app.modules.strategies.mcp import strategy_mcp_router
+    from app.modules.master.controller import master_router
     app.include_router(user_router, prefix=settings.API_V1_PREFIX)
     app.include_router(oauth_router, prefix=settings.API_V1_PREFIX)
 
     app.include_router(strategy_router, prefix=settings.API_V1_PREFIX)
     app.include_router(rule_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(master_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(strategy_mcp_router)
 
     return app
 

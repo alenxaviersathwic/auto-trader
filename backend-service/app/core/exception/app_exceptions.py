@@ -53,6 +53,11 @@ class ValidationException(AppException):
         super().__init__(message=message, status_code=400, error=error)
 
 
+class BusinessException(ValidationException):
+    """400 Business logic error exception."""
+    pass
+
+
 class BadRequestException(AppException):
     """400 Bad Request exception."""
 
