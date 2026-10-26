@@ -78,5 +78,21 @@ class ProposalExecutor:
                 return await self.rule_commands.delete_draft(session, target_code)
             return await self.strat_commands.delete_draft(session, target_code)
 
+        elif kind == "RUN_ENGINE":
+            engine_code = payload.get("engine", "research")
+            from app.modules.system.service.engine_registry import engine_registry
+            eng = engine_registry.get(engine_code)
+            if not eng:
+                raise BusinessException(message=f"Engine '{engine_code}' not found")
+            return await eng.start(payload.get("params", {}), session)
+
+        elif kind == "CANCEL_RUN":
+            engine_code = payload.get("engine", "research")
+            from app.modules.system.service.engine_registry import engine_registry
+            eng = engine_registry.get(engine_code)
+            if not eng:
+                raise BusinessException(message=f"Engine '{engine_code}' not found")
+            return await eng.cancel(session)
+
         else:
             raise BusinessException(message=f"Unsupported proposal kind: {kind}")

@@ -415,3 +415,78 @@ frontend/
 - Every layer is a folder, even for a single file.
 - Frontend uses TanStack Query, Router and Table, React Hook Form with Zod, and Axios.
 - Feature details are specified separately, one feature at a time.
+
+---
+
+## 12. Research Engine Module Architecture & Flow
+
+### Overview & Core Philosophy
+The Research Engine performs deterministic market intelligence, news sentiment clearance, and thesis generation for Indian market trading underlyings across two distinct scopes: **Indices** and **Commodities**.
+
+Rather than bloating database storage with thousands of transient vector chunks and document rows, the module operates with an **in-memory extraction pipeline** and a **single upserted entity** (`ResearchEntity`), maintaining only fresh, actionable evaluation data in PostgreSQL.
+
+---
+
+### Backend Architecture
+
+#### 1. Single Primary Entity (`modules/research/entity/research_entity.py`)
+- Maps to table `research_candidates` and extends `BaseEntity`.
+- Key fields:
+  - `scope` (stored as `underlying_type`): `"INDEX"` | `"COMMODITY"`
+  - `item` (stored as `underlying_code`, unique per item): e.g. `"NIFTY"`, `"BANKNIFTY"`, `"SENSEX"`, `"CRUDEOIL"`, `"GOLD"`, `"SILVER"`
+  - `latestScore` (stored as `score`): numeric ranking score (0 to 100)
+  - `status` (stored as `news_status`): `"CLEAR_POSITIVE"`, `"BEARISH_WATCH"`, `"MIXED"`, `"HAS_NEGATIVE"`, `"NO_COVERAGE"`
+  - `suggested`: boolean clearance flag
+  - `direction`: `"BULLISH"` | `"BEARISH"` | `null`
+  - `thesis`: 1-2 sentence clearance or risk rationale
+  - `supportingPoints`: JSONB array of verified bullish drivers
+  - `watchItems`: JSONB array of risk monitoring items
+- **In-Place Upsert**: When the pipeline finishes, it checks if `underlying_code` already exists in PostgreSQL. If it exists, it **updates that existing record in-place with latest scores and signals** rather than inserting duplicate candidate rows.
+
+#### 2. Consolidated Controller (1 Path Per Function)
+All endpoints live in [`research_controller.py`](file:///Users/user/Documents/Tests/auto-trader/backend-service/app/modules/research/controller/research_controller.py) under prefix `/api/v1`:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/research/run` | Triggers the pipeline across in-scope underlyings. No parameter IDs required. |
+| `GET` | `/research/run-status` | Lightweight status polling. Returns strictly `isRunning`, `state`, `progressPct`, `currentNode`, `startedAt`, `finishedAt`. |
+| `POST` | `/research/cancel` | Cancels any currently executing research run. |
+| `POST` | `/research/search` | Search & pagination taking `BaseFilter` (`page`, `limit`, etc.). Returns candidate entities sorted by `score` descending (`nulls_last`). |
+| `GET` | `/research/candidates/{id}` | Retrieves full candidate clearance thesis, supporting points, risk watch items, and verified quotes for detailed inspection. |
+| `GET` | `/research/results/latest` | Returns latest evaluated candidates grouped by underlying type. |
+
+#### 3. In-Memory Pipeline Execution
+1. **Load Context**: Loads built-in underlyings (`INDEX`: NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX, BANKEX; `COMMODITY`: CRUDEOIL, NATURALGAS, GOLD, SILVER, COPPER, ZINC), active RSS feeds, and risk terms into state memory.
+2. **Search & Fetch**: Concurrently fetches fresh financial RSS feeds and plain-text market intelligence.
+3. **Clean & Dedupe**: Deduplicates articles in memory by URL and content hash within the freshness window.
+4. **Embed Chunks**: Splits article text into token chunks and computes embeddings in memory.
+5. **Extract Claims**: Uses alias matching and heuristic assertion extraction in memory.
+6. **Verify Claims & Negative Sweep**: Cross-references assertions against source texts and detects risk catalysts in memory.
+7. **Score & Rank**: Computes scores and clearance status (`CLEAR_POSITIVE`, `BEARISH_WATCH`, etc.).
+8. **Persist**: Upserts the evaluated results directly into `ResearchEntity` in the database.
+
+---
+
+### Frontend Architecture (`frontend/src/modules/research/`)
+
+- **Page**: Single dedicated screen at `/research` ([`ResearchEnginePage.tsx`](file:///Users/user/Documents/Tests/auto-trader/frontend/src/modules/research/pages/ResearchEnginePage.tsx)).
+- **Header**: Clean, minimalist trading terminal header:
+  - Title: **"Research Engine"** with live progress tag during execution.
+  - Action: **"Run Research Engine"** button with loading spinner when active.
+  - Zero redundant metric strips or clutter.
+- **Two Tabs**: Exactly 2 tabs: **Index** and **Commodity**:
+  - The client issues a single query to `POST /api/v1/research/search` (which returns evaluated underlyings sorted by score).
+  - The UI filters locally by `scope === "INDEX"` or `scope === "COMMODITY"`.
+- **Candidate Trading Cards**: Each underlying is rendered in a compact dark-palette card showing:
+  - Name and symbol (e.g. `BSE SENSEX`, `NIFTY 50`, `GOLD`, `CRUDE OIL`)
+  - Scope badge (`INDEX` or `COMMODITY`)
+  - Status badge:
+    - `CLEARED FOR TRADE` (emerald green)
+    - `BEARISH WATCH` (rose red)
+    - `MIXED SENTIMENT` (amber)
+    - `LOW COVERAGE` (muted slate)
+  - Numeric score, source count, and sentiment ratio (`+bullish / -bearish`)
+  - 1-line clearance reason
+- **Detail Drawer (`CandidateDrawer.tsx`)**:
+  - Clicking any card opens a side drawer displaying the complete evaluation thesis, bullish supporting points with verbatim quotes, risk watch items, and verified claims.
+

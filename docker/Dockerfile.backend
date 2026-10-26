@@ -16,9 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy pyproject.toml and README.md for dependency installation
 COPY backend-service/pyproject.toml backend-service/README.md /app/
 
-# Install python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .
+# Install python dependencies with BuildKit pip cache mount for speed
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install .
 
 # Copy application source code and Alembic migrations
 COPY backend-service/alembic.ini /app/

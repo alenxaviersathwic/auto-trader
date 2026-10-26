@@ -92,6 +92,14 @@ if docker ps -a --format '{{.Names}}' | grep -q "^autotrader_backend$"; then
     docker compose -p autotrader -f "$COMPOSE_FILE" rm -f -s backend >/dev/null 2>&1 || true
 fi
 
+# Clean up any stale autotrader_postgres container if not attached to current project
+if docker ps -a --format '{{.Names}}' | grep -q "^autotrader_postgres$"; then
+    if ! docker compose -p autotrader -f "$COMPOSE_FILE" ps postgres --format '{{.Names}}' 2>/dev/null | grep -q "^autotrader_postgres$"; then
+        echo "     Resolving stale autotrader_postgres container..."
+        docker rm -f autotrader_postgres >/dev/null 2>&1 || true
+    fi
+fi
+
 # 1. Build Backend container
 echo " ==> [1/2] Building auto-trader Backend Container (FastAPI + Alembic)..."
 docker compose -p autotrader -f "$COMPOSE_FILE" build backend

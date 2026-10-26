@@ -176,6 +176,7 @@ Every endpoint returns:
   - Reusable `FilterBar.tsx` across all lists.
 - **Forms**: React Hook Form + Zod. Backend validation error lists mapped directly to form fields.
 - **Navigation**: Modules register navigation links in `core/navigation/menuRegistry.ts`.
+- **UI Theme & Visual Integrity (MANDATORY)**: All UI design must strictly observe the Zerodha Kite / Eye-Comfort Pro Trading Dark Palette theme defined in `index.css` (using `--bg-card`, `--border-subtle`, `--bullish-green`, `--bearish-red`, `--font-mono`). Never create mismatched pastel/purple styles or ad-hoc gradients. All screens must match the layout hierarchy of `StrategiesPage.tsx` with standard headers, executive metric strips, and sharp financial trading terminal components.
 
 ---
 

@@ -5,12 +5,10 @@ import { SideMenu } from "./SideMenu";
 import { httpClient } from "../../api/httpClient";
 import { useDefaultUser } from "../../../modules/users/hooks/useUsers";
 import {
-  Database,
   Clock,
-  ShieldCheck,
-  Server,
   Layers,
   Activity,
+  Bot,
 } from "lucide-react";
 
 interface HealthData {
@@ -55,8 +53,6 @@ export const AppLayout: React.FC = () => {
   // Default trading user & token status telemetry
   const { data: defaultUser } = useDefaultUser();
 
-  const isDbUp = health?.database?.connected ?? false;
-  const isVectorUp = health?.database?.pgvector ?? false;
 
   return (
     <div className="app-container">
@@ -96,25 +92,15 @@ export const AppLayout: React.FC = () => {
               </span>
             </div>
 
-            {/* System Status Chips */}
+            {/* AI Engine Status Chip */}
             <div className={`status-chip ${isSuccess ? "chip-ok" : "chip-warn"}`}>
-              <Server size={13} />
-              <span>API: {health?.status || "Connecting..."}</span>
-            </div>
-
-            <div className={`status-chip ${isDbUp ? "chip-ok" : "chip-err"}`}>
-              <Database size={13} />
-              <span>PostgreSQL {isVectorUp ? "+ pgvector" : ""}</span>
+              <Bot size={13} />
+              <span>AI Engine: {health?.status === "healthy" || isSuccess ? "ONLINE" : "CONNECTING"}</span>
             </div>
 
             <div className="status-chip chip-neutral font-mono">
               <Clock size={13} />
               <span>IST {istTime || "--:--:--"}</span>
-            </div>
-
-            <div className="status-chip chip-accent">
-              <ShieldCheck size={13} />
-              <span>AES-GCM</span>
             </div>
           </div>
         </header>

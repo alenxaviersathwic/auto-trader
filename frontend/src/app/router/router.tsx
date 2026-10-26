@@ -12,6 +12,7 @@ import { StrategyDetailPage } from "../../modules/strategies/pages/StrategyDetai
 import { StrategyEditorPage } from "../../modules/strategies/pages/StrategyEditorPage";
 import { RulesPage } from "../../modules/strategies/pages/RulesPage";
 import { MasterPage } from "../../modules/master/pages/MasterPage";
+import { ResearchEnginePage } from "../../modules/research/pages/ResearchEnginePage";
 
 // Root Route housing AppLayout
 const rootRoute = createRootRoute({
@@ -83,6 +84,12 @@ const masterRoute = createRoute({
   component: MasterPage,
 });
 
+const researchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/research",
+  component: ResearchEnginePage,
+});
+
 // Build route tree
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -94,6 +101,7 @@ const routeTree = rootRoute.addChildren([
   strategyEditRoute,
   rulesRoute,
   masterRoute,
+  researchRoute,
 ]);
 
 export const router = createRouter({

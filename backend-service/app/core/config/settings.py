@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     # CORS origins
     CORS_ORIGINS: List[str] = ["*"]
 
+    # Research Engine, LLM & Embeddings
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    EMBEDDING_MODEL: str = "nomic-embed-text"
+    EMBEDDING_DIMENSION: int = 768
+    SEARXNG_BASE_URL: str = "http://localhost:8080"
+    MCP_RESEARCH_TOKEN: str = "mcp_research_secret_token_123"
+    MCP_CONFIRM_SECRET: str = "mcp_confirm_secret_key_32b_hex!"
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

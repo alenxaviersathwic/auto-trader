@@ -95,3 +95,18 @@ frontend/
 - Routes managed through **TanStack Router**.
 - App shell is `AppLayout.tsx` (top bar, side menu, content viewport).
 - Feature modules register menu items (label, route, icon) in `core/navigation/menuRegistry.ts` rather than hardcoding entries inside layout components.
+
+## 8. UI Theme & Visual Design System Integrity (MANDATORY)
+All UI pages, views, and components must strictly adhere to the project's established design theme (**Zerodha Kite / Eye-Comfort Pro Trading Dark Palette**):
+- **Strict Theme Uniformity**: Never introduce ad-hoc color schemes, random pastel or purple gradients, or mismatched aesthetics that depart from the rest of the application.
+- **Design Tokens**: Always utilize standard CSS variables from `index.css`:
+  - Backgrounds: `--bg-app` (`#0e1117`), `--bg-card` (`#161b26`), `--bg-panel` (`#121620`), `--bg-card-hover` (`#1c2230`).
+  - Borders: `--border-subtle` (`#232b3b`), `--border-medium` (`#2e384d`), `--border-focus` (`#3b82f6`).
+  - Trading Highlights: `--bullish-green` (`#00e676`), `--bearish-red` (`#ff5252`), `--warning-amber` (`#ff9800`), `--kite-blue` (`#3b82f6`).
+  - Typography: Inter (`var(--font-sans)`) for UI text; JetBrains Mono (`var(--font-mono)`) for all metrics, numbers, timestamps, scores, and ranks.
+- **Consistent Layout Hierarchy**:
+  - **Page Header**: Page title, total count badge (`#18202e` with border `#283449`), descriptive subtitle, and top-right action buttons (primary button in `#00e676` with black bold text, secondary buttons in `#18202e` with border `#283449`).
+  - **Executive Metric Strip**: Use `.dashboard-metrics` and `.dashboard-metric` cards with structured mini-icons and bold mono counters.
+  - **Tab Navigation**: Clean segmented trading tabs matching `trading-tabs` with sharp active indicators.
+  - **Cards & Grids**: Sharp corners (`border-radius: 8px` to `10px`), subtle `#232b3b` borders, high-contrast typography, and clean status chips (`.status-chip`, `.chip-ok`, `.chip-warn`, `.chip-err`).
+  - **Tables**: Use standard table layout with `--bg-table-header` (`#111520`) and sticky headers.

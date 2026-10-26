@@ -80,7 +80,7 @@ class FilterBuilder:
             )
 
         sort_col = getattr(entity_class, sort_by)
-        order_clause = desc(sort_col) if sort_dir == "desc" else asc(sort_col)
+        order_clause = desc(sort_col).nulls_last() if sort_dir == "desc" else asc(sort_col).nulls_last()
         stmt = stmt.order_by(order_clause)
 
         # Pagination: zero-based page
@@ -149,3 +149,22 @@ class FilterBuilder:
             totalPages=total_pages,
             totalItems=total_items,
         )
+
+    @classmethod
+    def apply(
+        cls,
+        stmt: Select,
+        filter_obj: BaseFilter,
+        model: Type[BaseEntity],
+        allowed_sort_fields: Optional[Sequence[str]] = None,
+        search_fields: Optional[Sequence[str]] = None,
+    ) -> Tuple[Select, Select]:
+        """
+        Applies filtering, sorting and paging to stmt.
+        Returns (paged_stmt, count_stmt).
+        """
+        filtered_stmt = cls.apply_conditions(stmt, model, filter_obj, search_fields)
+        count_stmt = select(func.count()).select_from(filtered_stmt.subquery())
+        paged_stmt = cls.apply_sort_and_paging(filtered_stmt, model, filter_obj, allowed_sort_fields)
+        return paged_stmt, count_stmt
+
