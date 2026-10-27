@@ -231,7 +231,7 @@ export const StrategyDetailPage: React.FC = () => {
 
             {/* Lifecycle Dropdown */}
             <select
-              className="filter-select text-xs"
+              className="select text-xs"
               value={strategy.lifecycleStatus}
               onChange={(e) => handleLifecycleChange(e.target.value)}
             >
@@ -483,7 +483,7 @@ export const StrategyDetailPage: React.FC = () => {
                     </div>
                     <input
                       type="number"
-                      className="filter-input w-full text-xs"
+                      className="input w-full text-xs"
                       value={paramsForm[key] ?? ""}
                       onChange={(e) =>
                         setParamsForm({ ...paramsForm, [key]: e.target.value })

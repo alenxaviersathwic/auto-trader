@@ -42,7 +42,7 @@ class MenuRegistry {
   }
 }
 
-import { Users, TrendingUp, BotMessageSquare, Sparkles } from "lucide-react";
+import { Users, TrendingUp, BotMessageSquare, Sparkles, Lightbulb } from "lucide-react";
 
 export const menuRegistry = new MenuRegistry();
 
@@ -62,6 +62,15 @@ menuRegistry.register({
   path: "/research",
   icon: Sparkles,
   order: 3,
+});
+
+// Register Suggestion Engine navigation item
+menuRegistry.register({
+  id: "suggestion-engine",
+  label: "Suggestion Engine",
+  path: "/suggestion",
+  icon: Lightbulb,
+  order: 4,
 });
 
 // Register AI Master chat navigation item

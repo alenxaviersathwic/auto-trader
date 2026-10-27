@@ -33,6 +33,7 @@ class ResearchEntity(BaseEntity):
     direction: Mapped[Optional[str]] = mapped_column("direction", String(10), nullable=True)
     bearishWatch: Mapped[bool] = mapped_column("bearish_watch", Boolean, nullable=False, default=False)
     score: Mapped[Optional[float]] = mapped_column("score", Numeric(5, 1), nullable=True)
+    opportunityScore: Mapped[Optional[float]] = mapped_column("opportunity_score", Numeric(5, 1), nullable=True)
     scoreLabel: Mapped[Optional[str]] = mapped_column("score_label", String(8), nullable=True)
     positiveWeight: Mapped[float] = mapped_column("positive_weight", Numeric(8, 3), nullable=False, default=0.0)
     negativeWeight: Mapped[float] = mapped_column("negative_weight", Numeric(8, 3), nullable=False, default=0.0)

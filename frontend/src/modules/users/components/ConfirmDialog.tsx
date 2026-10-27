@@ -28,7 +28,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
   return (
     <div className="modal-backdrop">
-      <div className="modal-container modal-sm">
+      <div className="modal">
         <div className="modal-header">
           <div className="modal-title-wrap">
             <div className={`modal-icon ${isDestructive ? "icon-danger" : "icon-warning"}`}>
@@ -38,7 +38,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           </div>
           <button
             type="button"
-            className="modal-close-btn"
+            className="btn btn--icon modal-close-btn"
             onClick={onCancel}
             disabled={isLoading}
           >
@@ -50,10 +50,10 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           <p className="modal-desc">{message}</p>
         </div>
 
-        <div className="modal-footer">
+        <div className="modal-actions">
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn btn--ghost"
             onClick={onCancel}
             disabled={isLoading}
           >

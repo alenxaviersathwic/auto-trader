@@ -35,7 +35,7 @@ export const UserEmptyState: React.FC<UserEmptyStateProps> = ({ onAddUser }) => 
 
       <button
         type="button"
-        className="btn btn-primary btn-lg"
+        className="btn btn--primary"
         onClick={onAddUser}
       >
         <UserPlus size={18} />

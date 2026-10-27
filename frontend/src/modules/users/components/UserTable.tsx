@@ -138,28 +138,28 @@ export const UserTable: React.FC<UserTableProps> = ({
           switch (authStatus) {
             case "VALID":
               return (
-                <span className="badge-chip chip-valid">
+                <span className="badge badge--green">
                   <CheckCircle2 size={12} />
                   <span>Valid</span>
                 </span>
               );
             case "EXPIRED":
               return (
-                <span className="badge-chip chip-expired">
+                <span className="badge badge--amber">
                   <AlertTriangle size={12} />
                   <span>Expired</span>
                 </span>
               );
             case "AUTH_FAILED":
               return (
-                <span className="badge-chip chip-failed">
+                <span className="badge badge--red">
                   <XCircle size={12} />
                   <span>Auth Failed</span>
                 </span>
               );
             default:
               return (
-                <span className="badge-chip chip-never">
+                <span className="badge badge--slate">
                   <Clock size={12} />
                   <span>Never</span>
                 </span>
@@ -207,7 +207,7 @@ export const UserTable: React.FC<UserTableProps> = ({
           return (
             <button
               type="button"
-              className="btn-make-default"
+              className="btn btn--ghost btn--sm"
               onClick={() => onMakeDefault(user)}
               title="Set as primary market data account"
             >
@@ -229,7 +229,7 @@ export const UserTable: React.FC<UserTableProps> = ({
             <div className="table-actions-cell">
               <button
                 type="button"
-                className="action-btn btn-auth"
+                className="btn btn--icon btn-auth"
                 onClick={() => onAutoAuth(user)}
                 disabled={isAuthenticating}
                 title="Run Auto Auth now"
@@ -243,7 +243,7 @@ export const UserTable: React.FC<UserTableProps> = ({
 
               <button
                 type="button"
-                className="action-btn"
+                className="btn btn--icon"
                 onClick={() => onShowRedirectUrl(user)}
                 title="View Redirect URL"
               >
@@ -252,7 +252,7 @@ export const UserTable: React.FC<UserTableProps> = ({
 
               <button
                 type="button"
-                className="action-btn"
+                className="btn btn--icon"
                 onClick={() => onEdit(user)}
                 title="Edit account credentials"
               >
@@ -269,7 +269,7 @@ export const UserTable: React.FC<UserTableProps> = ({
               >
                 <button
                   type="button"
-                  className="action-btn btn-del"
+                  className="btn btn--icon btn--danger"
                   onClick={() => onDelete(user)}
                   disabled={isDeleteDisabled}
                 >
@@ -299,9 +299,9 @@ export const UserTable: React.FC<UserTableProps> = ({
   });
 
   return (
-    <div className="user-table-wrapper">
-      <div className="table-scroll-container">
-        <table className="app-data-table">
+    <div className="data-table-wrapper">
+      <div className="data-table-scroll">
+        <table className="data-table">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
@@ -356,7 +356,7 @@ export const UserTable: React.FC<UserTableProps> = ({
       </div>
 
       {/* Pagination Footer */}
-      <div className="table-pagination-footer">
+      <div className="pagination-bar">
         <div className="pagination-info">
           <span>
             Showing{" "}
@@ -377,7 +377,7 @@ export const UserTable: React.FC<UserTableProps> = ({
           <div className="rows-per-page">
             <span className="rpp-label">Rows per page:</span>
             <select
-              className="rpp-select"
+              className="select rpp-select"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
             >

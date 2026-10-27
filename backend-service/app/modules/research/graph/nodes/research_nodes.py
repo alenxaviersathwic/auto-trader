@@ -777,6 +777,7 @@ class ResearchNodes:
                 cand_row.direction = c.get("direction")
                 cand_row.bearishWatch = c.get("bearishWatch", False)
                 cand_row.score = c.get("score")
+                cand_row.opportunityScore = c.get("opportunityScore")
                 cand_row.scoreLabel = c.get("scoreLabel")
                 cand_row.positiveWeight = c.get("positiveWeight", 0.0)
                 cand_row.negativeWeight = c.get("negativeWeight", 0.0)
@@ -811,6 +812,7 @@ class ResearchNodes:
                     direction=c.get("direction"),
                     bearishWatch=c.get("bearishWatch", False),
                     score=c.get("score"),
+                    opportunityScore=c.get("opportunityScore"),
                     scoreLabel=c.get("scoreLabel"),
                     positiveWeight=c.get("positiveWeight", 0.0),
                     negativeWeight=c.get("negativeWeight", 0.0),

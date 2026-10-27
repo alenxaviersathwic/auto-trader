@@ -108,6 +108,7 @@ export interface ResearchCandidate extends BaseEntity {
   direction?: "BULLISH" | "BEARISH" | null;
   bearishWatch: boolean;
   score?: number | null;
+  opportunityScore?: number | null;
   latestScore?: number | null;
   scoreLabel?: "LOW" | "MEDIUM" | "HIGH" | null;
   positiveWeight: number;

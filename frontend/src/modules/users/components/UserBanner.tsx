@@ -55,28 +55,28 @@ export const UserBanner: React.FC<UserBannerProps> = ({
     switch (authStatus) {
       case "VALID":
         return (
-          <span className="badge-chip chip-valid">
+          <span className="badge badge--green">
             <CheckCircle2 size={13} />
             <span>Token Valid</span>
           </span>
         );
       case "EXPIRED":
         return (
-          <span className="badge-chip chip-expired">
+          <span className="badge badge--amber">
             <AlertTriangle size={13} />
             <span>Token Expired</span>
           </span>
         );
       case "AUTH_FAILED":
         return (
-          <span className="badge-chip chip-failed">
+          <span className="badge badge--red">
             <XCircle size={13} />
             <span>Auth Failed</span>
           </span>
         );
       default:
         return (
-          <span className="badge-chip chip-never">
+          <span className="badge badge--slate">
             <Clock size={13} />
             <span>Never Authenticated</span>
           </span>
@@ -109,7 +109,7 @@ export const UserBanner: React.FC<UserBannerProps> = ({
             <span className="banner-tag">DEFAULT TRADING ACCOUNT</span>
             {renderStatusBadge()}
             {upstox?.autoAuthEnabled && (
-              <span className="badge-chip chip-auto">
+              <span className="badge badge--cyan">
                 <Zap size={11} />
                 <span>Auto-Auth Enabled</span>
               </span>
@@ -148,7 +148,7 @@ export const UserBanner: React.FC<UserBannerProps> = ({
         {onRefresh && (
           <button
             type="button"
-            className="btn-banner-action"
+            className="btn btn--ghost"
             onClick={onRefresh}
             disabled={isRefreshing}
             title="Refresh default user status"

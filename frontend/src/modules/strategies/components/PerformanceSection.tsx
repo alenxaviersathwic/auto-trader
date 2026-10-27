@@ -203,7 +203,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
       {/* Add Snapshot Modal */}
       {showAddModal && (
         <div className="modal-backdrop">
-          <div className="modal-container">
+          <div className="modal">
             <div className="modal-header">
               <h3 className="modal-title font-semibold text-primary">
                 Record Performance Snapshot
@@ -221,7 +221,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                 <div className="form-group">
                   <label>Data Source</label>
                   <select
-                    className="filter-select w-full"
+                    className="select w-full"
                     value={newSnapshot.source}
                     onChange={(e) =>
                       setNewSnapshot({ ...newSnapshot, source: e.target.value })
@@ -235,7 +235,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                 <div className="form-group">
                   <label>Execution Domain</label>
                   <select
-                    className="filter-select w-full"
+                    className="select w-full"
                     value={newSnapshot.domain}
                     onChange={(e) =>
                       setNewSnapshot({ ...newSnapshot, domain: e.target.value as any })
@@ -250,7 +250,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   <label>Total Trades</label>
                   <input
                     type="number"
-                    className="filter-input w-full"
+                    className="input w-full"
                     value={newSnapshot.totalTrades}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -266,7 +266,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   <label>Winning Trades</label>
                   <input
                     type="number"
-                    className="filter-input w-full"
+                    className="input w-full"
                     value={newSnapshot.winningTrades}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -282,7 +282,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   <label>Losing Trades</label>
                   <input
                     type="number"
-                    className="filter-input w-full"
+                    className="input w-full"
                     value={newSnapshot.losingTrades}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -299,7 +299,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   <input
                     type="number"
                     step="0.1"
-                    className="filter-input w-full"
+                    className="input w-full"
                     value={newSnapshot.winRatePct}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -315,7 +315,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   <input
                     type="number"
                     step="0.01"
-                    className="filter-input w-full"
+                    className="input w-full"
                     value={newSnapshot.netPnl}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -331,7 +331,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   <input
                     type="number"
                     step="0.01"
-                    className="filter-input w-full"
+                    className="input w-full"
                     value={newSnapshot.profitFactor}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -347,7 +347,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   <input
                     type="number"
                     step="0.01"
-                    className="filter-input w-full"
+                    className="input w-full"
                     value={newSnapshot.maxDrawdown}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -359,7 +359,7 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   />
                 </div>
               </div>
-              <div className="modal-footer flex justify-end gap-2 p-4 border-t border-subtle">
+              <div className="modal-actions">
                 <button
                   type="button"
                   className="btn-outline text-xs"

@@ -1,7 +1,11 @@
 from datetime import datetime, timedelta, timezone
 from app.modules.research.scoring.claim_weight import aggregate_weights, calculate_claim_weight
 from app.modules.research.scoring.classify_status import classify_underlying, identify_material_negatives
-from app.modules.research.scoring.score_rank import compute_candidate_score, rank_candidates_by_type
+from app.modules.research.scoring.score_rank import (
+    compute_candidate_score,
+    compute_opportunity_score,
+    rank_candidates_by_type,
+)
 
 
 def test_claim_weight_recency_decay():
@@ -164,4 +168,25 @@ def test_scoring_and_ranking():
     assert nifty["scoreLabel"] in ["HIGH", "MEDIUM"]
     assert banknifty["rank"] == 2
     assert finnifty["rank"] is None
-    assert finnifty["score"] is None
+    assert finnifty["opportunityScore"] == 0.0
+
+
+def test_opportunity_score_bearish_is_a_put_opportunity():
+    bull, _, d1 = compute_opportunity_score(3.0, 0.2, 6)
+    bear, _, d2 = compute_opportunity_score(0.2, 3.0, 6)
+    mixed, _, d3 = compute_opportunity_score(2.0, 2.0, 6)
+    assert d1 == "BULLISH" and d2 == "BEARISH" and bull == bear > 0
+    assert mixed == 0.0 and d3 is None
+
+
+def test_every_candidate_gets_opportunity_score_each_run():
+    cands = [
+        {"underlyingCode": "A", "underlyingType": "INDEX", "positiveWeight": 0.1, "negativeWeight": 3.0,
+         "independentSources": 6, "newsStatus": "HAS_NEGATIVE"},
+        {"underlyingCode": "B", "underlyingType": "INDEX", "positiveWeight": 2.0, "negativeWeight": 0.1,
+         "independentSources": 6, "newsStatus": "CLEAR_POSITIVE"},
+    ]
+    out = rank_candidates_by_type(cands, top_n=5, min_sources=3)
+    assert all(c["opportunityScore"] is not None for c in out)
+    a = next(c for c in out if c["underlyingCode"] == "A")
+    assert a["direction"] == "BEARISH" and a["opportunityScore"] > 0 and a["rank"] is not None

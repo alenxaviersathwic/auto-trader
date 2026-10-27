@@ -13,6 +13,8 @@ import { StrategyEditorPage } from "../../modules/strategies/pages/StrategyEdito
 import { RulesPage } from "../../modules/strategies/pages/RulesPage";
 import { MasterPage } from "../../modules/master/pages/MasterPage";
 import { ResearchEnginePage } from "../../modules/research/pages/ResearchEnginePage";
+import { SuggestionDetailPage } from "../../modules/suggestion/pages/SuggestionDetailPage";
+import { SuggestionEnginePage } from "../../modules/suggestion/pages/SuggestionEnginePage";
 
 // Root Route housing AppLayout
 const rootRoute = createRootRoute({
@@ -90,6 +92,18 @@ const researchRoute = createRoute({
   component: ResearchEnginePage,
 });
 
+const suggestionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/suggestion",
+  component: SuggestionEnginePage,
+});
+
+const suggestionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/suggestion/$underlying/detail",
+  component: SuggestionDetailPage,
+});
+
 // Build route tree
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -102,6 +116,8 @@ const routeTree = rootRoute.addChildren([
   rulesRoute,
   masterRoute,
   researchRoute,
+  suggestionRoute,
+  suggestionDetailRoute,
 ]);
 
 export const router = createRouter({

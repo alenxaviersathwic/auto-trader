@@ -123,7 +123,7 @@ export const VersionsSection: React.FC<VersionsSectionProps> = ({
       {/* Compare Diff Modal */}
       {showDiff && (
         <div className="modal-backdrop">
-          <div className="modal-container max-w-4xl">
+          <div className="modal">
             <div className="modal-header">
               <h3 className="modal-title font-semibold text-primary flex items-center gap-2">
                 <GitCompare size={16} />
@@ -142,7 +142,7 @@ export const VersionsSection: React.FC<VersionsSectionProps> = ({
                 <div className="flex-1">
                   <label className="text-xs text-muted block mb-1">Version A</label>
                   <select
-                    className="filter-select w-full"
+                    className="select w-full"
                     value={compareV1 || ""}
                     onChange={(e) => setCompareV1(Number(e.target.value))}
                   >
@@ -156,7 +156,7 @@ export const VersionsSection: React.FC<VersionsSectionProps> = ({
                 <div className="flex-1">
                   <label className="text-xs text-muted block mb-1">Version B</label>
                   <select
-                    className="filter-select w-full"
+                    className="select w-full"
                     value={compareV2 || ""}
                     onChange={(e) => setCompareV2(Number(e.target.value))}
                   >

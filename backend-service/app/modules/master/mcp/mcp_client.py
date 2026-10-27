@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging.logger import logger
+from app.modules.research.mcp.research_mcp_server import research_mcp_instance
 from app.modules.strategies.mcp.strategy_mcp_server import strategy_mcp_instance
 
 
@@ -26,14 +27,27 @@ class McpClient:
     ) -> Dict[str, Any]:
         start_time = time.time()
 
-        # In-process dispatch for strategy-rules
-        if server_name == "strategy-rules" or server_transport == "IN_PROCESS" or not server_url:
+        # In-process dispatch for fast internal MCP servers
+        if server_name == "strategy-rules":
             try:
-                res = await strategy_mcp_instance.execute_tool(session, tool_name, arguments)
-                return res
+                return await strategy_mcp_instance.execute_tool(session, tool_name, arguments)
             except Exception as e:
-                logger.error(f"In-process MCP tool call {tool_name} failed: {e}", exc_info=True)
+                logger.error(f"In-process strategy MCP tool call {tool_name} failed: {e}", exc_info=True)
                 raise e
+
+        if server_name == "research-engine":
+            try:
+                return await research_mcp_instance.execute_tool(session, tool_name, arguments)
+            except Exception as e:
+                logger.error(f"In-process research MCP tool call {tool_name} failed: {e}", exc_info=True)
+                raise e
+
+        if server_transport == "IN_PROCESS" or not server_url:
+            # Fallback in-process check
+            try:
+                return await research_mcp_instance.execute_tool(session, tool_name, arguments)
+            except Exception:
+                return await strategy_mcp_instance.execute_tool(session, tool_name, arguments)
 
         # HTTP dispatch
         auth_token = os.getenv(auth_ref) if auth_ref else None

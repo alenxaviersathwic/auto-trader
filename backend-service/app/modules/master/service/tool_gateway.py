@@ -67,27 +67,33 @@ class ToolGateway:
             server_cap = "PROPOSE"
             is_enabled = True
         else:
-            server_name = "strategy-rules"
             is_local = False
+            # Dynamic tool policy resolution
+            policy = await self.tool_server_repo.get_policy_by_tool_name(session, tool_name)
+            if not policy:
+                policy = await self.tool_server_repo.get_policy(session, "strategy-rules", tool_name)
+            if not policy:
+                policy = await self.tool_server_repo.get_policy(session, "research-engine", tool_name)
+
+            if not policy:
+                return await self._record_and_return_denied(
+                    session, run_id, "unknown", tool_name, "READ", redacted_args, f"Tool '{tool_name}' is not in policy registry", start_time
+                )
+            if not policy.enabled:
+                return await self._record_and_return_denied(
+                    session, run_id, policy.serverName, tool_name, policy.tier, redacted_args, f"Tool '{tool_name}' is disabled by administrator", start_time
+                )
+
+            server_name = policy.serverName
+            tool_tier = policy.tier
+
             # Check server
             server = await self.tool_server_repo.get_by_name(session, server_name)
             if not server or not server.enabled:
                 return await self._record_and_return_denied(
-                    session, run_id, server_name, tool_name, "READ", redacted_args, "Server is disabled or not found", start_time
+                    session, run_id, server_name, tool_name, tool_tier, redacted_args, f"Server '{server_name}' is disabled or not found", start_time
                 )
             server_cap = server.tierCap
-
-            # Check tool policy
-            policy = await self.tool_server_repo.get_policy(session, server_name, tool_name)
-            if not policy:
-                return await self._record_and_return_denied(
-                    session, run_id, server_name, tool_name, "READ", redacted_args, f"Tool '{tool_name}' is not in policy registry", start_time
-                )
-            if not policy.enabled:
-                return await self._record_and_return_denied(
-                    session, run_id, server_name, tool_name, policy.tier, redacted_args, f"Tool '{tool_name}' is disabled by administrator", start_time
-                )
-            tool_tier = policy.tier
 
         # 2. Check Tier Caps
         master_cap = await self.config_repo.get_key(session, "toolTierCap") or "PROPOSE"
@@ -113,12 +119,16 @@ class ToolGateway:
                 else:
                     result = {"status": "LOCAL_EXECUTED"}
             else:
+                s_transport = server.transport if server else "IN_PROCESS"
+                s_url = server.url if server else ("/mcp/research" if server_name == "research-engine" else "/mcp/strategy")
+                s_auth = server.authRef if server else ("MCP_RESEARCH_TOKEN" if server_name == "research-engine" else "STRATEGY_MCP_TOKEN")
+
                 result = await self.mcp_client.call_tool(
                     session=session,
                     server_name=server_name,
-                    server_transport="IN_PROCESS",
-                    server_url="/mcp/strategy",
-                    auth_ref="STRATEGY_MCP_TOKEN",
+                    server_transport=s_transport,
+                    server_url=s_url,
+                    auth_ref=s_auth,
                     tool_name=tool_name,
                     arguments=arguments,
                     timeout_seconds=15.0,

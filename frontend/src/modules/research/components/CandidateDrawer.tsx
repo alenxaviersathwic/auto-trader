@@ -3,7 +3,7 @@ import { useCandidate } from "../hooks/useResearch";
 import {
   X,
   CheckCircle,
-  ShieldCheck,
+  TrendingUp,
   TrendingDown,
   AlertTriangle,
   Cpu,
@@ -25,7 +25,7 @@ export const CandidateDrawer: React.FC<CandidateDrawerProps> = ({ candidateId, o
 
   if (!candidateId) return null;
 
-  const isCleared = candidate?.suggested || candidate?.newsStatus === "CLEAR_POSITIVE";
+  const isCleared = candidate?.direction === "BULLISH";
   const isBearish = candidate?.bearishWatch || candidate?.newsStatus === "HAS_NEGATIVE";
   const claims = candidate?.verifiedClaims || candidate?.resolvedCitations || [];
   const affectNews = candidate?.affectNews || [];
@@ -114,7 +114,7 @@ export const CandidateDrawer: React.FC<CandidateDrawerProps> = ({ candidateId, o
                     gap: "4px",
                   }}
                 >
-                  <ShieldCheck size={12} /> CLEARED
+                  <TrendingUp size={12} /> BULLISH
                 </span>
               )}
 
@@ -217,17 +217,17 @@ export const CandidateDrawer: React.FC<CandidateDrawerProps> = ({ candidateId, o
                       fontWeight: 800,
                       fontFamily: "var(--font-mono)",
                       color:
-                        candidate.score !== null && candidate.score !== undefined
-                          ? candidate.score >= 70
+                        (candidate.opportunityScore ?? candidate.score) !== null && (candidate.opportunityScore ?? candidate.score) !== undefined
+                          ? Number(candidate.opportunityScore ?? candidate.score) >= 70
                             ? "#00e676"
-                            : candidate.score <= 40
+                            : Number(candidate.opportunityScore ?? candidate.score) <= 40
                             ? "#ff5252"
                             : "#ff9800"
                           : "#64748b",
                       marginTop: "2px",
                     }}
                   >
-                    {candidate.score !== null && candidate.score !== undefined ? candidate.score.toFixed(1) : "—"}
+                    {(candidate.opportunityScore ?? candidate.score) !== null && (candidate.opportunityScore ?? candidate.score) !== undefined ? Number(candidate.opportunityScore ?? candidate.score).toFixed(1) : "—"}
                   </div>
                 </div>
 

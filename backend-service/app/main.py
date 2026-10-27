@@ -163,6 +163,8 @@ def create_application() -> FastAPI:
     from app.modules.research.controller import research_router
     from app.modules.research.mcp import research_mcp_router
     from app.modules.research.engine import research_engine  # auto-registers research engine
+    from app.modules.suggestion.controller import suggestion_router
+    from app.modules.suggestion.engine import suggestion_engine  # auto-registers suggestion engine
 
     app.include_router(user_router, prefix=settings.API_V1_PREFIX)
     app.include_router(oauth_router, prefix=settings.API_V1_PREFIX)
@@ -171,6 +173,7 @@ def create_application() -> FastAPI:
     app.include_router(rule_router, prefix=settings.API_V1_PREFIX)
     app.include_router(master_router, prefix=settings.API_V1_PREFIX)
     app.include_router(research_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(suggestion_router, prefix=settings.API_V1_PREFIX)
 
     app.include_router(strategy_mcp_router)
     app.include_router(research_mcp_router)

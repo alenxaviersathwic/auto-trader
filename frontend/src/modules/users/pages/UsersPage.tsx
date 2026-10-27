@@ -168,7 +168,7 @@ export const UsersPage: React.FC = () => {
   const isTotalZero = !isSearchLoading && pagedData?.totalItems === 0 && !filterState.query && !filterState.authStatus;
 
   return (
-    <div className="users-page-layout">
+    <div className="page-container">
       {/* Toast Notification */}
       {toast && (
         <div className={`toast-notification toast-${toast.type}`}>
@@ -189,7 +189,7 @@ export const UsersPage: React.FC = () => {
       )}
 
       {/* Page Header */}
-      <div className="users-page-header">
+      <div className="page-header">
         <div className="header-title-wrap">
           <div className="header-icon-box">
             <Users size={22} className="text-emerald" />
@@ -202,10 +202,10 @@ export const UsersPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="header-actions">
+        <div className="page-actions">
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn btn--primary"
             onClick={handleOpenAddUser}
           >
             <UserPlus size={16} />
@@ -229,7 +229,7 @@ export const UsersPage: React.FC = () => {
       {isTotalZero ? (
         <UserEmptyState onAddUser={handleOpenAddUser} />
       ) : (
-        <div className="users-card-panel">
+        <div className="card card--flat">
           {/* Universal FilterBar with extra authStatus filter */}
           <div className="users-filter-row">
             <div className="filter-bar-flex">
@@ -244,7 +244,7 @@ export const UsersPage: React.FC = () => {
             <div className="filter-item auth-filter-item">
               <span className="filter-label">Auth:</span>
               <select
-                className="filter-select"
+                className="select"
                 value={filterState.authStatus || ""}
                 onChange={(e) =>
                   handleFilterChange({

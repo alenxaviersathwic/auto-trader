@@ -9,7 +9,6 @@ import { ResearchCandidate } from "../types/research.types";
 import {
   Play,
   RefreshCw,
-  ShieldCheck,
   AlertTriangle,
   TrendingUp,
   TrendingDown,
@@ -30,7 +29,7 @@ export const ResearchEnginePage: React.FC = () => {
   // Run engine trigger mutation (POST /api/v1/research/run)
   const runEngineMutation = useRunEngine();
 
-  // Single search endpoint: returns candidates sorted by score
+  // Single search endpoint: returns candidates sorted by opportunity score
   const {
     data: candidateSearchData,
     isLoading,
@@ -59,7 +58,7 @@ export const ResearchEnginePage: React.FC = () => {
     refetchCandidates();
   };
 
-  // Candidates list sorted by score
+  // Candidates list sorted by opportunity score
   const allCandidates: ResearchCandidate[] = candidateSearchData?.list || [];
 
   const indexCandidates = React.useMemo(() => {
@@ -76,21 +75,21 @@ export const ResearchEnginePage: React.FC = () => {
 
   const candidates = activeTab === "INDEX" ? indexCandidates : commodityCandidates;
 
-  const indexClearedCount = React.useMemo(() => {
+  const indexOpportunityCount = React.useMemo(() => {
     return indexCandidates.filter(
-      (c) => c.suggested || c.newsStatus === "CLEAR_POSITIVE"
+      (c) => c.direction === "BULLISH" || c.direction === "BEARISH"
     ).length;
   }, [indexCandidates]);
 
-  const commodityClearedCount = React.useMemo(() => {
+  const commodityOpportunityCount = React.useMemo(() => {
     return commodityCandidates.filter(
-      (c) => c.suggested || c.newsStatus === "CLEAR_POSITIVE"
+      (c) => c.direction === "BULLISH" || c.direction === "BEARISH"
     ).length;
   }, [commodityCandidates]);
 
   const getStatusBadge = (c: ResearchCandidate) => {
     const status = c.newsStatus;
-    if (c.suggested || status === "CLEAR_POSITIVE") {
+    if (c.direction === "BULLISH") {
       return (
         <span
           style={{
@@ -107,8 +106,8 @@ export const ResearchEnginePage: React.FC = () => {
             letterSpacing: "0.2px",
           }}
         >
-          <ShieldCheck size={13} color="#00e676" />
-          CLEARED
+          <TrendingUp size={13} color="#00e676" />
+          BULLISH
         </span>
       );
     }
@@ -130,7 +129,7 @@ export const ResearchEnginePage: React.FC = () => {
           }}
         >
           <TrendingDown size={13} color="#ff5252" />
-          BEARISH WATCH
+          BEARISH
         </span>
       );
     }
@@ -355,7 +354,7 @@ export const ResearchEnginePage: React.FC = () => {
           >
             <Layers size={14} />
             <span>Indices ({indexCandidates.length})</span>
-            {indexClearedCount > 0 && (
+            {indexOpportunityCount > 0 && (
               <span
                 style={{
                   background: activeTab === "INDEX" ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 230, 118, 0.2)",
@@ -367,7 +366,7 @@ export const ResearchEnginePage: React.FC = () => {
                   fontFamily: "var(--font-mono)",
                 }}
               >
-                {indexClearedCount} Cleared
+                {indexOpportunityCount} Opportunities
               </span>
             )}
           </button>
@@ -392,7 +391,7 @@ export const ResearchEnginePage: React.FC = () => {
           >
             <TrendingUp size={14} />
             <span>Commodities ({commodityCandidates.length})</span>
-            {commodityClearedCount > 0 && (
+            {commodityOpportunityCount > 0 && (
               <span
                 style={{
                   background: activeTab === "COMMODITY" ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 230, 118, 0.2)",
@@ -404,14 +403,14 @@ export const ResearchEnginePage: React.FC = () => {
                   fontFamily: "var(--font-mono)",
                 }}
               >
-                {commodityClearedCount} Cleared
+                {commodityOpportunityCount} Opportunities
               </span>
             )}
           </button>
         </div>
 
         <div style={{ color: "#64748b", fontSize: "12px", fontFamily: "var(--font-mono)" }}>
-          Showing {candidates.length} underlyings sorted by score
+          Showing {candidates.length} underlyings sorted by opportunity score
         </div>
       </div>
 
@@ -449,10 +448,10 @@ export const ResearchEnginePage: React.FC = () => {
           {candidates.map((c) => {
             const itemCode = c.item || c.underlyingCode;
             const itemScope = c.scope || c.underlyingType;
-            const itemScore = c.latestScore !== undefined && c.latestScore !== null ? c.latestScore : c.score;
+            const itemScore = c.opportunityScore ?? c.latestScore ?? c.score;
             const status = c.newsStatus;
-            const isCleared = c.suggested || status === "CLEAR_POSITIVE";
-            const isBearish = c.bearishWatch || status === "HAS_NEGATIVE";
+            const isCleared = c.direction === "BULLISH";
+            const isBearish = c.direction === "BEARISH" || c.bearishWatch || status === "HAS_NEGATIVE";
 
             return (
               <div

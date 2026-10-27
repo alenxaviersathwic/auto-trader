@@ -90,7 +90,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <Search className="filter-icon" size={16} />
           <input
             type="text"
-            className="filter-input"
+            className="input filter-input"
             placeholder={searchPlaceholder}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -101,7 +101,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         <div className="filter-item">
           <label className="filter-label">Status:</label>
           <select
-            className="filter-select"
+            className="select"
             value={filter.status || "ACTIVE"}
             onChange={handleStatusChange}
           >
@@ -119,7 +119,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <label className="filter-label">From:</label>
           <input
             type="date"
-            className="filter-input date-input"
+            className="input filter-input date-input"
             value={formatInputDate(filter.dateFilter?.from)}
             onChange={(e) => handleDateChange("from", e.target.value)}
           />
@@ -131,7 +131,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <label className="filter-label">To:</label>
           <input
             type="date"
-            className="filter-input date-input"
+            className="input filter-input date-input"
             value={formatInputDate(filter.dateFilter?.to)}
             onChange={(e) => handleDateChange("to", e.target.value)}
           />
@@ -143,7 +143,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         {/* Reset Button */}
         <button
           type="button"
-          className="btn-filter-reset"
+          className="btn btn--ghost"
           onClick={handleReset}
           title="Reset all filters"
         >

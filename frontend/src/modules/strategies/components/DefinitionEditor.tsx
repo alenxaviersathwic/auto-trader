@@ -143,7 +143,7 @@ export const DefinitionEditor: React.FC<DefinitionEditorProps> = ({
             <div className="form-group">
               <label>Definition Format</label>
               <select
-                className="filter-select w-full"
+                className="select w-full"
                 value={initialDefinition.format || "RULE_TREE"}
                 onChange={(e) => {
                   const updated = { ...initialDefinition, format: e.target.value };
@@ -158,7 +158,7 @@ export const DefinitionEditor: React.FC<DefinitionEditorProps> = ({
             <div className="form-group">
               <label>Stop Mode</label>
               <select
-                className="filter-select w-full"
+                className="select w-full"
                 value={initialDefinition.riskPolicy?.stopMode || "STRATEGY_FIXED"}
                 onChange={(e) => {
                   const updated = {
@@ -180,7 +180,7 @@ export const DefinitionEditor: React.FC<DefinitionEditorProps> = ({
               <label>Entry Session Time</label>
               <input
                 type="text"
-                className="filter-input w-full"
+                className="input w-full"
                 placeholder="09:15"
                 defaultValue={initialDefinition.bounds?.session?.entryTime || "09:15"}
                 onBlur={(e) => {
@@ -202,7 +202,7 @@ export const DefinitionEditor: React.FC<DefinitionEditorProps> = ({
               <label>Exit Session Time</label>
               <input
                 type="text"
-                className="filter-input w-full"
+                className="input w-full"
                 placeholder="15:14"
                 defaultValue={initialDefinition.bounds?.session?.exitTime || "15:14"}
                 onBlur={(e) => {

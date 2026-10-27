@@ -71,11 +71,11 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({ candidate, onClick
         {/* Score & Sources metadata */}
         <div className="flex items-center justify-between py-2 border-y border-[#232b3b]/60 mb-3 text-xs">
           <div className="flex items-center gap-3">
-            {candidate.score !== null && candidate.score !== undefined && (
+            {(candidate.opportunityScore ?? candidate.score) !== null && (candidate.opportunityScore ?? candidate.score) !== undefined && (
               <div className="flex items-baseline gap-1.5">
                 <span className="text-slate-400 text-[11px]">Score:</span>
-                <span className={`font-mono font-bold text-sm ${getScoreColor(candidate.score)}`}>
-                  {candidate.score.toFixed(1)}
+                <span className={`font-mono font-bold text-sm ${getScoreColor((candidate.opportunityScore ?? candidate.score))}`}>
+                  {Number(candidate.opportunityScore ?? candidate.score).toFixed(1)}
                 </span>
                 {candidate.scoreLabel && (
                   <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#111520] text-slate-300 font-semibold border border-[#232b3b]">

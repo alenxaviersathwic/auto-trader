@@ -233,6 +233,7 @@ class RunService:
             "bearishWatch": c.bearishWatch,
             "score": float(c.score) if c.score is not None else None,
             "latestScore": float(c.score) if c.score is not None else None,
+            "opportunityScore": float(c.opportunityScore) if c.opportunityScore is not None else None,
             "scoreLabel": c.scoreLabel,
             "positiveWeight": float(c.positiveWeight) if c.positiveWeight is not None else 0.0,
             "negativeWeight": float(c.negativeWeight) if c.negativeWeight is not None else 0.0,

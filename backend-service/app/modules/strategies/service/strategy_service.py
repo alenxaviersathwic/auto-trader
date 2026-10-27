@@ -461,6 +461,29 @@ class StrategyService:
         )
 
     # Inter-module interface
+    async def list_suggestable_summaries(
+        self, session: AsyncSession, market: str, underlying_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Short public summaries (name, bias, optionSide, description) of suggestable strategies."""
+        filt = StrategyFilter(
+            market=market,
+            underlyingType=underlying_type,
+            lifecycleStatus="ACTIVE",
+            executable=True,
+            limit=100,
+        )
+        page_res = await self.strategy_repo.search(session, filt)
+        return [
+            {
+                "name": s.name,
+                "bias": s.bias,
+                "optionSide": s.optionSide,
+                "description": (s.description or "")[:160],
+            }
+            for s in page_res.list
+            if s.suggestable
+        ]
+
     async def list_suggestable(
         self,
         session: AsyncSession,

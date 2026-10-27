@@ -195,7 +195,7 @@ export const UserDialog: React.FC<UserDialogProps> = ({
 
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-container modal-lg">
+      <div className="modal modal--wide">
         {/* Modal Header */}
         <div className="modal-header">
           <div className="modal-title-wrap">
@@ -221,7 +221,7 @@ export const UserDialog: React.FC<UserDialogProps> = ({
           </div>
           <button
             type="button"
-            className="modal-close-btn"
+            className="btn btn--icon modal-close-btn"
             onClick={onClose}
             disabled={isSubmitting}
             aria-label="Close"
@@ -547,12 +547,12 @@ export const UserDialog: React.FC<UserDialogProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="modal-footer">
+        <div className="modal-actions">
           {step === 1 ? (
             <>
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn btn--ghost"
                 onClick={onClose}
                 disabled={isSubmitting}
               >
@@ -561,7 +561,7 @@ export const UserDialog: React.FC<UserDialogProps> = ({
               <button
                 type="submit"
                 form="user-form"
-                className="btn btn-primary"
+                className="btn btn--primary"
                 disabled={isSubmitting}
               >
                 {isSubmitting
@@ -574,7 +574,7 @@ export const UserDialog: React.FC<UserDialogProps> = ({
           ) : (
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn--primary"
               onClick={onClose}
             >
               Done

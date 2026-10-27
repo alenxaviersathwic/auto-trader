@@ -421,9 +421,9 @@ frontend/
 ## 12. Research Engine Module Architecture & Flow
 
 ### Overview & Core Philosophy
-The Research Engine performs deterministic market intelligence, news sentiment clearance, and thesis generation for Indian market trading underlyings across two distinct scopes: **Indices** and **Commodities**.
+The Research Engine performs deterministic market intelligence, news sentiment clearance, catalyst categorization, synthesized blog generation, and thesis evaluation for Indian market trading underlyings across two distinct scopes: **Indices** and **Commodities**.
 
-Rather than bloating database storage with thousands of transient vector chunks and document rows, the module operates with an **in-memory extraction pipeline** and a **single upserted entity** (`ResearchEntity`), maintaining only fresh, actionable evaluation data in PostgreSQL.
+Rather than bloating database storage with thousands of transient vector chunks and document rows, the module operates with an **in-memory extraction pipeline** and a **single upserted entity** (`ResearchEntity`), maintaining fresh, actionable evaluation data and structured news categories in PostgreSQL.
 
 ---
 
@@ -441,9 +441,21 @@ Rather than bloating database storage with thousands of transient vector chunks 
   - `thesis`: 1-2 sentence clearance or risk rationale
   - `supportingPoints`: JSONB array of verified bullish drivers
   - `watchItems`: JSONB array of risk monitoring items
-- **In-Place Upsert**: When the pipeline finishes, it checks if `underlying_code` already exists in PostgreSQL. If it exists, it **updates that existing record in-place with latest scores and signals** rather than inserting duplicate candidate rows.
+  - `latestNews`: JSONB array of today's latest scraped news articles (`title`, `url`, `source`, `snippet`, `publishedAt`)
+  - `affectNews`: JSONB array of market-moving catalyst news items with extracted catalyst type (e.g. `EARNINGS`, `MACRO_POLICY`, `SUPPLY_DEMAND`, `INFLATION_RATES`, `GEOPOLITICAL`) and direction (`BULLISH` / `BEARISH`)
+  - `neutralNews`: JSONB array of neutral market commentary and sector wrap-ups
+  - `blogSummary`: Synthesized daily financial intelligence blog briefing providing narrative market pulse, drivers, and publisher citations
+  - `briefEmbedding`: `vector(768)` indexed with HNSW cosine distance (`idx_research_candidates_brief_embedding`), selectively populated for top-ranked underlyings
+- **In-Place Upsert**: When the pipeline finishes, it checks if `underlying_code` already exists in PostgreSQL. If it exists, it **updates that existing record in-place with latest scores, news categories, blog summary, and vector embeddings** rather than inserting duplicate candidate rows.
 
-#### 2. Consolidated Controller (1 Path Per Function)
+#### 2. Selective Vector Memory Storage (Top 5 Indices & Top 3 Commodities)
+- For every research run, candidates are ranked by score within their respective underlying types:
+  - **Top 5 Index items** (e.g. `NIFTY`, `SENSEX`, `BANKNIFTY`, `FINNIFTY`, `MIDCPNIFTY`)
+  - **Top 3 Commodity items** (e.g. `GOLD`, `CRUDEOIL`, `NATURALGAS`)
+- The pipeline generates a 768-dimensional dense vector embedding from the instrument's `blogSummary` and `thesis`, and stores it into `brief_embedding vector(768)`. All other underlyings receive `NULL`.
+- **Architectural Constraint (No Vector Retrieval Flow)**: Per design, vector memory retrieval endpoints and query loops are explicitly **not implemented**. Vector embeddings are write-only / reserved for persistence and ranking without retrieval runtime overhead.
+
+#### 3. Consolidated Controller (1 Path Per Function)
 All endpoints live in [`research_controller.py`](file:///Users/user/Documents/Tests/auto-trader/backend-service/app/modules/research/controller/research_controller.py) under prefix `/api/v1`:
 
 | Method | Path | Purpose |
@@ -452,10 +464,10 @@ All endpoints live in [`research_controller.py`](file:///Users/user/Documents/Te
 | `GET` | `/research/run-status` | Lightweight status polling. Returns strictly `isRunning`, `state`, `progressPct`, `currentNode`, `startedAt`, `finishedAt`. |
 | `POST` | `/research/cancel` | Cancels any currently executing research run. |
 | `POST` | `/research/search` | Search & pagination taking `BaseFilter` (`page`, `limit`, etc.). Returns candidate entities sorted by `score` descending (`nulls_last`). |
-| `GET` | `/research/candidates/{id}` | Retrieves full candidate clearance thesis, supporting points, risk watch items, and verified quotes for detailed inspection. |
+| `GET` | `/research/candidates/{id}` | Retrieves full candidate clearance thesis, blog summary, categorized news (`latestNews`, `affectNews`, `neutralNews`), supporting points, and verified quotes. |
 | `GET` | `/research/results/latest` | Returns latest evaluated candidates grouped by underlying type. |
 
-#### 3. In-Memory Pipeline Execution
+#### 4. Pipeline Execution Nodes
 1. **Load Context**: Loads built-in underlyings (`INDEX`: NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX, BANKEX; `COMMODITY`: CRUDEOIL, NATURALGAS, GOLD, SILVER, COPPER, ZINC), active RSS feeds, and risk terms into state memory.
 2. **Search & Fetch**: Concurrently fetches fresh financial RSS feeds and plain-text market intelligence.
 3. **Clean & Dedupe**: Deduplicates articles in memory by URL and content hash within the freshness window.
@@ -463,17 +475,24 @@ All endpoints live in [`research_controller.py`](file:///Users/user/Documents/Te
 5. **Extract Claims**: Uses alias matching and heuristic assertion extraction in memory.
 6. **Verify Claims & Negative Sweep**: Cross-references assertions against source texts and detects risk catalysts in memory.
 7. **Score & Rank**: Computes scores and clearance status (`CLEAR_POSITIVE`, `BEARISH_WATCH`, etc.).
-8. **Persist**: Upserts the evaluated results directly into `ResearchEntity` in the database.
+8. **Write Briefs & Intelligence Categorization**:
+   - Categorizes matching articles into `latestNews`, `affectNews` (catalysts & impact), and `neutralNews`.
+   - Synthesizes `blogSummary` (Daily Intelligence Briefing with Market Pulse, Drivers, and Publisher citations).
+9. **Persist & Vector Indexing**:
+   - Identifies top 5 indices and top 3 commodities by score.
+   - Computes 768-d vector embeddings for top 5 index and top 3 commodity items; stores them into `brief_embedding`.
+   - Upserts the evaluated results, news categories, and blog summary directly into `ResearchEntity` in PostgreSQL.
 
 ---
 
 ### Frontend Architecture (`frontend/src/modules/research/`)
 
 - **Page**: Single dedicated screen at `/research` ([`ResearchEnginePage.tsx`](file:///Users/user/Documents/Tests/auto-trader/frontend/src/modules/research/pages/ResearchEnginePage.tsx)).
+- **Theme**: Strict adherence to the Zerodha Kite / Eye-Comfort Pro Trading Dark Palette (`--bg-card: #161b26`, `--bg-app: #0e1117`, subtle borders `#232d3f`, JetBrains Mono typography).
 - **Header**: Clean, minimalist trading terminal header:
   - Title: **"Research Engine"** with live progress tag during execution.
   - Action: **"Run Research Engine"** button with loading spinner when active.
-  - Zero redundant metric strips or clutter.
+  - **No Redundant Metric Cards**: Top metric strips are omitted to preserve vertical space and focus immediately on trading instruments.
 - **Two Tabs**: Exactly 2 tabs: **Index** and **Commodity**:
   - The client issues a single query to `POST /api/v1/research/search` (which returns evaluated underlyings sorted by score).
   - The UI filters locally by `scope === "INDEX"` or `scope === "COMMODITY"`.
@@ -488,5 +507,60 @@ All endpoints live in [`research_controller.py`](file:///Users/user/Documents/Te
   - Numeric score, source count, and sentiment ratio (`+bullish / -bearish`)
   - 1-line clearance reason
 - **Detail Drawer (`CandidateDrawer.tsx`)**:
-  - Clicking any card opens a side drawer displaying the complete evaluation thesis, bullish supporting points with verbatim quotes, risk watch items, and verified claims.
+  - Clicking any card opens a side drawer displaying:
+    - **Vector Memory Pill**: Displayed in header for instruments indexed in pgvector (top 5 index / top 3 commodity).
+    - **Daily Intelligence Blog Summary**: Cleanly styled market narrative section.
+    - **Clearance Thesis & Metrics Strip**: Final score, bullish/bearish weights, negative share.
+    - **Categorized News Tabs**:
+      - **Market Affecting**: Catalysts tagged with direction (`BULLISH`/`BEARISH`), catalyst category, domain, and snippet.
+      - **Today's Latest**: Chronological fresh news items with time badges and direct external publisher links.
+      - **Neutral Commentary**: Market wrap-ups and digests.
+    - **Verified Source Quotes & Drivers**: Supporting bullish points and risk watch signals with verified quotations.
+
+---
+
+## 13. MCP Architecture & AI Master Research Connection
+
+### Overview
+Auto-Trader employs the Model Context Protocol (MCP) to decouple LLM copilots from raw database mutations and feature internals. The **Research Engine** exposes an open MCP server interface that connects directly into **AI Master**, enabling AI Master to inspect live market intelligence, query scraped news categories, read synthesized blog briefings, and control research runs with audited governance.
+
+### Research Engine MCP Server (`/mcp/research`)
+- **Prefix**: `/mcp/research`
+- **Class**: `ResearchMcpServer` (`modules/research/mcp/research_mcp_server.py`)
+- **Standard Endpoints**:
+  - `GET /mcp/research/tools`: Returns the catalog of 10 available research tools and their JSON schemas.
+  - `POST /mcp/research/call`: Standardized MCP JSON-RPC call handler (`{ "tool": tool_name, "arguments": args }`).
+  - Individual REST compatibility routes: `POST /mcp/research/tools/{tool_name}`.
+- **Tool Catalog (`RESEARCH_MCP_TOOLS`)**:
+
+| Tool Name | Tier | Description |
+|---|---|---|
+| `get_latest_results` | `READ` | Returns latest evaluated research candidates (scores, clearance status, bullish/bearish weights) for `INDEX` or `COMMODITY`. |
+| `get_candidate` | `READ` | Detailed intelligence for an instrument (`SENSEX`, `NIFTY`, `GOLD`, etc.), including blog summary, market-affecting news, latest news, and vector memory status. |
+| `search_claims` | `READ` | Searches verified source quotes and driver claims filtered by stance (`BULLISH` or `BEARISH`). |
+| `list_underlyings` | `READ` | Lists all supported underlyings across Indices and Commodities with evaluation scores. |
+| `semantic_search` | `READ` | Searches candidate theses and intelligence summaries. |
+| `get_run_status` | `READ` | Returns progress and state of the latest or specific research run. |
+| `search_runs` | `READ` | Searches historical research runs with state filtering. |
+| `list_sources` | `READ` | Lists monitored market publishers and RSS feeds. |
+| `run_research` | `OPERATE` | Triggers a fresh pipeline run across scopes. Gated by HMAC confirmation token. |
+| `cancel_research_run` | `OPERATE` | Cancels an active pipeline run. Gated by HMAC confirmation token. |
+
+### AI Master Connection & Governance
+1. **Server Registry (`modules/master/mcp/server_registry.py`)**:
+   - Automatically registers the `research-engine` server in the `master_tool_servers` table (`url="/mcp/research"`, `transport="HTTP"`, `tierCap="OPERATE"`).
+   - Seeds tool policies in `master_tool_policies` with auto-approval for `READ` tools and confirmation tokens for `OPERATE` tools.
+2. **Tool Gateway (`modules/master/service/tool_gateway.py`)**:
+   - Dynamically resolves tool policies across registered MCP servers.
+   - Enforces tier caps (`READ`, `ANALYZE`, `PROPOSE`, `OPERATE`).
+   - Audits every research tool invocation in `master_tool_calls` table with execution duration and result summaries.
+3. **McpClient (`modules/master/mcp/mcp_client.py`)**:
+   - Supports **in-process direct dispatch** (`research_mcp_instance.execute_tool`) for sub-millisecond execution and shared database sessions.
+   - Supports HTTP transport fallback for external MCP servers.
+4. **LangGraph Agent Nodes (`modules/master/graph/nodes/master_nodes.py`)**:
+   - Classifies research queries (`RESEARCH` intent) using fast heuristics and LLM intent classification.
+   - Automatically invokes `get_candidate` or `get_latest_results` via `ToolGateway`.
+   - Streams formatted intelligence responses to user conversations with status badges, blog summaries, and catalyst news.
+
+
 

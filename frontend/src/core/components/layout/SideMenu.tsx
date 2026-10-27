@@ -1,7 +1,8 @@
 import React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useMenuItems } from "../../navigation/menuRegistry";
-import { Cpu, Activity } from "lucide-react";
+import { Cpu } from "lucide-react";
+import { NexusLogo } from "./NexusLogo";
 
 export const SideMenu: React.FC = () => {
   const menuItems = useMenuItems();
@@ -12,18 +13,17 @@ export const SideMenu: React.FC = () => {
     <aside className="app-sidebar">
       <div className="sidebar-brand">
         <div className="brand-logo-container">
-          <Activity className="brand-icon" size={24} />
+          <NexusLogo size={28} />
         </div>
         <div className="brand-text">
-          <span className="brand-title">auto-trader</span>
-          <span className="brand-subtitle">EXECUTION ENGINE</span>
+          <span className="brand-title">NEXUS</span>
+          <span className="brand-subtitle">ALGO TERMINAL</span>
         </div>
       </div>
 
       <div className="sidebar-section-title">NAVIGATION</div>
 
       <nav className="sidebar-nav">
-        {/* Dynamically registered module links */}
         {menuItems.map((item) => {
           const Icon = item.icon || Cpu;
           const isActive = currentPath.startsWith(item.path);

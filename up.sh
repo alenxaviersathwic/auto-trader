@@ -86,11 +86,13 @@ echo "==========================================================================
 echo " ==> [BUILD] Compiling Backend & Frontend Bundles..."
 echo "================================================================================"
 
-# Stop and remove backend container if currently running so it releases file mounts and builds clean
-if docker ps -a --format '{{.Names}}' | grep -q "^autotrader_backend$"; then
-    echo "     Removing stale autotrader_backend container..."
-    docker compose -p autotrader -f "$COMPOSE_FILE" rm -f -s backend >/dev/null 2>&1 || true
-fi
+# Stop and remove conflicting containers by name so Docker Compose can recreate them cleanly
+for c in autotrader_backend autotrader_frontend; do
+    if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+        echo "     Removing conflicting $c container..."
+        docker rm -f "$c" >/dev/null 2>&1 || true
+    fi
+done
 
 # Clean up any stale autotrader_postgres container if not attached to current project
 if docker ps -a --format '{{.Names}}' | grep -q "^autotrader_postgres$"; then

@@ -64,7 +64,7 @@ class MasterWorkflowRunner:
             state = await self.nodes.handle_chat_node(state, session)
             return state
 
-        elif intent in ["FIND", "EXPLAIN", "ANALYZE_TEXT"]:
+        elif intent in ["FIND", "EXPLAIN", "ANALYZE_TEXT", "RESEARCH"]:
             state = await self.nodes.read_loop_node(state, session)
             return state
 

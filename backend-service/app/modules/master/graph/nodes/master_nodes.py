@@ -15,6 +15,7 @@ from app.modules.master.repository.preference_repository import PreferenceReposi
 from app.modules.master.repository.proposal_repository import ProposalRepository
 from app.modules.master.service.redaction_service import RedactionService
 from app.modules.master.service.tool_gateway import ToolGateway
+from app.modules.research.mcp.research_mcp_server import RESEARCH_MCP_TOOLS
 from app.modules.strategies.mcp.strategy_mcp_server import STRATEGY_MCP_TOOLS
 
 
@@ -58,6 +59,18 @@ class MasterNodes:
         strategy_triggers = ["what strategies", "which strategies", "show strategies", "list strategies", "registered strategies", "available strategies", "strategies are registered", "strategies exist", "strategies do you know"]
         if any(t in clean_lower for t in strategy_triggers):
             state.intent = "FIND"
+            state.confidence = 1.0
+            return state
+
+        # Fast heuristic for market intelligence / research queries
+        research_triggers = [
+            "research", "market intelligence", "what does research suggest", "news affecting", 
+            "affect news", "neutral news", "today news", "blog summary", "sentiment on", 
+            "is sensex cleared", "is nifty cleared", "sensex news", "nifty news", "gold news", 
+            "crude oil news", "crudeoil news", "run research", "latest research", "what does research"
+        ]
+        if any(t in clean_lower for t in research_triggers):
+            state.intent = "RESEARCH"
             state.confidence = 1.0
             return state
 
@@ -247,6 +260,119 @@ class MasterNodes:
                 "I analyzed your strategy description. It appears technically structured. "
                 "Note that validity does not guarantee profitability, and past claims cannot be verified without backtesting."
             )
+
+        elif state.intent == "RESEARCH":
+            clean_u = state.userText.upper()
+            known_underlyings = [
+                "NIFTY", "SENSEX", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "BANKEX",
+                "GOLD", "SILVER", "CRUDEOIL", "CRUDE OIL", "NATURALGAS", "NATURAL GAS", "COPPER", "ZINC"
+            ]
+            matched_code = None
+            for code in known_underlyings:
+                if code in clean_u:
+                    matched_code = code.replace(" ", "")
+                    break
+
+            if matched_code:
+                state.events.append({
+                    "event": "tool.started",
+                    "tool": "get_candidate",
+                    "label": f"Fetching intelligence for {matched_code}..."
+                })
+                res, status = await self.gateway.invoke_tool(
+                    session, state.runId, "get_candidate", {"underlyingCode": matched_code}
+                )
+                state.events.append({
+                    "event": "tool.finished",
+                    "tool": "get_candidate",
+                    "status": status
+                })
+
+                if "error" not in res and res.get("underlyingCode"):
+                    c_code = res.get("underlyingCode")
+                    c_type = res.get("underlyingType", "INDEX")
+                    c_status = res.get("newsStatus", "NO_COVERAGE")
+                    c_score = res.get("score")
+                    score_str = f"{c_score:.1f}" if c_score is not None else "Unrated"
+                    is_cleared = res.get("suggested", False)
+                    badge = "✅ CLEARED FOR TRADE" if is_cleared else (
+                        "🚨 BEARISH WATCH" if "NEGATIVE" in c_status or "BEARISH" in c_status else f"ℹ️ {c_status}"
+                    )
+                    vm_badge = " · 🧠 `[Vector Memory Indexed]`" if res.get("hasVectorEmbedding") else ""
+
+                    thesis = res.get("thesis") or "No clearance thesis recorded."
+                    blog = res.get("blogSummary")
+                    affect_news = res.get("affectNews", [])
+                    latest_news = res.get("latestNews", [])
+
+                    reply = f"### {c_code} ({c_type}) — Market Intelligence\n\n"
+                    reply += f"**Status:** {badge}{vm_badge} | **Score:** `{score_str}`\n\n"
+
+                    if blog:
+                        reply += f"{blog}\n\n"
+                    else:
+                        reply += f"**Clearance Thesis:** {thesis}\n\n"
+
+                    if affect_news:
+                        reply += f"**Key Market-Moving Catalysts ({len(affect_news)} detected):**\n"
+                        for an in affect_news[:3]:
+                            impact = an.get("direction") or an.get("impact") or "CATALYST"
+                            cat = f" [{an.get('catalystType') or an.get('catalyst')}]" if (an.get('catalystType') or an.get('catalyst')) else ""
+                            reply += f"- **[{impact}]{cat}** {an.get('title')} — *{an.get('source') or an.get('domain')}*\n"
+                        reply += "\n"
+
+                    if latest_news and not blog:
+                        reply += f"**Latest Scraped Articles ({len(latest_news)}):**\n"
+                        for ln in latest_news[:3]:
+                            reply += f"- {ln.get('title')} (*{ln.get('source') or 'Newswire'}*)\n"
+                        reply += "\n"
+
+                    state.answerDraft = reply
+                else:
+                    state.answerDraft = f"Could not find evaluated research candidate data for `{matched_code}`. You can run the research engine to generate fresh evaluation."
+            else:
+                # General research query across indices
+                state.events.append({
+                    "event": "tool.started",
+                    "tool": "get_latest_results",
+                    "label": "Loading latest market research results..."
+                })
+                res, status = await self.gateway.invoke_tool(
+                    session, state.runId, "get_latest_results", {"underlyingType": "INDEX"}
+                )
+                state.events.append({
+                    "event": "tool.finished",
+                    "tool": "get_latest_results",
+                    "status": status
+                })
+
+                run_info = res.get("run")
+                suggested = res.get("suggested", [])
+                bearish = res.get("bearishWatch", [])
+                has_neg = res.get("hasNegative", [])
+
+                reply = "### Latest Market Research Intelligence\n\n"
+                if run_info:
+                    reply += f"*Last evaluated run #{run_info.get('id')} ({run_info.get('state')}) — Age: {run_info.get('ageHours', 0)} hrs ago*\n\n"
+
+                if suggested:
+                    reply += "**✅ Cleared for Trading (Positive News Sentiment):**\n"
+                    for s in suggested:
+                        score_val = f"`{s.get('score'):.1f}`" if s.get('score') is not None else "Unrated"
+                        vm = " 🧠" if s.get("hasVectorEmbedding") else ""
+                        reply += f"- **{s.get('underlyingCode')}** (Score: {score_val}){vm} — {s.get('thesis') or 'All news verified positive'}\n"
+                    reply += "\n"
+                else:
+                    reply += "ℹ️ **No underlyings currently meet strict trade clearance criteria.**\n\n"
+
+                if bearish or has_neg:
+                    reply += "**⚠️ Bearish Watch / Negative Catalysts:**\n"
+                    for b in (bearish + has_neg)[:5]:
+                        reply += f"- **{b.get('underlyingCode')}** ({b.get('newsStatus')}) — {b.get('thesis') or 'Negative market catalysts present'}\n"
+                    reply += "\n"
+
+                reply += "💡 *Ask me for details on any instrument (e.g. `What is the news on SENSEX?` or `Is GOLD cleared?`)*"
+                state.answerDraft = reply
 
         state.events.append({"event": "message.delta", "delta": state.answerDraft})
         return state

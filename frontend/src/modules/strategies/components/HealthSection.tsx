@@ -97,7 +97,7 @@ export const HealthSection: React.FC<HealthSectionProps> = ({ strategyId }) => {
             <div>
               <label className="text-xs text-muted block mb-1">Target Health</label>
               <select
-                className="filter-select w-full"
+                className="select w-full"
                 value={overrideHealth}
                 onChange={(e) => setOverrideHealth(e.target.value)}
               >
@@ -111,7 +111,7 @@ export const HealthSection: React.FC<HealthSectionProps> = ({ strategyId }) => {
               <label className="text-xs text-muted block mb-1">Override Reason (Mandatory)</label>
               <input
                 type="text"
-                className="filter-input w-full text-xs"
+                className="input w-full text-xs"
                 placeholder="e.g. Market regime shift, under manual live review"
                 value={overrideReason}
                 onChange={(e) => setOverrideReason(e.target.value)}
@@ -122,7 +122,7 @@ export const HealthSection: React.FC<HealthSectionProps> = ({ strategyId }) => {
               <label className="text-xs text-muted block mb-1">Active Until (Optional)</label>
               <input
                 type="datetime-local"
-                className="filter-input w-full text-xs"
+                className="input w-full text-xs"
                 value={overrideUntil}
                 onChange={(e) => setOverrideUntil(e.target.value)}
               />

@@ -187,7 +187,7 @@ export const StrategyEditorPage: React.FC = () => {
             <label className="text-xs text-muted block mb-1">Strategy Code</label>
             <input
               type="text"
-              className="filter-input w-full text-xs font-mono"
+              className="input w-full font-mono text-xs"
               placeholder="e.g. nifty_momentum_buying_v2"
               value={formData.code}
               onChange={(e) => setFormData({ ...formData, code: e.target.value })}
@@ -199,7 +199,7 @@ export const StrategyEditorPage: React.FC = () => {
             <label className="text-xs text-muted block mb-1">Display Name</label>
             <input
               type="text"
-              className="filter-input w-full text-xs"
+              className="input w-full text-xs"
               placeholder="e.g. Nifty Intraday Trend Surge"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -210,7 +210,7 @@ export const StrategyEditorPage: React.FC = () => {
           <div className="form-group md:col-span-3">
             <label className="text-xs text-muted block mb-1">Description</label>
             <textarea
-              className="filter-input w-full text-xs"
+              className="input w-full text-xs"
               rows={2}
               placeholder="Describe the thesis, setup, and risk approach..."
               value={formData.description}
@@ -221,7 +221,7 @@ export const StrategyEditorPage: React.FC = () => {
           <div className="form-group">
             <label className="text-xs text-muted block mb-1">Category</label>
             <select
-              className="filter-select w-full text-xs"
+              className="select w-full text-xs"
               value={formData.category}
               onChange={(e) => setFormData({ ...formData, category: e.target.value })}
             >
@@ -238,7 +238,7 @@ export const StrategyEditorPage: React.FC = () => {
           <div className="form-group">
             <label className="text-xs text-muted block mb-1">Structure</label>
             <select
-              className="filter-select w-full text-xs"
+              className="select w-full text-xs"
               value={formData.structure}
               onChange={(e) => setFormData({ ...formData, structure: e.target.value })}
             >
@@ -254,7 +254,7 @@ export const StrategyEditorPage: React.FC = () => {
           <div className="form-group">
             <label className="text-xs text-muted block mb-1">Directional Bias</label>
             <select
-              className="filter-select w-full text-xs"
+              className="select w-full text-xs"
               value={formData.bias}
               onChange={(e) => setFormData({ ...formData, bias: e.target.value })}
             >
@@ -269,7 +269,7 @@ export const StrategyEditorPage: React.FC = () => {
             <label className="text-xs text-muted block mb-1">Markets (Comma-separated)</label>
             <input
               type="text"
-              className="filter-input w-full text-xs"
+              className="input w-full text-xs"
               placeholder="NIFTY, BANKNIFTY"
               value={formData.markets.join(", ")}
               onChange={(e) =>
@@ -284,7 +284,7 @@ export const StrategyEditorPage: React.FC = () => {
           <div className="form-group">
             <label className="text-xs text-muted block mb-1">Exchange</label>
             <select
-              className="filter-select w-full text-xs"
+              className="select w-full text-xs"
               value={formData.exchange}
               onChange={(e) => setFormData({ ...formData, exchange: e.target.value })}
             >
@@ -298,7 +298,7 @@ export const StrategyEditorPage: React.FC = () => {
             <label className="text-xs text-muted block mb-1">Timeframe</label>
             <input
               type="text"
-              className="filter-input w-full text-xs font-mono"
+              className="input w-full font-mono text-xs"
               placeholder="3m, 5m, 15m"
               value={formData.timeframe}
               onChange={(e) => setFormData({ ...formData, timeframe: e.target.value })}

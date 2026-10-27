@@ -29,7 +29,7 @@ export const RedirectUrlDialog: React.FC<RedirectUrlDialogProps> = ({
 
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-container modal-md">
+      <div className="modal">
         <div className="modal-header">
           <div className="modal-title-wrap">
             <div className="modal-icon icon-info">
@@ -87,8 +87,8 @@ export const RedirectUrlDialog: React.FC<RedirectUrlDialogProps> = ({
           </div>
         </div>
 
-        <div className="modal-footer">
-          <button type="button" className="btn btn-primary" onClick={onClose}>
+        <div className="modal-actions">
+          <button type="button" className="btn btn--primary" onClick={onClose}>
             Done
           </button>
         </div>

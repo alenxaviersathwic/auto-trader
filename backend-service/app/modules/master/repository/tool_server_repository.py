@@ -100,6 +100,23 @@ class ToolServerRepository:
         res = await session.execute(stmt)
         return res.scalar_one_or_none()
 
+    async def get_policy_by_tool_name(
+        self,
+        session: AsyncSession,
+        tool_name: str,
+    ) -> Optional[MasterToolPolicy]:
+        stmt = (
+            select(MasterToolPolicy)
+            .where(
+                MasterToolPolicy.toolName == tool_name,
+                MasterToolPolicy.status == EntityStatus.ACTIVE,
+            )
+            .order_by(MasterToolPolicy.id.desc())
+            .limit(1)
+        )
+        res = await session.execute(stmt)
+        return res.scalar_one_or_none()
+
     async def get_policy_by_id(
         self,
         session: AsyncSession,
