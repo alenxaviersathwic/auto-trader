@@ -1,6 +1,8 @@
 import hashlib
 import json
+from datetime import datetime, time as dtime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.modules.suggestion.provider.underlying_config import UnderlyingConfig
 
@@ -10,6 +12,35 @@ VOLUME_CONFIRM_RATIO = 1.2  # latest candle volume vs recent average
 VOLUME_DRY_RATIO = 0.6
 VOLUME_BONUS = 6
 MIN_OI = 1000
+# MCX commodity options (crude, nat-gas, gold, silver) run on far smaller total open interest than
+# NIFTY/BANKNIFTY index options -- one commodity lot is much larger notional (e.g. 100 bbl crude vs
+# 65 units NIFTY), so an index-tuned 1000-contract OI floor and 1.5% spread cap were filtering every
+# single commodity contract out of the menu, which is why commodities never produced a suggestion.
+# COPPER/ZINC are excluded upstream entirely (see underlying_config.optionsSupported) since even a
+# loosened threshold doesn't make those two reliably tradeable on the options side.
+MIN_OI_COMMODITY = 150
+MAX_SPREAD_PCT_COMMODITY = 3.0
+
+
+def _liquidity_thresholds(cfg: UnderlyingConfig) -> tuple[float, int]:
+    """(max spread %, min OI) for this underlying's market -- see MIN_OI_COMMODITY note above."""
+    if cfg.type == "COMMODITY":
+        return MAX_SPREAD_PCT_COMMODITY, MIN_OI_COMMODITY
+    return MAX_SPREAD_PCT, MIN_OI
+_IST = ZoneInfo("Asia/Kolkata")
+# G-EXP-GAMMA guardrail: no new positions in a same-day-expiring (0DTE) series after 13:30 IST.
+# Evidence: Quantsapp expiry-day hero-zero buying -Rs6.2k; expiry close straddle buy -Rs2.1k;
+# stop-and-reverse won only 20% of 177 expiry-day trades. 0DTE premium decays fastest of all and is
+# the most likely to produce deceptively attractive reward/risk ratios (tiny premium, huge % moves)
+# that rank artificially high in build_menu's reward/risk sort -- this is the root cause behind
+# same-day-expiry picks (e.g. SENSEX on its Thursday weekly expiry) showing up in suggestions.
+EXPIRY_GAMMA_CUTOFF = dtime(13, 30)
+
+
+def _is_0dte_blocked(expiry: str, now: datetime | None = None) -> bool:
+    """True once it is past the gamma cutoff on the day a chain's own series expires."""
+    now = now or datetime.now(_IST)
+    return expiry == now.strftime("%Y-%m-%d") and now.time() >= EXPIRY_GAMMA_CUTOFF
 
 
 def direction_bias(research: dict[str, Any], market: dict[str, Any]) -> str:
@@ -79,25 +110,46 @@ def build_menu(
     limit: int = 15,
     max_margin: float = 10.0,
     max_stop: float = 5.0,
+    reasons: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
-    """Code builds executable contracts. The AI may only choose from this list."""
+    """Code builds executable contracts. The AI may only choose from this list.
+
+    If `reasons` is passed, it is filled with a count of why each candidate was dropped, so an empty
+    menu can say WHICH filter emptied it instead of a generic message."""
+    drop = reasons if reasons is not None else {}
+
+    def _d(k: str) -> None:
+        drop[k] = drop.get(k, 0) + 1
+
     # Trend is context only: both CALL and PUT stay on the menu. Strategies and rules decide the side,
     # so a bullish NIFTY can still carry a PUT opportunity (resistance rejection, reversal, ...).
     sides = ["CE", "PE"]
     spot = market["spot"]
     menu: list[dict[str, Any]] = []
     for ci, chain in enumerate(market.get("chains", [])):
+        if _is_0dte_blocked(chain["expiry"]):
+            _d("expiry-day after 13:30")
+            continue  # G-EXP-GAMMA: past 13:30 IST on this series' own expiry day, skip it entirely
         res: float | None = chain.get("resistance")
         sup: float | None = chain.get("support")
+        max_spread_pct, min_oi = _liquidity_thresholds(cfg)
         atm_rows = sorted(chain["strikes"], key=lambda s: abs(s["strike"] - spot))[:7]
         for row in atm_rows:
             for side in sides:
                 leg = row[side]
                 ltp, bid, ask = leg["ltp"], leg["bid"], leg["ask"]
-                if ltp <= 0 or leg["oi"] < MIN_OI or leg["volume"] <= 0:
+                if ltp <= 0:
+                    _d("no price")
+                    continue
+                if leg["oi"] < min_oi:
+                    _d(f"OI<{min_oi}")
+                    continue
+                if leg["volume"] <= 0:
+                    _d("no volume today")
                     continue
                 spread = ((ask - bid) / ltp * 100) if ask and bid else 0.0
-                if spread > MAX_SPREAD_PCT:
+                if spread > max_spread_pct:
+                    _d(f"spread>{max_spread_pct}%")
                     continue
                 delta = abs(leg["delta"]) or 0.5
                 # underlying move available toward the OI wall (target) and toward the opposite wall (stop)
@@ -111,6 +163,7 @@ def build_menu(
                 room_pct = delta * up * 0.8 / ltp * 100
                 target_pct = min(max_margin, room_pct)
                 if target_pct < min_margin:
+                    _d("no room for min target")
                     continue  # not enough room for even the smallest target
                 structural_stop_pct = delta * down * 0.5 / ltp * 100
                 stop_pct = max(MIN_STOP_PCT, min(max_stop, target_pct / 2, structural_stop_pct or max_stop))
@@ -119,8 +172,10 @@ def build_menu(
                 margin = (target - ltp) / ltp * 100
                 rr = target_pct / stop_pct
                 if spread > margin / 4:
+                    _d("spread eats target")
                     continue  # spread cost must stay well below the target
                 if rr < 1.2:
+                    _d("reward:risk<1.2")
                     continue
                 menu.append(
                     {

@@ -386,29 +386,35 @@ class ResearchNodes:
         state.progressPct = 52
 
         chunks: List[Dict[str, Any]] = []
+        chunk_size = 350
+        overlap = 50
         for doc in state.fetchedArticles:
-            text = doc["text"]
-            words = text.split()
+            words = doc["text"].split()
             if not words or len(words) < 15:
                 continue
-            chunk_size = 350
-            overlap = 50
-            idx = 0
             for i in range(0, len(words), max(1, chunk_size - overlap)):
                 chunk_words = words[i : i + chunk_size]
                 if not chunk_words:
                     continue
-                chunk_str = " ".join(chunk_words)
-                emb = await embedding_client.get_embedding(chunk_str)
-
-                idx += 1
                 chunks.append({
                     "documentId": doc["id"],
                     "domain": doc["domain"],
                     "publishedAt": doc["publishedAt"],
-                    "text": chunk_str,
+                    "text": " ".join(chunk_words),
                 })
-                state.stats["chunksEmbedded"] += 1
+
+        # Embed with bounded concurrency (was one-by-one: hundreds of sequential Ollama calls).
+        gate = asyncio.Semaphore(8)
+
+        async def _embed(ch: Dict[str, Any]) -> None:
+            async with gate:
+                await embedding_client.get_embedding(ch["text"])
+
+        for start in range(0, len(chunks), 64):  # batches keep the cancel check responsive
+            if state.isCancelled:
+                break
+            await asyncio.gather(*(_embed(ch) for ch in chunks[start : start + 64]))
+        state.stats["chunksEmbedded"] += len(chunks)
 
         await session.commit()
         state.chunks = chunks

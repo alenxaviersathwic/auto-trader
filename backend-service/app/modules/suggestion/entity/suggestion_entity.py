@@ -7,11 +7,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db.base_entity import BaseEntity
-from app.modules.suggestion.provider.underlying_config import UNDERLYING_CONFIG
 
 
 class SuggestionRun(BaseEntity):
-    """One iteration of the Suggestion Engine loop."""
+    """LEGACY: one iteration of the old server-side loop. Replaced by SuggestionMaster; kept for history."""
 
     __tablename__ = "suggestion_runs"
 
@@ -28,11 +27,49 @@ class SuggestionRun(BaseEntity):
     error: Mapped[str | None] = mapped_column("error", Text, nullable=True)
 
 
-class SuggestionColumns:
-    """Columns shared by every per-underlying suggestion table (nifty_suggestions, sensex_suggestions, ...)."""
+class SuggestionMaster(BaseEntity):
+    """
+    One card session: a row is created for every underlying each time Start is clicked.
+    The frontend then calls /iterate on each RUNNING master one by one, in a loop; every
+    iteration updates the counters here and writes its picks to trade_suggestions.
+    """
 
-    runId: Mapped[int] = mapped_column("run_id", BigInteger, nullable=False, index=True)
-    ref: Mapped[str] = mapped_column("ref", String(40), nullable=False)
+    __tablename__ = "suggestion_masters"
+
+    tradeDate: Mapped[str] = mapped_column("trade_date", String(10), nullable=False)  # YYYY-MM-DD (IST)
+    sessionNo: Mapped[int] = mapped_column("session_no", SmallInteger, nullable=False, default=1)
+    underlyingCode: Mapped[str] = mapped_column("underlying_code", String(30), nullable=False)
+    underlyingType: Mapped[str] = mapped_column("underlying_type", String(10), nullable=False)
+    state: Mapped[str] = mapped_column("state", String(12), nullable=False, default="RUNNING")  # RUNNING | STOPPED
+    stopReason: Mapped[str | None] = mapped_column("stop_reason", String(40), nullable=True)
+    params: Mapped[dict[str, Any]] = mapped_column("params", JSONB, nullable=False, default=dict)
+    researchRunId: Mapped[int | None] = mapped_column("research_run_id", BigInteger, nullable=True)
+    researchScore: Mapped[float | None] = mapped_column("research_score", Numeric(6, 2), nullable=True)
+    direction: Mapped[str | None] = mapped_column("direction", String(10), nullable=True)
+    newsStatus: Mapped[str | None] = mapped_column("news_status", String(20), nullable=True)
+    inResearch: Mapped[bool] = mapped_column("in_research", Boolean, nullable=False, default=True)
+    iterationsCompleted: Mapped[int] = mapped_column("iterations_completed", Integer, nullable=False, default=0)
+    iterationsFailed: Mapped[int] = mapped_column("iterations_failed", Integer, nullable=False, default=0)
+    suggestionsTotal: Mapped[int] = mapped_column("suggestions_total", Integer, nullable=False, default=0)
+    lastSuggestionCount: Mapped[int] = mapped_column("last_suggestion_count", SmallInteger, nullable=False, default=0)
+    topConfidence: Mapped[int] = mapped_column("top_confidence", SmallInteger, nullable=False, default=0)
+    lastNote: Mapped[str | None] = mapped_column("last_note", Text, nullable=True)
+    lastError: Mapped[str | None] = mapped_column("last_error", Text, nullable=True)
+    lastDurationMs: Mapped[int | None] = mapped_column("last_duration_ms", Integer, nullable=True)
+    startedAt: Mapped[datetime] = mapped_column("started_at", DateTime(timezone=True), nullable=False)
+    lastStartedAt: Mapped[datetime | None] = mapped_column("last_started_at", DateTime(timezone=True), nullable=True)
+    lastCompletedAt: Mapped[datetime | None] = mapped_column("last_completed_at", DateTime(timezone=True), nullable=True)
+    stoppedAt: Mapped[datetime | None] = mapped_column("stopped_at", DateTime(timezone=True), nullable=True)
+
+
+class TradeSuggestion(BaseEntity):
+    """One executable suggestion produced by one iteration of a SuggestionMaster."""
+
+    __tablename__ = "trade_suggestions"
+
+    masterId: Mapped[int] = mapped_column("master_id", BigInteger, nullable=False, index=True)
+    iterationNo: Mapped[int] = mapped_column("iteration_no", Integer, nullable=False)
+    ref: Mapped[str] = mapped_column("ref", String(48), nullable=False)
     underlyingCode: Mapped[str] = mapped_column("underlying_code", String(30), nullable=False)
     underlyingType: Mapped[str] = mapped_column("underlying_type", String(10), nullable=False)
     contractId: Mapped[str] = mapped_column("contract_id", String(60), nullable=False)
@@ -57,19 +94,6 @@ class SuggestionColumns:
     outcome: Mapped[str] = mapped_column("outcome", String(12), nullable=False, default="PENDING")
     resolvedAt: Mapped[datetime | None] = mapped_column("resolved_at", DateTime(timezone=True), nullable=True)
     isLatest: Mapped[bool] = mapped_column("is_latest", Boolean, nullable=False, default=True)
-
-
-def _make_entity(code: str) -> type:
-    return type(
-        f"{code.title()}Suggestion",
-        (SuggestionColumns, BaseEntity),
-        {"__tablename__": f"{code.lower()}_suggestions", "__module__": __name__},
-    )
-
-
-# One table per underlying: nifty_suggestions, banknifty_suggestions, sensex_suggestions, ...
-SUGGESTION_ENTITIES: dict[str, Any] = {code: _make_entity(code) for code in UNDERLYING_CONFIG}
-Suggestion = SuggestionColumns  # type alias used in annotations only
 
 
 class SuggestionMemory(BaseEntity):

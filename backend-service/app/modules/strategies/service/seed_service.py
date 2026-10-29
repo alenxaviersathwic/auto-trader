@@ -40,7 +40,8 @@ class SeedService:
         self.reliability_calc = reliability_calc or ReliabilityCalculator()
 
     async def seed_defaults(self, session: AsyncSession) -> Dict[str, Any]:
-        """Loads registries, default health policy, 15 textbook strategies, and legacy strategies/rules."""
+        """Loads registries, default health policy, 15 textbook strategies, legacy strategies/rules,
+        and the Oct-2026 research-backed strategy/guardrail registry."""
         logger.info("Starting seed_defaults execution...")
 
         # 1. Seed Registries
@@ -55,13 +56,123 @@ class SeedService:
         # 4. Seed Legacy Strategies and Rules
         leg_strat_count, leg_rule_count = await self._seed_legacy_data(session)
 
+        # 5. Seed Oct-2026 research registry (intraday index-option / MCX strategies + guardrails)
+        res_strat_count, res_rule_count = await self._seed_research_data(session)
+
         return {
             "registriesSeeded": reg_count,
             "healthPoliciesSeeded": hp_count,
             "textbookStrategiesSeeded": tb_count,
             "legacyStrategiesSeeded": leg_strat_count,
             "rulesSeeded": leg_rule_count,
+            "researchStrategiesSeeded": res_strat_count,
+            "researchRulesSeeded": res_rule_count,
         }
+
+    async def _seed_research_data(self, session: AsyncSession) -> Tuple[int, int]:
+        """Seeds the strategy registry and guardrail rules from the Oct-2026 Claude research run
+        (task wf-73cd02ba-57fd-81e6-bc87-e3915505046a): intraday index-option / MCX commodity
+        strategies with activeDays scheduling, and the Section-4 guardrail rules. Idempotent by code,
+        same pattern as _seed_legacy_data."""
+        seed_path = os.path.join(os.path.dirname(__file__), "data", "research_strategies_seed.json")
+        if not os.path.exists(seed_path):
+            logger.warning(f"Research seed file not found at {seed_path}")
+            return 0, 0
+
+        with open(seed_path, "r") as f:
+            data = json.load(f)
+
+        strat_count = 0
+        rule_count = 0
+
+        for s in data.get("strategies", []):
+            code = s["code"]
+            existing = await self.strategy_repo.get_by_code(session, code)
+            if existing:
+                continue
+            definition = s["definition"]
+            val_res = await self.validator.validate(session, definition, s.get("definitionFormat", "SUMMARY"))
+            raw_def = json.dumps(definition, sort_keys=True)
+            ch = hashlib.sha256(raw_def.encode("utf-8")).hexdigest()
+
+            strat = Strategy(
+                code=code,
+                name=s["name"],
+                description=s.get("description"),
+                category=s["category"],
+                structure=s.get("structure"),
+                bias=s.get("bias"),
+                optionSide=s.get("optionSide"),
+                markets=s.get("markets", []),
+                underlyingTypes=s.get("underlyingTypes", []),
+                exchange=s.get("exchange"),
+                tradingModes=s.get("tradingModes", []),
+                executionModes=s.get("executionModes", []),
+                timeframe=s.get("timeframe"),
+                activeDays=s.get("activeDays", []),
+                dayOverrides=s.get("dayOverrides", []),
+                definitionFormat=s.get("definitionFormat", "SUMMARY"),
+                executable=val_res.executable,
+                lifecycleStatus=s.get("lifecycleStatus", "DRAFT"),
+                health=s.get("health", "HEALTHY"),
+                validationStatus=s.get("validationStatus", "UNTESTED"),
+                enabled=s.get("enabled", True),
+                riskProfile=s.get("riskProfile"),
+                references=s.get("references"),
+                riskNotes=s.get("riskNotes"),
+                howItWorks=s.get("howItWorks"),
+                tags=s.get("tags"),
+                attributes=s.get("attributes"),
+                provenance=s.get("provenance"),
+            )
+            saved_s = await self.strategy_repo.save(session, strat)
+
+            v1 = StrategyVersion(
+                strategyId=saved_s.id,
+                versionNo=1,
+                schemaVersion=2,
+                definition=definition,
+                contentHash=ch,
+                changeNote="Seeded from Oct-2026 research run (task wf-73cd02ba-57fd-81e6-bc87-e3915505046a)",
+            )
+            await self.strategy_repo.save_version(session, v1)
+            saved_s.currentVersionId = v1.id
+            await self.strategy_repo.save(session, saved_s)
+            strat_count += 1
+
+        for r in data.get("rules", []):
+            code = r["code"]
+            existing_rule = await self.rule_repo.get_by_code(session, code)
+            if existing_rule:
+                continue
+            rule = Rule(
+                code=code,
+                name=r["name"],
+                ruleKind=r.get("ruleKind", "GUARDRAIL"),
+                ruleType=r.get("ruleType", "OTHER"),
+                action=r.get("action"),
+                priority=r.get("priority", "MEDIUM"),
+                appliesTo=r.get("appliesTo", {}),
+                conditionText=r.get("conditionText", ""),
+                evidence=r.get("evidence"),
+                executable=r.get("executable", True),
+                provenance=r.get("provenance"),
+                enabled=r.get("enabled", True),
+            )
+            saved_r = await self.rule_repo.save(session, rule)
+
+            v1r = RuleVersion(
+                ruleId=saved_r.id,
+                versionNo=1,
+                content=r.get("content", {}),
+                changeNote="Seeded from Oct-2026 research run (task wf-73cd02ba-57fd-81e6-bc87-e3915505046a)",
+            )
+            await self.rule_repo.save_version(session, v1r)
+            saved_r.currentVersionId = v1r.id
+            await self.rule_repo.save(session, saved_r)
+            rule_count += 1
+
+        return strat_count, rule_count
 
     async def _seed_registries(self, session: AsyncSession) -> int:
         count = 0

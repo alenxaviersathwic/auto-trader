@@ -6,7 +6,8 @@ import re
 import string
 import struct
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time as dtime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any, Optional
 from urllib.parse import parse_qs, quote, urlparse
 
@@ -22,6 +23,18 @@ BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 DEVICE_DETAILS = "platform=WEB|osName=Mac OS/10.15.7|osVersion=Chrome/140.0.0.0|appVersion=4.0.0|modelName=Chrome|manufacturer=Apple|uuid=3Z1IVTlV4rUUGbNp8KP0|userAgent=Upstox 3.0 Mozilla/5.0"
 
+
+
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def next_upstox_expiry(now: datetime) -> datetime:
+    """Upstox access tokens expire at 03:30 IST the next morning, whatever time they were issued."""
+    local = now.astimezone(_IST)
+    cutoff = datetime.combine(local.date(), dtime(3, 30), tzinfo=_IST)
+    if local >= cutoff:
+        cutoff += timedelta(days=1)
+    return cutoff.astimezone(UTC)
 
 class UpstoxService:
     """
@@ -264,7 +277,7 @@ class UpstoxService:
                 config.accessTokenEnc = cipher.encrypt(access_token)
                 config.authStatus = "VALID"
                 config.lastAuthAt = now
-                config.tokenExpiresAt = now + timedelta(hours=24)
+                config.tokenExpiresAt = next_upstox_expiry(now)
                 config.lastError = None
                 config.upstoxUserId = upstox_user_id or config.upstoxUserId
                 config.profileName = user_name or config.profileName
@@ -364,7 +377,7 @@ class UpstoxService:
             config.accessTokenEnc = cipher.encrypt(access_token)
             config.authStatus = "VALID"
             config.lastAuthAt = now
-            config.tokenExpiresAt = now + timedelta(hours=24)
+            config.tokenExpiresAt = next_upstox_expiry(now)
             config.lastError = None
             config.upstoxUserId = result.get("user_id")
             config.profileName = result.get("user_name")

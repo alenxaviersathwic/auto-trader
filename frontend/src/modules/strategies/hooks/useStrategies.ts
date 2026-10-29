@@ -7,6 +7,7 @@ import {
 import {
   activateStrategyVersion,
   addPerformanceSnapshot,
+  applyDayShift,
   checkGuardrails,
   cloneStrategy,
   createRule,
@@ -40,6 +41,7 @@ import {
   strategiesQueryKeys,
 } from "../queryKeys/strategiesQueryKeys";
 import {
+  DayShiftPayload,
   RuleCreatePayload,
   RuleFilter,
   RuleUpdatePayload,
@@ -128,6 +130,16 @@ export function useCloneStrategy() {
     mutationFn: (id: number) => cloneStrategy(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: strategiesQueryKeys.lists() });
+    },
+  });
+}
+
+export function useApplyDayShift() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: DayShiftPayload) => applyDayShift(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: strategiesQueryKeys.all });
     },
   });
 }

@@ -3,14 +3,14 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { UNDERLYING_NAMES } from "../components/underlyingNames";
 import { SuggestionCard } from "../components/SuggestionCard";
-import { useLatestSuggestions, useSuggestionStatus } from "../hooks/useSuggestion";
+import { useLatestSuggestions, useSuggestionLoop } from "../hooks/useSuggestion";
 
 export const SuggestionDetailPage: React.FC = () => {
   const { underlying } = useParams({ strict: false }) as { underlying?: string };
   const navigate = useNavigate();
-  const { data: status } = useSuggestionStatus();
+  const loop = useSuggestionLoop();
   const code = (underlying ?? "").toUpperCase();
-  const { data: latest } = useLatestSuggestions(Boolean(status?.isLooping), code);
+  const { data: latest } = useLatestSuggestions(loop.running, code);
   const items = latest?.list ?? [];
 
   return (

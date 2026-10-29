@@ -24,7 +24,8 @@ class RunService:
         self._lock = asyncio.Lock()
 
     async def get_active_run_id(self, session: AsyncSession) -> Optional[int]:
-        """Checks DB for any run in QUEUED or RUNNING state."""
+        """Checks DB for any run in QUEUED or RUNNING state (orphaned rows are reaped first)."""
+        await self._reap_orphaned_runs(session)
         res = await session.execute(
             select(ResearchRun.id)
             .where(ResearchRun.status == 1)
@@ -33,6 +34,35 @@ class RunService:
             .limit(1)
         )
         return res.scalar_one_or_none()
+
+    async def _reap_orphaned_runs(self, session: AsyncSession) -> None:
+        """
+        A QUEUED/RUNNING row with no live task in this process is dead: the server restarted
+        mid-run, or the task crashed without updating the row. Single uvicorn worker, so the
+        in-memory task is the source of truth. Skipped while start_run holds the lock
+        (row committed, task not yet assigned).
+        """
+        if self._lock.locked():
+            return
+        live_id = self._active_run_id if (self._active_task and not self._active_task.done()) else None
+        stmt = (
+            update(ResearchRun)
+            .where(ResearchRun.status == 1)
+            .where(ResearchRun.state.in_(["QUEUED", "RUNNING"]))
+            .values(
+                state="FAILED",
+                finishedAt=datetime.now(timezone.utc),
+                error="Interrupted: no live worker for this run (server restart or crash).",
+            )
+            .returning(ResearchRun.id)
+        )
+        if live_id is not None:
+            stmt = stmt.where(ResearchRun.id != live_id)
+        res = await session.execute(stmt)
+        reaped = list(res.scalars().all())
+        if reaped:
+            await session.commit()
+            logger.warning(f"Research runs {reaped} marked FAILED (orphaned, no live task).")
 
     async def start_run(
         self,

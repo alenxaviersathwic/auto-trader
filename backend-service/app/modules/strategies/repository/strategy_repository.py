@@ -241,6 +241,8 @@ class StrategyRepository:
         # If suggestable filter is requested, filter in memory or apply criteria
         if filter_obj.suggestable is not None:
             strategies = [s for s in strategies if s.suggestable is filter_obj.suggestable]
+        if filter_obj.activeOn is not None:
+            strategies = [s for s in strategies if s.isActiveOn(filter_obj.activeOn)]
 
         limit = filter_obj.limit if filter_obj.limit > 0 else 10
         total_pages = math.ceil(total_items / limit) if total_items > 0 else 0

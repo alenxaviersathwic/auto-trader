@@ -6,6 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto.secret_cipher import SecretCipher
+from app.core.db.entity_status import EntityStatus
+from app.core.logging.logger import logger
 from app.modules.suggestion.provider.instrument_resolver import mcx_resolver
 from app.modules.suggestion.provider.underlying_config import UnderlyingConfig
 
@@ -14,6 +16,10 @@ BASE = "https://api.upstox.com/v2"
 
 class MarketDataUnavailable(Exception):
     pass
+
+
+class TokenRejected(MarketDataUnavailable):
+    """Upstox answered 401/403: the stored token was revoked (e.g. a newer login with the same API key)."""
 
 
 class UpstoxMarketData:
@@ -26,11 +32,15 @@ class UpstoxMarketData:
         from app.modules.users.entity.upstox_config_entity import (
             UpstoxConfig,  # lazy: read-only token lookup
         )
+        from app.modules.users.entity.user_entity import User
 
+        # Active rows only; the default market-data user wins, then the freshest login.
         res = await session.execute(
             select(UpstoxConfig)
+            .join(User, User.id == UpstoxConfig.userId)
             .where(UpstoxConfig.accessTokenEnc.is_not(None))
-            .order_by(UpstoxConfig.lastAuthAt.desc().nulls_last())
+            .where(UpstoxConfig.status == EntityStatus.ACTIVE, User.status == EntityStatus.ACTIVE)
+            .order_by(User.isDefault.desc(), UpstoxConfig.lastAuthAt.desc().nulls_last())
             .limit(1)
         )
         cfg = res.scalars().first()
@@ -51,7 +61,8 @@ class UpstoxMarketData:
         """GET with readable errors, so the tile can say what is wrong instead of a bare status code."""
         r = await client.get(url, **kwargs)
         if r.status_code in (401, 403):
-            raise MarketDataUnavailable(
+            logger.warning(f"[UPSTOX_TOKEN_REJECTED] {what} {r.status_code}: {r.text[:300]}")
+            raise TokenRejected(
                 f"Upstox rejected the access token ({what} {r.status_code}). Log in to Upstox again in Users & Accounts"
             )
         if r.status_code == 429:
@@ -71,6 +82,18 @@ class UpstoxMarketData:
                 raise MarketDataUnavailable(f"{cfg.code}: no running MCX futures contract found")
             key = found["key"]
         token = await self._token(session)
+        try:
+            return await self._fetch_with_token(key, token)
+        except TokenRejected:
+            # Token revoked mid-day: log in again once (shared lock + cooldown across all underlyings), retry once.
+            from app.modules.users.service.user_service import UserService  # lazy: avoid import cycle
+
+            if not await UserService().reauth_default_after_rejection():
+                raise
+            session.expire_all()  # drop the cached config row so the new token is read
+            return await self._fetch_with_token(key, await self._token(session))
+
+    async def _fetch_with_token(self, key: str, token: str) -> dict[str, Any]:
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
         async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
             candles = await self._candles(client, key)
@@ -108,11 +131,18 @@ class UpstoxMarketData:
 
     async def _expiries(self, client: httpx.AsyncClient, key: str) -> list[str]:
         r = await self._get(client, f"{BASE}/option/contract", "contracts", params={"instrument_key": key})
-        dates = sorted({c.get("expiry") for c in r.json().get("data", []) if c.get("expiry")})
+        raw = r.json().get("data", [])
+        dates = sorted({c.get("expiry") for c in raw if c.get("expiry")})
         today = datetime.now().strftime("%Y-%m-%d")
         dates = [d for d in dates if d >= today]
         if not dates:
-            raise MarketDataUnavailable("no expiries")
+            # MCX commodity option chains are the common case here: Upstox's /option/contract
+            # endpoint has historically been inconsistent for commodity futures keys, so log the
+            # raw response size to tell "Upstox returned nothing for this key" apart from
+            # "returned contracts but all expiries were in the past" when diagnosing a commodity
+            # that never produces a suggestion.
+            logger.warning(f"[NO_EXPIRIES] key={key} rawContracts={len(raw)} sample={raw[:1]}")
+            raise MarketDataUnavailable(f"no expiries for {key} ({len(raw)} raw contracts from Upstox)")
         return dates
 
     async def _chain(self, client: httpx.AsyncClient, key: str, expiry: str) -> dict[str, Any]:

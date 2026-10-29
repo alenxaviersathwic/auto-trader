@@ -1,6 +1,8 @@
 import { httpClient } from "../../../core/api/httpClient";
 import { PageResult } from "../../../core/types/pagination.types";
 import {
+  DayShiftPayload,
+  DayShiftResult,
   EvaluateResult,
   GuardrailCheckResponse,
   HealthDetails,
@@ -46,6 +48,10 @@ export async function updateStrategy(
 
 export async function deleteStrategy(id: number): Promise<void> {
   return httpClient.delete(`/strategies/${id}`);
+}
+
+export async function applyDayShift(payload: DayShiftPayload): Promise<DayShiftResult> {
+  return httpClient.post("/strategies/day-shift", payload);
 }
 
 export async function cloneStrategy(id: number): Promise<Strategy> {

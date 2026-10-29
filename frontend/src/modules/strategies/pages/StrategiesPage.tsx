@@ -20,7 +20,9 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Play,
+  CalendarDays,
 } from "lucide-react";
+import { DayShiftModal } from "../components/DayShiftModal";
 import { NeedsAttentionBanner } from "../components/NeedsAttentionBanner";
 import { StrategyCard } from "../components/StrategyCard";
 import {
@@ -56,6 +58,7 @@ export const StrategiesPage: React.FC = () => {
   });
 
   const [searchInput, setSearchInput] = useState<string>("");
+  const [showDayShift, setShowDayShift] = useState<boolean>(false);
 
   const { data, isLoading, refetch } = useStrategiesSearch(filter);
   const deleteMutation = useDeleteStrategy();
@@ -231,6 +234,27 @@ export const StrategiesPage: React.FC = () => {
             title="Refresh strategy list"
           >
             <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} /> Refresh
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowDayShift(true)}
+            style={{
+              background: "#18202e",
+              border: "1px solid #283449",
+              borderRadius: "8px",
+              color: "#cbd5e1",
+              padding: "8px 14px",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+            title="Block a holiday and move strategies to another date"
+          >
+            <CalendarDays size={13} /> Holiday Shift
           </button>
 
           <button
@@ -1076,6 +1100,8 @@ export const StrategiesPage: React.FC = () => {
 
       {/* Tab 2: Rules View */}
       {activeTab === "rules" && <RulesPage showHeader={false} />}
+
+      {showDayShift && <DayShiftModal onClose={() => setShowDayShift(false)} />}
     </div>
   );
 };

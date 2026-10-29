@@ -1,26 +1,15 @@
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import Any
-
-from langgraph.graph import END
-from langgraph.types import Send
-from sqlalchemy import update
 
 from app.core.db.session import async_session_factory
 from app.core.logging.logger import logger
 from app.modules.master.llm.ollama_client import OllamaClient
 from app.modules.strategies.service.strategy_service import StrategyService
-from app.modules.suggestion.entity.suggestion_entity import SuggestionRun
 from app.modules.suggestion.graph.prompts import SELECT_SYSTEM_PROMPT
-from app.modules.suggestion.graph.state import SuggestionState, UnderlyingState
+from app.modules.suggestion.graph.state import UnderlyingState
 from app.modules.suggestion.provider.underlying_config import get_config, is_market_open
 from app.modules.suggestion.provider.upstox_market_data import market_data
-from app.modules.suggestion.repository.suggestion_repository import (
-    entity_for,
-    make_ref,
-    risk_level,
-    suggestion_repository,
-)
 from app.modules.suggestion.schema.suggestion_schema import AiAnswer
 from app.modules.suggestion.service import memory_service
 from app.modules.suggestion.service.menu_builder import (
@@ -32,131 +21,17 @@ from app.modules.suggestion.service.menu_builder import (
     expected_edge_pct,
     volume_adjustment,
 )
-from app.modules.suggestion.service.selector import select_underlyings
 
 MAX_DATA_AGE_SECONDS = 120
+REPRICE_TOLERANCE_PCT = 3.0  # after a slow AI step: keep a pick only if its premium moved less than this
 _last_answer: dict[str, dict[str, Any]] = {}  # code -> {"hash": str, "answer": dict}
 _strategy_service = StrategyService()
 _llm = OllamaClient()
-
-
-async def _progress(run_id: int, node: str, pct: int) -> None:
-    async with async_session_factory() as s:
-        await s.execute(
-            update(SuggestionRun).where(SuggestionRun.id == run_id).values(currentNode=node, progressPct=pct)
-        )
-        await s.commit()
-
-
-# ───────────────────────── parent graph nodes ─────────────────────────
-async def load_research(state: SuggestionState) -> dict[str, Any]:
-    """Step 1: does Research have data? Pick top INDEX + top COMMODITY underlyings from it."""
-    p = state["params"]
-    await _progress(state["runId"], "load_research", 5)
-    async with async_session_factory() as s:
-        sel = await select_underlyings(s, p["indexCount"], p["commodityCount"], p.get("only"))
-    chosen, run_id = sel["items"], sel["runId"]
-    if run_id is None:
-        return {"status": "NO_RESEARCH", "underlyings": []}
-    return {
-        "status": "OK" if chosen else "NO_UNDERLYINGS",
-        "underlyings": chosen,
-        "researchRunId": run_id,
-    }
-
-
-def route_after_research(state: SuggestionState):
-    """Conditional edge + parallel fan-out: one branch per underlying, run at the same time."""
-    if state.get("status") != "OK":
-        return END
-    return [
-        Send("analyze_underlying", {"runId": state["runId"], "params": state["params"], "research": u,
-                                    "code": u["underlyingCode"]})
-        for u in state["underlyings"]
-    ]
-
-
-async def analyze_underlying(payload: dict[str, Any]) -> dict[str, Any]:
-    from app.modules.suggestion.graph.builder import underlying_graph
-
-    out: UnderlyingState = await underlying_graph.ainvoke(payload)
-    prices: dict[str, float] = {}
-    for c in (out.get("market") or {}).get("chains", []):
-        for row in c["strikes"]:
-            for side in ("CE", "PE"):
-                if row[side]["key"]:
-                    prices[row[side]["key"]] = row[side]["ltp"]
-    update_: dict[str, Any] = {"results": out.get("candidates", []), "prices": prices,
-                               "iterated": {payload["code"]: datetime.now(UTC).isoformat()},
-                               "notes": {payload["code"]: out.get("error") or out.get("note") or ""},
-                               "aiUsed": 0 if out.get("usedBaseline") or out.get("error") else 1,
-                               "baselineUsed": 1 if out.get("usedBaseline") else 0}
-    if out.get("error"):
-        update_["skipped"] = [{"underlying": payload["code"], "reason": out["error"]}]
-    return update_
-
-
-async def pick_top(state: SuggestionState) -> dict[str, Any]:
-    """Rank by confidence, max N total, max per underlying, linked indices count as one group."""
-    p = state["params"]
-    await _progress(state["runId"], "pick_top", 80)
-    per_group: dict[str, int] = {}
-    picks: list[dict[str, Any]] = []
-    for c in sorted(state.get("results", []), key=lambda c: (c.get("edge", 0), c["confidence"]), reverse=True):
-        cfg = get_config(c["underlyingCode"])
-        group = (cfg.linkedGroup if cfg and cfg.linkedGroup else c["underlyingCode"]) if cfg else c["underlyingCode"]
-        if per_group.get(group, 0) >= p["maxPerUnderlying"]:
-            continue
-        per_group[group] = per_group.get(group, 0) + 1
-        picks.append(c)
-        if len(picks) >= p["maxSuggestions"]:
-            break
-    for i, c in enumerate(picks, 1):
-        c["rank"] = i
-    return {"picks": picks}
-
-
-async def save_picks(state: SuggestionState) -> dict[str, Any]:
-    await _progress(state["runId"], "save", 88)
-    now = datetime.now(UTC)
-    valid_until = now + timedelta(minutes=state["params"].get("validMinutes", 15))
-    by_code: dict[str, list[dict[str, Any]]] = {}
-    for c in state.get("picks", []):
-        by_code.setdefault(c["underlyingCode"], []).append(c)
-    ids: list[int] = []
-    async with async_session_factory() as s:
-        # Every analysed underlying replaces its own "latest" set, even when it has no picks now.
-        for code in {u["underlyingCode"] for u in state.get("underlyings", [])} | set(by_code):
-            ent = entity_for(code)
-            rows = []
-            for c in by_code.get(code, []):
-                rows.append(
-                    ent(
-                        runId=state["runId"], ref=make_ref(code, state["runId"], c["rank"], now),
-                        underlyingCode=code, underlyingType=c["underlyingType"], contractId=c["id"],
-                        instrumentKey=c.get("instrumentKey"), optionType=c["side"], spot=c.get("spot", 0),
-                        strike=c["strike"], expiry=c["expiry"], entry=c["entry"], stop=c["stop"],
-                        target=c["target"], profitMarginPct=c["marginPct"], rewardRisk=c["rewardRisk"],
-                        confidence=c["confidence"],
-                        riskLevel=risk_level(c["confidence"], c["rewardRisk"], c.get("spreadPct", 0)),
-                        rank=c["rank"], strategy=c.get("strategy"), reasons=c.get("reasons", []),
-                        risks=c.get("risks", []), source=c["source"], validUntil=valid_until, isLatest=True,
-                    )
-                )
-            await suggestion_repository.replace_latest(s, code, rows)
-            for row, c in zip(rows, by_code.get(code, []), strict=True):
-                ids.append(row.id)
-                await memory_service.remember_pending(s, row, c.get("bias", "NEUTRAL"), "UNKNOWN")
-        await s.commit()
-    return {"savedIds": ids}
-
-
-async def track_outcomes(state: SuggestionState) -> dict[str, Any]:
-    await _progress(state["runId"], "track_outcomes", 95)
-    async with async_session_factory() as s:
-        n = await memory_service.resolve_outcomes(s, state.get("prices", {}))
-        await s.commit()
-    return {"outcomesResolved": n}
+# One local model serves every card. The frontend iterates cards one by one, so normally only one
+# call is in flight; the gate still caps it at 2 if two browser tabs (or a manual API call) overlap.
+# Watch [OLLAMA_TIMING] in the logs: if load/answer times roughly double, drop this to Semaphore(1).
+_ai_gate = asyncio.Semaphore(2)
+AI_TIMEOUT_SECONDS = 180.0
 
 
 # ───────────────────────── per-underlying nodes ─────────────────────────
@@ -166,6 +41,11 @@ async def gather(state: UnderlyingState) -> dict[str, Any]:
     cfg = get_config(code)
     if not state["params"].get("ignoreMarketHours") and not is_market_open(cfg):  # type: ignore[arg-type]
         return {"error": f"market closed ({cfg.open}-{cfg.close} IST)", "strategies": []}  # type: ignore[union-attr]
+    if cfg and not cfg.optionsSupported:
+        return {
+            "error": f"{code}: MCX options liquidity is too thin to trade here -- see MCX_BASEMETAL_FUT_TREND (futures-only strategy)",
+            "strategies": [],
+        }
 
     async def get_market():
         async with async_session_factory() as s:
@@ -197,10 +77,12 @@ async def make_menu(state: UnderlyingState) -> dict[str, Any]:
     cfg = get_config(state["code"])
     bias = direction_bias(state["research"], state["market"])
     brief = build_brief(cfg, state["research"], state["market"], bias)  # type: ignore[arg-type]
+    drop_reasons: dict[str, int] = {}
     menu = build_menu(  # type: ignore[arg-type]
         cfg, state["market"], bias, state["params"]["minProfitMargin"],
         max_margin=state["params"].get("maxProfitMargin", 10.0),
         max_stop=state["params"].get("maxStopLossPct", 5.0),
+        reasons=drop_reasons,
     )
     for m in menu:
         m["underlyingType"] = cfg.type  # type: ignore[union-attr]
@@ -213,7 +95,15 @@ async def make_menu(state: UnderlyingState) -> dict[str, Any]:
     out: dict[str, Any] = {"bias": bias, "brief": brief, "briefHash": h, "menu": menu, "reused": reused,
                            "memory": memory, "hitRate": hits}
     if not menu:
-        out["error"] = "no executable contract passed the filters (liquidity, spread, reward/risk, profit margin)"
+        chains = state["market"].get("chains", [])
+        if not chains:
+            out["error"] = "no option chain returned for this underlying"
+        elif not drop_reasons:
+            out["error"] = "option chain had no strikes near spot"
+        else:
+            why = ", ".join(f"{n} {k}" for k, n in sorted(drop_reasons.items(), key=lambda x: -x[1]))
+            out["error"] = f"no executable contract -- dropped: {why}"
+        logger.info(f"[MENU_EMPTY] {state['code']} spot={state['market'].get('spot')} chains={len(chains)} dropped={drop_reasons}")
     return out
 
 
@@ -233,9 +123,16 @@ async def ai_select(state: UnderlyingState) -> dict[str, Any]:
     if await _llm._resolve_healthy_url():
         for _ in range(2):  # one retry
             try:
-                answer = await _llm.generate_structured(
-                    [{"role": "user", "content": user}], AiAnswer, system_prompt=SELECT_SYSTEM_PROMPT
-                )
+                async with _ai_gate:
+                    answer = await _llm.generate_structured(
+                        [{"role": "user", "content": user}],
+                        AiAnswer,
+                        system_prompt=SELECT_SYSTEM_PROMPT,
+                        timeout=AI_TIMEOUT_SECONDS,
+                        think=False,
+                        num_predict=900,  # a picks JSON is a few hundred tokens; stops runaway answers
+                        keep_alive="30m",  # loop calls every few minutes: never unload between them
+                    )
                 ids = {m["id"] for m in state["menu"]}
                 if answer.picks and all(p.id in ids for p in answer.picks):
                     break
@@ -243,7 +140,7 @@ async def ai_select(state: UnderlyingState) -> dict[str, Any]:
                     break
                 answer = None
             except Exception as e:
-                logger.warning(f"suggestion AI select failed: {e}")
+                logger.warning(f"suggestion AI select failed ({state['code']}): {type(e).__name__}: {e}")
                 answer = None
     if answer is None:
         return {"answer": {"picks": baseline_pick(state["menu"], state["bias"])}, "usedBaseline": True}
@@ -260,8 +157,15 @@ async def validate(state: UnderlyingState) -> dict[str, Any]:
     fetched = datetime.fromisoformat(state["market"]["fetchedAt"])
     fresh = (datetime.utcnow() - fetched).total_seconds() <= MAX_DATA_AGE_SECONDS
     candles = state["market"].get("candles") or {}
+    spot = state["market"]["spot"]
+    live: dict[str, float] | None = None
+    if not fresh and answer.get("picks"):
+        # The AI step outlasted the freshness window: re-read prices once instead of dropping every pick.
+        live, new_spot = await _live_prices(state["code"])
+        if live is not None:
+            fresh, spot = True, new_spot or spot
     out: list[dict[str, Any]] = []
-    dropped = {"stale": 0, "notOnMenu": 0, "lowConfidence": 0, "strategyRule": 0, "lowEdge": 0}
+    dropped = {"stale": 0, "priceMoved": 0, "notOnMenu": 0, "lowConfidence": 0, "strategyRule": 0, "lowEdge": 0}
     for pk in answer.get("picks", []):
         m = by_id.get(pk["id"])
         if not m:
@@ -270,6 +174,17 @@ async def validate(state: UnderlyingState) -> dict[str, Any]:
         if not fresh:
             dropped["stale"] += 1
             continue
+        if live is not None:
+            ltp = live.get(m["instrumentKey"])
+            if not ltp:
+                dropped["stale"] += 1
+                continue
+            if abs(ltp - m["entry"]) / m["entry"] * 100 > REPRICE_TOLERANCE_PCT:
+                dropped["priceMoved"] += 1
+                continue  # premium moved too far while the AI was thinking: the setup is gone
+            m = {**m, "entry": round(ltp, 2),
+                 "target": round(ltp * (1 + m["marginPct"] / 100), 2),
+                 "stop": round(ltp * (1 - m["stopPct"] / 100), 2)}
         reasons = list(pk.get("reasons", []))
         conf = int(pk["confidence"])
         if not state.get("usedBaseline"):  # baseline ranking already counts volume
@@ -302,7 +217,7 @@ async def validate(state: UnderlyingState) -> dict[str, Any]:
         out.append({**m, "underlyingCode": state["code"], "confidence": conf,
                     "strategy": pk.get("strategy"), "reasons": reasons,
                     "risks": risks, "bias": state["bias"], "edge": edge,
-                    "spot": state["market"]["spot"],
+                    "spot": spot,
                     "source": "BASELINE" if state.get("usedBaseline") else "AI"})
     total = len(answer.get("picks", []))
     if out:
@@ -313,3 +228,21 @@ async def validate(state: UnderlyingState) -> dict[str, Any]:
         why = ", ".join(f"{n} {k}" for k, n in dropped.items() if n)
         note = f"{total} pick(s) rejected by checks ({why}); confidence needed {p['confidenceWanted']}"
     return {"candidates": out, "note": note}
+
+
+async def _live_prices(code: str) -> tuple[dict[str, float] | None, float | None]:
+    """Fresh LTP per option instrumentKey for one underlying, or (None, None) when it cannot be read."""
+    try:
+        cfg = get_config(code)
+        async with async_session_factory() as s:
+            market = await market_data.fetch(cfg, s)  # type: ignore[arg-type]
+    except Exception as e:
+        logger.warning(f"suggestion reprice failed ({code}): {type(e).__name__}: {e}")
+        return None, None
+    prices: dict[str, float] = {}
+    for c in market.get("chains", []):
+        for row in c["strikes"]:
+            for side in ("CE", "PE"):
+                if row[side]["key"] and row[side]["ltp"]:
+                    prices[row[side]["key"]] = row[side]["ltp"]
+    return prices, market.get("spot")

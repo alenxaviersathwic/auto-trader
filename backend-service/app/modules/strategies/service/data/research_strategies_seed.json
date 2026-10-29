@@ -1,0 +1,2541 @@
+{
+  "strategies": [
+    {
+      "code": "IDX_EXP_IRONFLY_SW",
+      "name": "Expiry-day straddle-width iron fly",
+      "description": "Defined-risk iron fly sold at 09:45 on each index's own expiry day, wing width = ATM straddle price.",
+      "category": "PREMIUM_SELLING",
+      "structure": "CUSTOM_MULTI_LEG",
+      "bias": "NEUTRAL",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE,BSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Sell ATM CE+PE at 09:45 on the underlying's own expiry day; buy wings at ATM +/- straddle price.",
+          "entryRules": "Entry 09:45 (after first 30m bar). Read ATM CE+PE=S. Sell ATM CE+PE, buy CE@ATM+S and PE@ATM-S.",
+          "exitRules": "Target 30-40% of net credit; stop at 50% of max loss; or underlying 30m close outside breakevens; hard exit 14:30.",
+          "filters": "Only on isExpiryDay(underlying) = true (NIFTY=TUE, SENSEX=THU). India VIX 11.5-16. Block if VIX up >8% intraday or a scheduled macro event falls inside the session."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DEFINED_RISK_MEDIUM"
+      },
+      "references": [
+        {
+          "title": "Quantsapp backtesting library, NIFTY straddle-width iron fly, 1 Oct 2025-30 Sep 2026",
+          "url": "https://www.quantsapp.com/backtesting/strategies"
+        }
+      ],
+      "riskNotes": [
+        "activeDays below is TUE+THU combined for NIFTY(TUE)+SENSEX(THU); split into two Strategy records per-underlying if the scheduler needs per-index on/off control.",
+        "Gamma risk rises sharply in the final 90 minutes before close -- respect G-EXP-GAMMA (no new long legs in the expiring series after 13:30).",
+        "Extra 2% Extreme Loss Margin applies to short legs on expiry day (SEBI circular 1 Oct 2024); no calendar-spread margin offset on expiry day.",
+        "Evidence grade C: single-year (Oct2025-Sep2026), single-lot, Quantsapp backtest, mostly before live slippage."
+      ],
+      "howItWorks": [
+        {
+          "title": "Entry",
+          "description": "09:45 IST on the underlying's own expiry day: sell ATM CE+PE, buy wings at ATM+/-straddle price."
+        },
+        {
+          "title": "Exit",
+          "description": "Book at 30-40% of credit captured, or stop at 50% of max loss, or a 30m close outside the breakevens; hard time-exit 14:30."
+        },
+        {
+          "title": "Regime filter",
+          "description": "India VIX between 11.5-16; skip if VIX spikes >8% intraday or an event falls inside the session."
+        }
+      ],
+      "tags": [
+        "expiry",
+        "theta",
+        "defined-risk",
+        "premium-selling"
+      ],
+      "attributes": {
+        "evidenceGrade": "C",
+        "quantsappResult": "+Rs22.5k/yr/lot before costs"
+      },
+      "activeDays": [
+        "TUE",
+        "THU"
+      ],
+      "dayOverrides": []
+    },
+    {
+      "code": "IDX_EXP_MORNING_RANGE_CONDOR",
+      "name": "Expiry morning-range iron condor",
+      "description": "Iron condor sold around the first 30-minute range on each index's own expiry day.",
+      "category": "PREMIUM_SELLING",
+      "structure": "IRON_CONDOR",
+      "bias": "NEUTRAL",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE,BSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Sell CE above / PE below the first 30m range on expiry day; buy wings 1-2 strikes further out.",
+          "entryRules": "After first 30m bar: sell CE just above range high, PE just below range low; buy wings 1-2 strikes beyond.",
+          "exitRules": "Book at 60% of credit captured; hard exit 14:30; stop if a 30m close goes beyond a short strike.",
+          "filters": "Only on isExpiryDay(underlying) = true (NIFTY=TUE, SENSEX=THU). Fails on trend days that break the morning range early -- combine with G-REGIME-CHOP."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DEFINED_RISK_MEDIUM"
+      },
+      "references": [
+        {
+          "title": "Quantsapp backtesting library, expiry morning-range condor, 1 Oct 2025-30 Sep 2026"
+        }
+      ],
+      "riskNotes": [
+        "activeDays below combines NIFTY(TUE)+SENSEX(THU); split per-underlying if the scheduler needs independent on/off control.",
+        "Fails on trend days that break the opening range early -- pair with the regime-chop guardrail (G-REGIME-CHOP) rather than running unconditionally."
+      ],
+      "howItWorks": [
+        {
+          "title": "Entry",
+          "description": "After the first 30-minute bar on expiry day: sell CE above range high, PE below range low, buy wings 1-2 strikes out."
+        },
+        {
+          "title": "Exit",
+          "description": "Book at 60% of credit; hard exit 14:30; stop on a 30m close beyond a short strike."
+        }
+      ],
+      "tags": [
+        "expiry",
+        "iron-condor",
+        "defined-risk"
+      ],
+      "attributes": {
+        "evidenceGrade": "C",
+        "quantsappResult": "+Rs14.3k/yr/lot before costs"
+      },
+      "activeDays": [
+        "TUE",
+        "THU"
+      ],
+      "dayOverrides": []
+    },
+    {
+      "code": "IDX_STRADDLE_STOP_TO_COST",
+      "name": "NIFTY intraday ATM straddle, stop-to-cost",
+      "description": "Sell ATM CE+PE with per-leg stops; once one leg stops out, move the other leg's stop to its own entry price.",
+      "category": "PREMIUM_SELLING",
+      "structure": "CUSTOM_MULTI_LEG",
+      "bias": "NEUTRAL",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Sell ATM NIFTY weekly straddle with hedging wings; per-leg 30% stop; move surviving leg's stop to cost once one leg stops.",
+          "entryRules": "Entry 09:45. Sell ATM CE+PE; buy far-OTM wings (~2x straddle price) to cap tail risk and cut margin.",
+          "exitRules": "Per-leg stop 30% above sale price. When one leg stops, move the other leg's stop to its own entry price. Time exit 15:15.",
+          "filters": "Tue-Fri only; Monday is WATCH (worst day in backtests). Block if prior-day India VIX close > 14.5, or on a choppy-regime day (G-REGIME-CHOP)."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DEFINED_RISK_MEDIUM"
+      },
+      "references": [
+        {
+          "title": "Quantsapp backtesting library, straddle stop-to-cost / trailing-leg-stop variants"
+        },
+        {
+          "title": "Marketcalls -- How the 9:20 intraday straddlers are being gamed",
+          "url": "https://www.marketcalls.in/futures-and-options/how-the-9-20-intraday-straddlers-are-being-gamed.html"
+        }
+      ],
+      "riskNotes": [
+        "Monday excluded from activeDays below -- Quantsapp's short-futures Monday fade lost Rs57,565/yr; treat Monday as WATCH only, not auto-live.",
+        "Practitioner warning: midday SL-M stops on short legs can be 'hunted' when liquidity thins -- use limit-protected stop orders, not plain SL-M.",
+        "Hedge wings are mandatory; never run this as a naked short straddle."
+      ],
+      "howItWorks": [
+        {
+          "title": "Entry",
+          "description": "09:45: sell ATM CE+PE with far-OTM hedge wings (~2x straddle price)."
+        },
+        {
+          "title": "Management",
+          "description": "Per-leg stop at 30% above sale price; once a leg stops, move the surviving leg's stop to its own entry (stop-to-cost)."
+        },
+        {
+          "title": "Exit",
+          "description": "Time exit 15:15."
+        }
+      ],
+      "tags": [
+        "straddle",
+        "premium-selling",
+        "weekly-expiry"
+      ],
+      "attributes": {
+        "evidenceGrade": "C",
+        "quantsappResult": "plain +Rs19.4k; stop-to-cost +Rs57.0k; trailing-leg-stop +Rs1.34L (per lot/yr, before costs)"
+      },
+      "activeDays": [
+        "TUE",
+        "WED",
+        "THU",
+        "FRI"
+      ],
+      "dayOverrides": []
+    },
+    {
+      "code": "IDX_EXP_STACKING_STRADDLE",
+      "name": "NIFTY expiry-day hedged stacking straddle",
+      "description": "Sells a hedged ATM straddle on NIFTY expiry day, adding another each time ATM moves a VIX-sized step; complex multi-leg, WATCH only.",
+      "category": "PREMIUM_SELLING",
+      "structure": "CUSTOM_MULTI_LEG",
+      "bias": "NEUTRAL",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Stack hedged ATM straddles through the day on NIFTY's weekly expiry, each with a 2.25x stop.",
+          "entryRules": "Sell a hedged ATM straddle; sell another each time ATM moves a VIX-sized step.",
+          "exitRules": "Each short leg carries a 2.25x stop.",
+          "filters": "NIFTY expiry day (TUE) only. WATCH -- do not promote to live until multi-leg stacking execution is proven in paper mode."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "COMPLEX_HIGH_MARGIN"
+      },
+      "references": [
+        {
+          "title": "Quantsapp backtesting library, expiry-day stacking straddle"
+        }
+      ],
+      "riskNotes": [
+        "Best single-year backtest result found (+Rs1.70L/lot) but multiple legs, rising margin with each stack, and real execution risk.",
+        "Keep as WATCH until multi-leg stacking execution is proven in this platform's own paper mode -- do not promote on backtest numbers alone."
+      ],
+      "howItWorks": [
+        {
+          "title": "Entry",
+          "description": "Sell a hedged ATM straddle on NIFTY's own expiry day; add another stacked straddle each time ATM moves a VIX-sized step."
+        },
+        {
+          "title": "Risk",
+          "description": "Each short leg has its own 2.25x stop."
+        }
+      ],
+      "tags": [
+        "expiry",
+        "straddle",
+        "watch",
+        "complex"
+      ],
+      "attributes": {
+        "evidenceGrade": "C",
+        "quantsappResult": "+Rs1.70L/yr/lot before costs -- best expiry-day result found, but WATCH only"
+      },
+      "activeDays": [
+        "TUE"
+      ],
+      "dayOverrides": []
+    },
+    {
+      "code": "IDX_ORB_LATE_RANGE_BUY",
+      "name": "Late opening-range breakout, long-biased",
+      "description": "Buys a breakout of the 09:15-11:15 range; long side preferred per Zerodha's multi-year study.",
+      "category": "BREAKOUT",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE,BSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Range = high/low of 09:15-11:15 (four 30m bars). Buy ATM CE on a close above range high; PE on a close below range low only with extra confirmation.",
+          "entryRules": "Buy ATM CE on 30m close above range high. Buy ATM PE on 30m close below range low only if price is also below VWAP and the 30m 20-EMA is falling.",
+          "exitRules": "Stop at range midpoint (underlying, translated to premium via delta); target 1.5x risk or 10% premium, whichever first; time exit 15:15; one trade/day.",
+          "filters": "Avoid range (choppy) days and expiry afternoons (gamma whipsaw). Apply G-DIR-LONGBIAS: require extra confirmation for PE breakouts."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DIRECTIONAL_DEFINED_STOP"
+      },
+      "references": [
+        {
+          "title": "Zerodha In The Money -- All About Opening Range Breakout (ORB) Part 1 & 2, Sandeep Rao, Mar 2026",
+          "note": "NIFTY spot, 3-min candles, Jan 2019-Feb 2026, before costs; long win ~60% vs ~50% short"
+        },
+        {
+          "title": "Quantsapp 30-min ORB option-buying backtest",
+          "note": "-Rs70.5k/yr/lot before costs"
+        },
+        {
+          "title": "IntradayLab 8-year NIFTY 30-min ORB test",
+          "note": "2,122 trades, 48.7% win, +91.6% over 8+ yrs, Sharpe 1.16, best on Fridays/short side"
+        }
+      ],
+      "riskNotes": [
+        "Strong evidence (B) for the underlying signal; weak/negative evidence for the option-buying translation -- Zerodha's own option-buying version won only ~48% of trades, and Quantsapp's 30-min ORB option buying lost Rs70.5k/yr.",
+        "IntradayLab's result contradicts Zerodha's long bias (found the edge clearest on Fridays, short side) -- resolve this with your own walk-forward test before trusting either direction.",
+        "PAPER ONLY until your own test is positive after costs."
+      ],
+      "howItWorks": [
+        {
+          "title": "Range",
+          "description": "First four 30-minute bars (09:15-11:15) set the day's range."
+        },
+        {
+          "title": "Entry",
+          "description": "CE on a 30m close above range high; PE on a close below range low plus VWAP+EMA confirmation."
+        },
+        {
+          "title": "Exit",
+          "description": "Stop at range midpoint (delta-adjusted); target 1.5R or 10% premium; time exit 15:15; 1 trade/day."
+        }
+      ],
+      "tags": [
+        "orb",
+        "breakout",
+        "watch"
+      ],
+      "attributes": {
+        "evidenceGrade": "B (signal) / C (option P&L, mixed)"
+      },
+      "activeDays": [],
+      "dayOverrides": []
+    },
+    {
+      "code": "IDX_EMA9_VWAP_CROSS",
+      "name": "9-EMA/VWAP cross with 21-EMA slope filter",
+      "description": "Buys CE/PE on a 9-EMA cross of session VWAP, filtered by 21-EMA slope.",
+      "category": "VWAP",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "CE when 9-EMA crosses above session VWAP and 21-EMA slope is up; PE on the mirror condition. Earliest entry 10:15.",
+          "entryRules": "9-EMA(30m) crosses above VWAP and 21-EMA(30m) slope > 0 -> buy ATM CE (mirror for PE).",
+          "exitRules": "Stop on a 30m close back across VWAP; target 1.5R; max 2 trades/day.",
+          "filters": "Source tested on faster bars (futures); this 30m translation is unproven for options -- PAPER only."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DIRECTIONAL_DEFINED_STOP"
+      },
+      "references": [
+        {
+          "title": "Quantsapp backtesting library, EMA/VWAP cross (futures)"
+        }
+      ],
+      "riskNotes": [
+        "Futures-level signal, not yet proven on option P&L; on 30-min bars the signal is slower than the source test."
+      ],
+      "howItWorks": [
+        {
+          "title": "Entry",
+          "description": "9-EMA/VWAP cross with 21-EMA slope filter, earliest 10:15."
+        },
+        {
+          "title": "Exit",
+          "description": "Stop on cross back through VWAP; target 1.5R; max 2 trades/day."
+        }
+      ],
+      "tags": [
+        "vwap",
+        "ema",
+        "trend"
+      ],
+      "attributes": {
+        "evidenceGrade": "C",
+        "quantsappResult": "+Rs66.5k/yr futures, option translation unproven"
+      },
+      "activeDays": [],
+      "dayOverrides": []
+    },
+    {
+      "code": "IDX_LAST_HALF_HOUR_MOMENTUM",
+      "name": "Late-day continuation momentum",
+      "description": "Buys continuation of the day's trend in the final 45 minutes, on non-expiry days only.",
+      "category": "MOMENTUM",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "At the 14:45 bar close, if session return from open is beyond +/-0.5% and price agrees with VWAP side, buy next-series CE/PE.",
+          "entryRules": "14:45 bar close: |session return from open| > 0.5% and price on the same side of VWAP -> buy ATM CE (up) / PE (down) of the NEXT-week/monthly series (never the expiring one).",
+          "exitRules": "Exit 15:20 NSE (before the 15:10-15:40 closing-VWAP window distorts quotes), or stop at 10% premium.",
+          "filters": "Non-expiry days only. This is the one whitelisted exception to G-TIME-LATE-NSE's 14:45 no-new-entries cutoff."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DIRECTIONAL_DEFINED_STOP"
+      },
+      "references": [
+        {
+          "title": "Quantsapp backtesting library, last-half-hour momentum (futures)"
+        }
+      ],
+      "riskNotes": [
+        "Must trade the NEXT series, not the expiring one, to avoid same-day theta/gamma blowup.",
+        "Whitelisted against G-TIME-LATE-NSE -- do not apply that guardrail's 14:45 cutoff to this strategy."
+      ],
+      "howItWorks": [
+        {
+          "title": "Entry",
+          "description": "14:45 bar close, session-return + VWAP-side filter, next-series option."
+        },
+        {
+          "title": "Exit",
+          "description": "15:20 NSE or 10% premium stop."
+        }
+      ],
+      "tags": [
+        "momentum",
+        "late-day"
+      ],
+      "attributes": {
+        "evidenceGrade": "C",
+        "quantsappResult": "+Rs44.5k/yr futures"
+      },
+      "activeDays": [],
+      "dayOverrides": []
+    },
+    {
+      "code": "IDX_SQUEEZE_RELEASE",
+      "name": "Bollinger/Keltner squeeze release",
+      "description": "Buys the breakout direction when Bollinger Bands compress inside Keltner Channels and then release.",
+      "category": "VOLATILITY",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Bollinger(20,2) squeezed inside Keltner(20,1.5 ATR) for >=3 bars; buy the breakout direction on release.",
+          "entryRules": "BBands(20,2) inside Keltner(20,1.5xATR) for 3+ bars; entry on the first bar the bands exit the channel, direction = bar close vs 20-EMA.",
+          "exitRules": "Stop at the opposite Keltner band; target 1.5R; time exit 15:15.",
+          "filters": "Re-test on 30-min bars before trusting the backtest number -- source resolution not fully documented."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DIRECTIONAL_DEFINED_STOP"
+      },
+      "references": [
+        {
+          "title": "Quantsapp backtesting library, squeeze release (futures)"
+        }
+      ],
+      "riskNotes": [
+        "Best intraday technical result in the research library (+Rs80.1k/yr futures) -- still re-test on this platform's own 30-min data before promoting."
+      ],
+      "howItWorks": [
+        {
+          "title": "Setup",
+          "description": "Bollinger inside Keltner for 3+ bars = squeeze."
+        },
+        {
+          "title": "Entry",
+          "description": "First bar exiting the channel, in the direction of close vs 20-EMA."
+        },
+        {
+          "title": "Exit",
+          "description": "Opposite Keltner band stop; 1.5R target; 15:15 time exit."
+        }
+      ],
+      "tags": [
+        "volatility",
+        "squeeze",
+        "breakout"
+      ],
+      "attributes": {
+        "evidenceGrade": "C",
+        "quantsappResult": "+Rs80.1k/yr futures"
+      },
+      "activeDays": [],
+      "dayOverrides": []
+    },
+    {
+      "code": "IDX_CPR_BREAKOUT_FADE",
+      "name": "Central Pivot Range day-type switch",
+      "description": "Switches between breakout mode (narrow CPR) and fade mode (wide CPR) based on the prior day's pivot range.",
+      "category": "REVERSAL",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE,BSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Narrow CPR (<0.25% of price) -> breakout mode; wide CPR (>0.6%) -> fade mode at R1/S1 rejection.",
+          "entryRules": "Compute CPR from prior day H/L/C. Narrow: buy CE/PE on 30m close beyond CPR top/bottom. Wide: buy PE at R1 rejection / CE at S1 rejection.",
+          "exitRules": "Stop 0.5x ATR(30m) beyond the level; target the next pivot level.",
+          "filters": "Mid-range CPR width (0.25%-0.6%) has no defined rule -- stand aside."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DIRECTIONAL_DEFINED_STOP"
+      },
+      "references": [
+        {
+          "title": "Quantsapp backtesting library, CPR breakout/fade (futures)"
+        }
+      ],
+      "riskNotes": [
+        "Futures-level backtest; option P&L unproven -- PAPER only."
+      ],
+      "howItWorks": [
+        {
+          "title": "Setup",
+          "description": "CPR width from prior day H/L/C decides breakout vs fade mode."
+        },
+        {
+          "title": "Entry/Exit",
+          "description": "0.5x ATR stop; next pivot level as target."
+        }
+      ],
+      "tags": [
+        "cpr",
+        "pivot",
+        "reversal"
+      ],
+      "attributes": {
+        "evidenceGrade": "C",
+        "quantsappResult": "+Rs33.2k/yr futures"
+      },
+      "activeDays": [],
+      "dayOverrides": []
+    },
+    {
+      "code": "IDX_FIRST_BAR_BREAK_BUY",
+      "name": "First-bar breakout option buy",
+      "description": "Buys a break of the very first 30-minute bar's high/low; converges with ORB on 30m bars.",
+      "category": "BREAKOUT",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Buy ATM CE on a break of the first 30m bar's high, PE on a break of its low, valid until 11:15.",
+          "entryRules": "Buy ATM CE on break of first-bar high / PE on break of first-bar low.",
+          "exitRules": "Stop at the opposite side of the first bar; target 10% premium or 1.5R.",
+          "filters": "On 30-min bars this converges toward IDX_ORB_LATE_RANGE_BUY (#5), which was negative for option buying in the 5-min source test -- run only as an A/B paper test against it, never both live at once."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DIRECTIONAL_DEFINED_STOP"
+      },
+      "references": [
+        {
+          "title": "Quantsapp backtesting library, 5-min first-bar-break (option buy)",
+          "note": "+Rs16.3k/yr/lot on 5-min bars"
+        }
+      ],
+      "riskNotes": [
+        "5-min version was mildly positive; 30-min version converges with ORB (#5) and is unproven -- PAPER A/B test only, do not run alongside #5 live."
+      ],
+      "howItWorks": [
+        {
+          "title": "Entry",
+          "description": "Break of the first 30m bar's high/low."
+        },
+        {
+          "title": "Exit",
+          "description": "Opposite side of first bar as stop; 10% premium or 1.5R target."
+        }
+      ],
+      "tags": [
+        "breakout",
+        "first-bar",
+        "watch"
+      ],
+      "attributes": {
+        "evidenceGrade": "C (5-min); unproven on 30-min"
+      },
+      "activeDays": [],
+      "dayOverrides": []
+    },
+    {
+      "code": "IDX_POST_EVENT_IV_CRUSH_FLY",
+      "name": "Post-event IV-crush iron fly",
+      "description": "Sells a defined-risk iron fly 30 minutes after a Budget/RBI announcement if India VIX has fallen.",
+      "category": "EVENT",
+      "structure": "CUSTOM_MULTI_LEG",
+      "bias": "NEUTRAL",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "No entries before the event. 30 min after, if India VIX has fallen from its pre-event level, sell an iron fly (wings at +/-1x straddle price).",
+          "entryRules": "Wait for the scheduled event (Union Budget / RBI MPC) to pass; 30 minutes after, if VIX has dropped, sell ATM iron fly, wings at 1x straddle price.",
+          "exitRules": "Exit 14:45.",
+          "filters": "WATCH only -- tiny sample size (1 event/year); needs a dayOverrides entry added each Budget Day / RBI MPC date, this is NOT a weekly-recurring strategy."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "EVENT_DEFINED_RISK"
+      },
+      "references": [
+        {
+          "title": "Quantsapp Budget-day short straddle backtest",
+          "note": "-Rs5.1k/yr"
+        },
+        {
+          "title": "OptionsIQ pre-budget monthly short straddle study",
+          "note": "79% win, avg +16pts, max loss -195pts (1 Feb 2021)"
+        }
+      ],
+      "riskNotes": [
+        "Evidence grade D: one sample per year, directly conflicting results between sources (Quantsapp negative, OptionsIQ positive on a different structure/day).",
+        "Requires a dayOverrides entry added by hand before each Union Budget day and each RBI MPC date -- there is no generic weekday for this.",
+        "WATCH only."
+      ],
+      "howItWorks": [
+        {
+          "title": "Entry",
+          "description": "No trade before the event; 30 min after, sell iron fly if VIX fell."
+        },
+        {
+          "title": "Exit",
+          "description": "14:45 time exit."
+        }
+      ],
+      "tags": [
+        "event",
+        "budget",
+        "rbi",
+        "watch"
+      ],
+      "attributes": {
+        "evidenceGrade": "D"
+      },
+      "activeDays": [],
+      "dayOverrides": []
+    },
+    {
+      "code": "IDX_EXP_MAXPAIN_GRAVITY",
+      "name": "Max-pain drift in expiry week",
+      "description": "Buys the option pointing toward max pain when spot drifts more than 0.5% away from it in expiry week.",
+      "category": "OI_BASED",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": "NSE",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "In expiry week, if spot is >0.5% from max pain at 10:15, buy the next-week-series option pointing toward max pain.",
+          "entryRules": "At 10:15 in expiry week: if |spot - maxPain|/spot > 0.5%, buy CE (if maxPain above spot) or PE (if below), next-week series.",
+          "exitRules": "Stop 15%, target 10%.",
+          "filters": "WATCH -- small backtest edge (+Rs12.7k/yr), likely noise; other OI-based signals in this research lost money. Use OI primarily as a menu filter (OI wall target/stop), not a standalone signal."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DIRECTIONAL_DEFINED_STOP"
+      },
+      "references": [
+        {
+          "title": "Quantsapp backtesting library, max-pain drift"
+        }
+      ],
+      "riskNotes": [
+        "Small, likely-noise edge; most other OI-based signals tested (change-in-OI, max-OI-strike-shift, OI bias score) lost money -- see NEGATIVE_EVIDENCE_REGISTRY. WATCH only."
+      ],
+      "howItWorks": [
+        {
+          "title": "Entry",
+          "description": "10:15 in expiry week, option toward max pain if spot is >0.5% away."
+        },
+        {
+          "title": "Exit",
+          "description": "15% stop, 10% target."
+        }
+      ],
+      "tags": [
+        "oi",
+        "max-pain",
+        "watch"
+      ],
+      "attributes": {
+        "evidenceGrade": "C (small, likely noise)"
+      },
+      "activeDays": [
+        "TUE"
+      ],
+      "dayOverrides": []
+    },
+    {
+      "code": "MCX_CRUDE_POST_EIA_BREAK",
+      "name": "Crude oil breakout after the EIA report",
+      "description": "Trades the breakout of the 30-min bar containing the Wednesday EIA Petroleum Status Report release.",
+      "category": "EVENT",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "COMMODITY_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "COMMODITY"
+      ],
+      "exchange": "MCX",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "No position 15 min before to 30 min after the Wednesday EIA Weekly Petroleum Status Report; then trade a breakout of the release bar.",
+          "entryRules": "Blackout: 15 min before to 30 min after release (20:00 IST daylight / 21:00 IST standard, i.e. from Nov 2026). Then: buy CE on close above the release bar's high, PE below its low.",
+          "exitRules": "Stop back inside the release-bar midpoint; target 1.5R; exit by 23:00.",
+          "filters": "CRUDEOIL/CRUDEOILM only. Directional follow-through rule is unproven (grade D) -- PAPER only."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DIRECTIONAL_DEFINED_STOP"
+      },
+      "references": [
+        {
+          "title": "EIA Weekly Petroleum Status Report release schedule",
+          "url": "https://ir.eia.gov/"
+        }
+      ],
+      "riskNotes": [
+        "US DST ends 1 Nov 2026 -- release time shifts 20:00 IST -> 21:00 IST from that date; update the blackout window then.",
+        "Volatility spike around the release is well documented by practitioners; the directional continuation rule itself is unproven -- grade D."
+      ],
+      "howItWorks": [
+        {
+          "title": "Blackout",
+          "description": "No new positions 15 min before to 30 min after the Wed EIA report."
+        },
+        {
+          "title": "Entry/Exit",
+          "description": "Breakout of the release bar; stop at its midpoint; 1.5R target; flat by 23:00."
+        }
+      ],
+      "tags": [
+        "mcx",
+        "crude",
+        "event",
+        "eia"
+      ],
+      "attributes": {
+        "evidenceGrade": "D"
+      },
+      "activeDays": [
+        "WED"
+      ],
+      "dayOverrides": []
+    },
+    {
+      "code": "MCX_NG_POST_STORAGE_BREAK",
+      "name": "Natural gas breakout after the EIA storage report",
+      "description": "Trades the breakout of the 30-min bar containing the Thursday EIA natural-gas storage report release.",
+      "category": "EVENT",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "COMMODITY_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "COMMODITY"
+      ],
+      "exchange": "MCX",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Same template as MCX_CRUDE_POST_EIA_BREAK but for the Thursday EIA Weekly Natural Gas Storage Report.",
+          "entryRules": "Blackout 15 min before to 30 min after release (20:00 IST daylight / 21:00 IST standard). Breakout of the release bar.",
+          "exitRules": "Stop at the release-bar midpoint; target 1.5R; exit by 23:00.",
+          "filters": "NATURALGAS/NATGASMINI only. Holiday weeks shift the EIA release by a day -- check the EIA calendar, do not assume every Thursday."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DIRECTIONAL_DEFINED_STOP"
+      },
+      "references": [
+        {
+          "title": "EIA Weekly Natural Gas Storage Report schedule",
+          "url": "https://www.eia.gov/about/new/index.php?r=460140"
+        }
+      ],
+      "riskNotes": [
+        "Natural gas options expire 2 business days before the underlying futures -- check expiry before entering late in a contract's life.",
+        "Grade D: practitioner convention, unproven directional rule."
+      ],
+      "howItWorks": [
+        {
+          "title": "Blackout",
+          "description": "15 min before to 30 min after the Thu EIA storage report."
+        },
+        {
+          "title": "Entry/Exit",
+          "description": "Breakout of the release bar; 1.5R target; flat by 23:00."
+        }
+      ],
+      "tags": [
+        "mcx",
+        "natural-gas",
+        "event",
+        "eia"
+      ],
+      "attributes": {
+        "evidenceGrade": "D"
+      },
+      "activeDays": [
+        "THU"
+      ],
+      "dayOverrides": []
+    },
+    {
+      "code": "MCX_CRUDE_US_OPEN_RANGE",
+      "name": "Crude evening US-session range breakout",
+      "description": "Trades a breakout of the 30-min bar at the NYMEX day-session open, the most liquid MCX window.",
+      "category": "BREAKOUT",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "COMMODITY_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "COMMODITY"
+      ],
+      "exchange": "MCX",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Range = the 30m bar starting at the NYMEX day-session open (18:30 IST daylight / 19:30 IST standard); trade its breakout.",
+          "entryRules": "Buy CE/PE on a breakout of that bar.",
+          "exitRules": "Stop inside the range; target 1.5R; exit by 23:00.",
+          "filters": "Skip Wednesdays (MCX_CRUDE_POST_EIA_BREAK takes over that day) and skip days with US CPI/NFP inside this window."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DIRECTIONAL_DEFINED_STOP"
+      },
+      "references": [
+        {
+          "title": "Practitioner convention: MCX evening US-session overlap is the most liquid window"
+        }
+      ],
+      "riskNotes": [
+        "No published backtest -- practitioner convention only (grade D). Mutually exclusive with MCX_CRUDE_POST_EIA_BREAK on Wednesdays."
+      ],
+      "howItWorks": [
+        {
+          "title": "Range",
+          "description": "30m bar at the NYMEX day-session open."
+        },
+        {
+          "title": "Entry/Exit",
+          "description": "Breakout trade, stop inside range, 1.5R target, flat by 23:00."
+        }
+      ],
+      "tags": [
+        "mcx",
+        "crude",
+        "breakout"
+      ],
+      "attributes": {
+        "evidenceGrade": "D"
+      },
+      "activeDays": [
+        "MON",
+        "TUE",
+        "THU",
+        "FRI"
+      ],
+      "dayOverrides": []
+    },
+    {
+      "code": "MCX_BULLION_US_SESSION_TREND",
+      "name": "Gold/silver evening trend",
+      "description": "Trend-follows gold/silver from the US session open, blocked around US CPI/NFP/FOMC.",
+      "category": "TREND",
+      "structure": "SINGLE_LONG",
+      "bias": "DYNAMIC",
+      "optionSide": "BOTH",
+      "markets": [
+        "COMMODITY_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "COMMODITY"
+      ],
+      "exchange": "MCX",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "From 18:30 IST, buy CE/PE when the 30m close is above/below both the 20-EMA and session VWAP, with USD/INR confirmation.",
+          "entryRules": "30m close above (below) 20-EMA AND session VWAP, confirmed by USD/INR direction -> buy CE (PE).",
+          "exitRules": "Stop = 1x ATR(30m); target 1.5R; exit 23:00.",
+          "filters": "Block windows: US CPI/NFP (18:00/19:00 IST) and FOMC decisions (23:30 IST daylight / 00:30 IST standard -- i.e. at or after the MCX close in standard time). Never hold bullion options overnight into an FOMC."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "DIRECTIONAL_DEFINED_STOP"
+      },
+      "references": [
+        {
+          "title": "HDFC Securities MCX options mix report, Mar 2026"
+        }
+      ],
+      "riskNotes": [
+        "Gold/silver options now lead MCX options notional but with thin premium (~0.5% of notional vs ~3.8-4% for energy) -- apply G-LIQ-SPREAD and G-LIQ-DEPTH strictly.",
+        "Never hold into an FOMC decision -- block window applies even on a day the trend looks strong."
+      ],
+      "howItWorks": [
+        {
+          "title": "Entry",
+          "description": "From 18:30 IST, EMA+VWAP trend confirmation with USD/INR."
+        },
+        {
+          "title": "Exit",
+          "description": "1x ATR stop; 1.5R target; flat by 23:00."
+        }
+      ],
+      "tags": [
+        "mcx",
+        "bullion",
+        "trend"
+      ],
+      "attributes": {
+        "evidenceGrade": "D"
+      },
+      "activeDays": [],
+      "dayOverrides": []
+    },
+    {
+      "code": "MCX_BASEMETAL_FUT_TREND",
+      "name": "Copper/zinc futures trend",
+      "description": "Futures-only trend-following on copper and zinc; option liquidity too thin to trade reliably.",
+      "category": "TREND",
+      "structure": "MIXED",
+      "bias": "DYNAMIC",
+      "optionSide": "NONE",
+      "markets": [
+        "COMMODITY_FUTURES"
+      ],
+      "underlyingTypes": [
+        "COMMODITY"
+      ],
+      "exchange": "MCX",
+      "tradingModes": [
+        "PAPER"
+      ],
+      "executionModes": [
+        "AUTOMATED"
+      ],
+      "timeframe": "30m",
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Futures-only (no options): 30m 20/50-EMA trend with a pullback-to-20-EMA entry.",
+          "entryRules": "20-EMA(30m) above 50-EMA(30m) (or below) defines trend; enter on a pullback touch of the 20-EMA in trend direction.",
+          "exitRules": "Stop = 1x ATR(30m); exit 23:00.",
+          "filters": "Watch the LME-driven afternoon window (14:00-18:00 IST) and the evening session. Futures only -- G-LIQ-MCX-BASEMETAL blocks options on COPPER/ZINC."
+        }
+      },
+      "lifecycleStatus": "DRAFT",
+      "health": "HEALTHY",
+      "validationStatus": "UNTESTED",
+      "enabled": true,
+      "riskProfile": {
+        "level": "FUTURES_TREND"
+      },
+      "references": [
+        {
+          "title": "MCX investor presentation, futures turnover mix Q4 FY26"
+        }
+      ],
+      "riskNotes": [
+        "COPPER/ZINC options liquidity is too thin to meet this platform's spread/depth guardrails -- trade futures only on these two."
+      ],
+      "howItWorks": [
+        {
+          "title": "Entry",
+          "description": "20/50-EMA trend, pullback-to-20-EMA entry."
+        },
+        {
+          "title": "Exit",
+          "description": "1x ATR stop; flat by 23:00."
+        }
+      ],
+      "tags": [
+        "mcx",
+        "base-metals",
+        "futures",
+        "trend"
+      ],
+      "attributes": {
+        "evidenceGrade": "D"
+      },
+      "activeDays": [],
+      "dayOverrides": []
+    },
+    {
+      "code": "NEGATIVE_EVIDENCE_REGISTRY",
+      "name": "Negative-evidence strategies (do not trade)",
+      "description": "Consolidated, disabled reference record of signals tested in the Oct-2026 research run that lost money in the most recent single-year Indian backtest (mostly before costs). Kept disabled so the system remembers what not to re-add.",
+      "category": "OTHER",
+      "structure": null,
+      "bias": null,
+      "optionSide": null,
+      "markets": [
+        "INDEX_OPTIONS"
+      ],
+      "underlyingTypes": [
+        "INDEX"
+      ],
+      "exchange": null,
+      "tradingModes": [],
+      "executionModes": [],
+      "timeframe": null,
+      "definitionFormat": "SUMMARY",
+      "definition": {
+        "format": "SUMMARY",
+        "summary": {
+          "headline": "Disabled reference entry -- not a tradeable strategy. Lists signals with negative recent backtest evidence.",
+          "entryRules": "N/A",
+          "exitRules": "N/A",
+          "filters": "Do not re-create any of these as live strategies without new, positive, post-cost evidence."
+        }
+      },
+      "lifecycleStatus": "ARCHIVED",
+      "health": "HEALTHY",
+      "validationStatus": "REJECTED",
+      "enabled": false,
+      "riskProfile": null,
+      "references": [
+        {
+          "title": "Quantsapp backtesting library, NIFTY, 1 Oct 2025-30 Sep 2026, before costs unless stated"
+        }
+      ],
+      "riskNotes": [
+        "ORB option buying (30-min): -Rs70.5k/yr",
+        "15-min ORB (futures): -Rs25.8k/yr",
+        "Supertrend intraday: -Rs27.6k/yr",
+        "Open=high / open=low signal: -Rs71.7k/yr",
+        "Change-in-OI imbalance buy: -Rs77.8k/yr",
+        "Max-OI strike shift: -Rs54.2k/yr",
+        "Option-chain multifactor bias score: -Rs1.21L/yr",
+        "VWAP cross with prior-day bias: -Rs9.8k/yr",
+        "Expiry-day hero-zero buying: -Rs6.2k/yr",
+        "Straddle stop-and-reverse: -Rs40,794 before costs, -Rs1,09,914 after costs",
+        "Straddle-width short strangle: -Rs3,054 before costs, -Rs44,821 after costs",
+        "VIX-routed straddle: -Rs20.6k/yr",
+        "Small gap fade: -Rs3.6k/yr",
+        "Overnight short straddle (weekend theta carry): +Rs24,344 before costs but -Rs3,372 after costs -- do not seed as a carry strategy on an intraday platform anyway",
+        "Holiday-effect long / Diwali Muhurat long: -Rs29.9k / -Rs26.6k per yr",
+        "Turn-of-month long: -Rs73.3k/yr",
+        "Budget-day short straddle: -Rs5.1k (tiny sample, 1/year)"
+      ],
+      "howItWorks": [
+        {
+          "title": "Purpose",
+          "description": "Reference-only record of tested-and-rejected signals, kept disabled so future strategy work does not re-propose them without new evidence."
+        }
+      ],
+      "tags": [
+        "negative-evidence",
+        "do-not-trade",
+        "reference"
+      ],
+      "attributes": {
+        "evidenceGrade": "C/D, all negative or sub-cost in the Oct-2026 research run"
+      },
+      "activeDays": [],
+      "dayOverrides": []
+    }
+  ],
+  "rules": [
+    {
+      "code": "G-TIME-OPEN",
+      "name": "No entries before the first bar closes",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "TIME",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "No entries before the first 30-min bar closes (NSE 09:45, MCX 09:30).",
+      "content": {
+        "when": {
+          "left": {
+            "source": "TIME",
+            "field": "timeOfDay"
+          },
+          "operator": "IS_BELOW",
+          "right": {
+            "const": "09:45",
+            "type": "TIME"
+          }
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Opening print carries the pre-open auction; Quantsapp tests deliberately skip it."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-TIME-LATE-NSE",
+      "name": "No new NSE entries after 14:45",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "TIME",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "INDEX_OPTIONS"
+        ],
+        "executionDomains": [
+          "NSE"
+        ]
+      },
+      "conditionText": "No new NSE entries after 14:45 (whitelist: IDX_LAST_HALF_HOUR_MOMENTUM); force-flat 15:20.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "TIME",
+            "field": "timeOfDay"
+          },
+          "operator": "IS_ABOVE_OR_EQUAL",
+          "right": {
+            "const": "14:45",
+            "type": "TIME"
+          }
+        }
+      },
+      "evidence": {
+        "grade": "A",
+        "note": "NSE closing price is now the VWAP of 15:10-15:40 since 3 Aug 2026; Closing Auction Session 15:15-15:35."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-TIME-LATE-BSE",
+      "name": "No new SENSEX/BANKEX entries after 14:45",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "TIME",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "INDEX_OPTIONS"
+        ],
+        "executionDomains": [
+          "BSE"
+        ]
+      },
+      "conditionText": "No new SENSEX/BANKEX entries after 14:45; force-flat 15:15.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "TIME",
+            "field": "timeOfDay"
+          },
+          "operator": "IS_ABOVE_OR_EQUAL",
+          "right": {
+            "const": "14:45",
+            "type": "TIME"
+          }
+        }
+      },
+      "evidence": {
+        "grade": "A",
+        "note": "BSE still closes at 15:30 (has not matched NSE's extension)."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-TIME-MCX",
+      "name": "No new MCX entries after 22:45",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "TIME",
+      "action": "BLOCK",
+      "priority": "MEDIUM",
+      "appliesTo": {
+        "markets": [
+          "COMMODITY_OPTIONS",
+          "COMMODITY_FUTURES"
+        ],
+        "executionDomains": [
+          "MCX"
+        ]
+      },
+      "conditionText": "No new MCX entries after 22:45; force-flat 23:00 (23:25 in winter/US-standard session).",
+      "content": {
+        "when": {
+          "left": {
+            "source": "TIME",
+            "field": "timeOfDay"
+          },
+          "operator": "IS_ABOVE_OR_EQUAL",
+          "right": {
+            "const": "22:45",
+            "type": "TIME"
+          }
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Thin late liquidity; avoid holding into the close."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-EXP-GAMMA",
+      "name": "No new long options in an expiring series after 13:30",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "RISK",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "INDEX_OPTIONS",
+          "COMMODITY_OPTIONS"
+        ]
+      },
+      "conditionText": "On the underlying's own expiry day: no new long options in the expiring series after 13:30; exit by 15:00.",
+      "content": {
+        "when": {
+          "op": "ALL",
+          "items": [
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "isExpiryDay"
+              },
+              "operator": "EQUALS",
+              "right": {
+                "const": true
+              }
+            },
+            {
+              "left": {
+                "source": "TIME",
+                "field": "timeOfDay"
+              },
+              "operator": "IS_ABOVE_OR_EQUAL",
+              "right": {
+                "const": "13:30",
+                "type": "TIME"
+              }
+            }
+          ]
+        }
+      },
+      "evidence": {
+        "grade": "C",
+        "note": "Quantsapp expiry hero-zero buying -Rs6.2k; expiry close straddle buy -Rs2.1k; stop-and-reverse won only 20% of 177 expiry-day trades. Implemented in code as menu_builder._is_0dte_blocked()."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-EXP-MARGIN",
+      "name": "Expiry-day short legs need extra margin",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "CAPITAL",
+      "action": "REQUIRE",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "INDEX_OPTIONS"
+        ]
+      },
+      "conditionText": "Short legs on expiry day require free margin >= SPAN + exposure + 2% ELM; no calendar-spread margin offset on expiry day.",
+      "content": {
+        "require": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "marginSufficientForExpiryElm"
+          },
+          "operator": "EQUALS",
+          "right": {
+            "const": true
+          }
+        }
+      },
+      "evidence": {
+        "grade": "A",
+        "note": "SEBI circular 1 Oct 2024."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-PREMIUM-UPFRONT",
+      "name": "Order value must be covered by available cash",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "CAPITAL",
+      "action": "REQUIRE",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "Order value (premium x lot x lots) + estimated charges <= available cash.",
+      "content": {
+        "require": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "orderValueWithinCash"
+          },
+          "operator": "EQUALS",
+          "right": {
+            "const": true
+          }
+        }
+      },
+      "evidence": {
+        "grade": "A",
+        "note": "Full option premium is collected upfront from buyers since 1 Feb 2025."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-LOT-MASTER",
+      "name": "Read lot size and expiry from the live instrument master",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "FILTER",
+      "action": "REQUIRE",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "Lot size and expiry date must be read from the broker instrument master each morning, not hard-coded indefinitely.",
+      "content": {
+        "require": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "instrumentMasterFreshToday"
+          },
+          "operator": "EQUALS",
+          "right": {
+            "const": true
+          }
+        }
+      },
+      "evidence": {
+        "grade": "A",
+        "note": "NIFTY lot cut 75->65 and FINNIFTY 65->60 effective Jan 2026 broke a hard-coded value in this codebase; fixed in underlying_config.py on 2026-10-29, but the next revision will break it again unless read live."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-RISK-TRADE",
+      "name": "Max loss per trade",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "CAPITAL",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "Max loss per trade <= 0.5-1% of trading capital; size lots from the stop distance.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "tradeRiskPctOfCapital"
+          },
+          "operator": "IS_ABOVE",
+          "right": {
+            "const": 1.0
+          }
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Standard risk-management practice."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-RISK-DAY",
+      "name": "Daily loss kill switch",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "RISK",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "Daily realised + unrealised loss >= 2% of capital -> flatten everything and halt for the session.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "dailyLossPctOfCapital"
+          },
+          "operator": "IS_ABOVE_OR_EQUAL",
+          "right": {
+            "const": 2.0
+          }
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Kill switch convention."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-RISK-CONSEC",
+      "name": "Consecutive-loss halt",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "RISK",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "3 consecutive losing trades -> halt for the session.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "consecutiveLosses"
+          },
+          "operator": "IS_ABOVE_OR_EQUAL",
+          "right": {
+            "const": 3
+          }
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Behavioural circuit-breaker against revenge-trading."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-RISK-MAXTRADES",
+      "name": "Max trades per day",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "RISK",
+      "action": "BLOCK",
+      "priority": "MEDIUM",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "Max 6 trades/day across the platform; max 2 per strategy.",
+      "content": {
+        "when": {
+          "op": "ANY",
+          "items": [
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "tradesTodayTotal"
+              },
+              "operator": "IS_ABOVE_OR_EQUAL",
+              "right": {
+                "const": 6
+              }
+            },
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "tradesTodayThisStrategy"
+              },
+              "operator": "IS_ABOVE_OR_EQUAL",
+              "right": {
+                "const": 2
+              }
+            }
+          ]
+        }
+      },
+      "evidence": {
+        "grade": "A",
+        "note": "SEBI FY26: ~Rs24,800cr transaction costs; costs drove the retail loss share from 82.1% (before costs) to 87.7% (after)."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-COST-RATIO",
+      "name": "Target must clear round-trip cost by 3x",
+      "ruleKind": "CONDITION_BLOCK",
+      "ruleType": "FILTER",
+      "action": "REQUIRE",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "Expected gross target (Rs) must be >= 3x estimated round-trip charges + slippage.",
+      "content": {
+        "require": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "targetCoversCostRatio"
+          },
+          "operator": "EQUALS",
+          "right": {
+            "const": true
+          }
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "5-10% premium targets are extremely cost-sensitive; see docs/04-risk-and-profit-management.md."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-LIQ-SPREAD",
+      "name": "Max bid-ask spread",
+      "ruleKind": "CONDITION_BLOCK",
+      "ruleType": "LIQUIDITY",
+      "action": "BLOCK",
+      "priority": "MEDIUM",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "Bid-ask spread > max(2 ticks, 0.5% of mid) for NSE/BSE index options; > 1% for MCX options.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "spreadPct"
+          },
+          "operator": "IS_ABOVE",
+          "right": {
+            "const": 0.5
+          }
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Spread is a guaranteed cost on both entry and exit."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-LIQ-DEPTH",
+      "name": "Minimum OI/volume depth",
+      "ruleKind": "CONDITION_BLOCK",
+      "ruleType": "LIQUIDITY",
+      "action": "BLOCK",
+      "priority": "MEDIUM",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "Strike OI < 5x order quantity, or session volume < 20x order quantity, or premium < Rs20 -> block.",
+      "content": {
+        "when": {
+          "op": "ANY",
+          "items": [
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "oiToQtyRatio"
+              },
+              "operator": "IS_BELOW",
+              "right": {
+                "const": 5
+              }
+            },
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "volToQtyRatio"
+              },
+              "operator": "IS_BELOW",
+              "right": {
+                "const": 20
+              }
+            },
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "premium"
+              },
+              "operator": "IS_BELOW",
+              "right": {
+                "const": 20
+              }
+            }
+          ]
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Thin strikes slip; cheap options have the worst cost-to-premium ratio."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-LIQ-MCX-BASEMETAL",
+      "name": "Block COPPER/ZINC options unless liquidity proven live",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "LIQUIDITY",
+      "action": "BLOCK",
+      "priority": "MEDIUM",
+      "appliesTo": {
+        "markets": [
+          "COMMODITY_OPTIONS"
+        ],
+        "executionDomains": [
+          "MCX"
+        ]
+      },
+      "conditionText": "Block options on COPPER, ZINC unless G-LIQ-SPREAD and G-LIQ-DEPTH both pass live.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "underlying"
+          },
+          "operator": "IN",
+          "right": {
+            "const": [
+              "COPPER",
+              "ZINC"
+            ]
+          }
+        }
+      },
+      "evidence": {
+        "grade": "B",
+        "note": "MCX options liquidity is concentrated in crude, natural gas, gold, silver; copper/zinc trade as futures only on this platform (see MCX_BASEMETAL_FUT_TREND)."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-VIX-SPIKE",
+      "name": "Block short premium on VIX spike",
+      "ruleKind": "CONDITION_BLOCK",
+      "ruleType": "MARKET_REGIME",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "INDEX_OPTIONS"
+        ]
+      },
+      "conditionText": "India VIX up >8% intraday, or prior close >14.5, blocks naked/semi-naked short premium; long options go to WATCH.",
+      "content": {
+        "when": {
+          "op": "ANY",
+          "items": [
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "vixChangePctIntraday"
+              },
+              "operator": "IS_ABOVE",
+              "right": {
+                "const": 8
+              }
+            },
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "vixPriorClose"
+              },
+              "operator": "IS_ABOVE",
+              "right": {
+                "const": 14.5
+              }
+            }
+          ]
+        }
+      },
+      "evidence": {
+        "grade": "C",
+        "note": "Straddle-width strangle lost Rs24,039 on days after VIX>14.5; short-futures fade worked best with VIX 11.5-14.5."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-REGIME-CHOP",
+      "name": "Avoid breakout buys in a choppy regime",
+      "ruleKind": "CONDITION_BLOCK",
+      "ruleType": "MARKET_REGIME",
+      "action": "AVOID",
+      "priority": "MEDIUM",
+      "appliesTo": {
+        "markets": [
+          "INDEX_OPTIONS"
+        ]
+      },
+      "conditionText": "If the first two 30-min bars overlap >70% and ADX(14,30m) < 18, avoid breakout buys; prefer defined-risk premium selling.",
+      "content": {
+        "when": {
+          "op": "ALL",
+          "items": [
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "firstTwoBarsOverlapPct"
+              },
+              "operator": "IS_ABOVE",
+              "right": {
+                "const": 70
+              }
+            },
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "adx14_30m"
+              },
+              "operator": "IS_BELOW",
+              "right": {
+                "const": 18
+              }
+            }
+          ]
+        }
+      },
+      "evidence": {
+        "grade": "C",
+        "note": "Breakout buying loses on range days; strangle lost on choppy days (33% win over 66 days)."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-DIR-LONGBIAS",
+      "name": "Prefer long side on breakouts",
+      "ruleKind": "CONDITION_BLOCK",
+      "ruleType": "DIRECTION_PREFERENCE",
+      "action": "PREFER",
+      "priority": "MEDIUM",
+      "appliesTo": {
+        "markets": [
+          "INDEX_OPTIONS"
+        ]
+      },
+      "conditionText": "Prefer CE on breakouts; require extra confirmation for PE breakouts.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "breakoutSide"
+          },
+          "operator": "EQUALS",
+          "right": {
+            "const": "CE"
+          }
+        }
+      },
+      "evidence": {
+        "grade": "B",
+        "note": "Zerodha ORB study (Sandeep Rao, Mar 2026; NIFTY spot, 3-min candles, Jan 2019-Feb 2026, before costs): long win ~60% vs ~50% short."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-GAP",
+      "name": "Gap-risk filter",
+      "ruleKind": "CONDITION_BLOCK",
+      "ruleType": "FILTER",
+      "action": "WATCH",
+      "priority": "MEDIUM",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "Gap >0.8% vs prior close (incl. after holidays/long weekends): no entries until the 10:15 bar; never fade the gap with naked shorts.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "gapPctVsPriorClose"
+          },
+          "operator": "IS_ABOVE",
+          "right": {
+            "const": 0.8
+          }
+        }
+      },
+      "evidence": {
+        "grade": "C",
+        "note": "Quantsapp: 38 gap-up openings lost Rs1,02,423 for an intraday short; small gap fade -Rs3.6k."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-EVENT-IDX",
+      "name": "Blackout around index macro events",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "TIME",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "INDEX_OPTIONS"
+        ]
+      },
+      "conditionText": "No entries 15 min before to 30 min after Budget speech, RBI MPC announcement, US Fed decision (next-morning gap), major exit-poll/election results.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "withinMacroEventBlackout"
+          },
+          "operator": "EQUALS",
+          "right": {
+            "const": true
+          }
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Event jumps exceed premium stops."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-EVENT-MCX",
+      "name": "Blackout around MCX-relevant US data releases",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "TIME",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "COMMODITY_OPTIONS",
+          "COMMODITY_FUTURES"
+        ],
+        "executionDomains": [
+          "MCX"
+        ]
+      },
+      "conditionText": "Crude: Wed EIA 19:45-20:30 IST (DST)/20:45-21:30 (winter); NatGas: Thu EIA storage same windows; bullion: US CPI/NFP 17:45-18:30/18:45-19:30; OPEC+ meetings.",
+      "content": {
+        "when": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "withinMcxEventBlackout"
+          },
+          "operator": "EQUALS",
+          "right": {
+            "const": true
+          }
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Spreads widen and stops gap through at the release."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-MCX-EXPIRY",
+      "name": "No MCX option positions into expiry",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "RISK",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "COMMODITY_OPTIONS"
+        ],
+        "executionDomains": [
+          "MCX"
+        ]
+      },
+      "conditionText": "No MCX option positions held into the option's expiry day after 17:00; no new entries in expiring options on expiry day.",
+      "content": {
+        "when": {
+          "op": "ALL",
+          "items": [
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "isExpiryDay"
+              },
+              "operator": "EQUALS",
+              "right": {
+                "const": true
+              }
+            },
+            {
+              "left": {
+                "source": "TIME",
+                "field": "timeOfDay"
+              },
+              "operator": "IS_ABOVE_OR_EQUAL",
+              "right": {
+                "const": "17:00",
+                "type": "TIME"
+              }
+            }
+          ]
+        }
+      },
+      "evidence": {
+        "grade": "B",
+        "note": "MCX options are mostly options on futures -- ITM options devolve into futures on expiry."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-MCX-BAND",
+      "name": "Avoid entries near the MCX price band",
+      "ruleKind": "CONDITION_BLOCK",
+      "ruleType": "RISK",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "COMMODITY_OPTIONS",
+          "COMMODITY_FUTURES"
+        ],
+        "executionDomains": [
+          "MCX"
+        ]
+      },
+      "conditionText": "New entries blocked when the futures price is within 0.5% of the current daily price band (3% base -> 6% -> 9% after a 15-min cooling-off).",
+      "content": {
+        "when": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "distanceToPriceBandPct"
+          },
+          "operator": "IS_BELOW",
+          "right": {
+            "const": 0.5
+          }
+        }
+      },
+      "evidence": {
+        "grade": "A",
+        "note": "A limit move freezes exits."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-NO-AVERAGING",
+      "name": "No averaging into a loser",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "RISK",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "No adding to losing positions; no martingale sizing.",
+      "content": {
+        "when": {
+          "op": "ALL",
+          "items": [
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "isAddToPosition"
+              },
+              "operator": "EQUALS",
+              "right": {
+                "const": true
+              }
+            },
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "positionUnrealizedPnl"
+              },
+              "operator": "IS_BELOW",
+              "right": {
+                "const": 0
+              }
+            }
+          ]
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "SEBI notes loss amplification from doubling down."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-DATA-STALE",
+      "name": "Block on stale market data",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "FILTER",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "Option-chain snapshot >60s old, missing candle, or LTP outside bid-ask -> block.",
+      "content": {
+        "when": {
+          "op": "ANY",
+          "items": [
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "dataAgeSeconds"
+              },
+              "operator": "IS_ABOVE",
+              "right": {
+                "const": 60
+              }
+            },
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "ltpOutsideBidAsk"
+              },
+              "operator": "EQUALS",
+              "right": {
+                "const": true
+              }
+            }
+          ]
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Prevents trading on bad data. Already implemented for suggestions via MAX_DATA_AGE_SECONDS in run_service.py."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-EXEC-HEALTH",
+      "name": "Operational kill switch on execution health",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "RISK",
+      "action": "BLOCK",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": ">=3 order rejects or slippage >2x expected in a session -> halt and alert.",
+      "content": {
+        "when": {
+          "op": "ANY",
+          "items": [
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "orderRejectsToday"
+              },
+              "operator": "IS_ABOVE_OR_EQUAL",
+              "right": {
+                "const": 3
+              }
+            },
+            {
+              "left": {
+                "source": "CONTEXT",
+                "field": "slippageRatioToExpected"
+              },
+              "operator": "IS_ABOVE",
+              "right": {
+                "const": 2.0
+              }
+            }
+          ]
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Operational kill switch, independent of market-side risk."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    },
+    {
+      "code": "G-PAPER-FIRST",
+      "name": "New strategies must prove themselves in paper mode",
+      "ruleKind": "GUARDRAIL",
+      "ruleType": "OTHER",
+      "action": "REQUIRE",
+      "priority": "HIGH",
+      "appliesTo": {
+        "markets": [
+          "ALL"
+        ]
+      },
+      "conditionText": "A strategy must have >=60 paper trades, positive expectancy after costs, and max drawdown within budget before promotion to LIVE.",
+      "content": {
+        "require": {
+          "left": {
+            "source": "CONTEXT",
+            "field": "paperValidationPassed"
+          },
+          "operator": "EQUALS",
+          "right": {
+            "const": true
+          }
+        }
+      },
+      "evidence": {
+        "grade": "D",
+        "note": "Backtests overstate live results; live results commonly run 15-30% worse than backtests."
+      },
+      "executable": true,
+      "provenance": {
+        "source": "RESEARCH",
+        "taskId": "wf-73cd02ba-57fd-81e6-bc87-e3915505046a",
+        "date": "2026-10-29"
+      },
+      "enabled": true
+    }
+  ]
+}

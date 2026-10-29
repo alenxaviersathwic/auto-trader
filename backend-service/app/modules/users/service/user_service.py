@@ -1,14 +1,18 @@
+import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto.secret_cipher import cipher
 from app.core.db.entity_status import EntityStatus
+from app.core.db.session import async_session_factory
 from app.core.exception.app_exceptions import (
     ConflictException,
     NotFoundException,
     ValidationException,
 )
+from app.core.logging.logger import logger
 from app.core.pagination.page_result import PageResult
 from app.modules.users.entity.upstox_config_entity import UpstoxConfig
 from app.modules.users.entity.user_entity import User
@@ -21,7 +25,7 @@ from app.modules.users.schema.user_schema import (
     UserSearchFilter,
     UserUpdateRequest,
 )
-from app.modules.users.service.upstox_service import UpstoxService
+from app.modules.users.service.upstox_service import UpstoxService, next_upstox_expiry
 
 
 class UserService:
@@ -49,7 +53,7 @@ class UserService:
                 hasTotpSecret=bool(cfg.totpSecretEnc),
                 redirectUri=cfg.redirectUri or "",
                 autoAuthEnabled=cfg.autoAuthEnabled,
-                authStatus=cfg.authStatus or "NEVER",
+                authStatus=_effective_auth_status(cfg),
                 tokenExpiresAt=cfg.tokenExpiresAt,
                 lastAuthAt=cfg.lastAuthAt,
                 lastError=cfg.lastError,
@@ -295,6 +299,71 @@ class UserService:
         redirect_uri = user.upstoxConfig.redirectUri if user.upstoxConfig else ""
         return RedirectUrlResponse(redirectUri=redirect_uri)
 
+    async def get_default_last_auth_at(self, session: AsyncSession) -> datetime | None:
+        """Time of the default user's last successful Upstox login (read-only, for other modules)."""
+        user = await self.repo.get_default_user(session)
+        return user.upstoxConfig.lastAuthAt if user and user.upstoxConfig else None
+
+    async def reauth_default_after_rejection(self, cooldown_seconds: int = 120) -> bool:
+        """
+        Called when Upstox rejects the default user's token mid-day. One re-login at a time;
+        callers arriving within the cooldown reuse the fresh token instead of logging in again
+        (8 underlyings fail together — this keeps it to one handshake).
+        Returns True when a usable token should now be in the DB.
+        """
+        async with _reauth_lock:
+            now = datetime.now(UTC)
+            if _last_reauth_at and (now - _last_reauth_at).total_seconds() < cooldown_seconds:
+                return _last_reauth_ok
+            async with async_session_factory() as session:
+                user = await self.repo.get_default_user(session)
+                if not user or not user.upstoxConfig or not user.upstoxConfig.autoAuthEnabled:
+                    return False
+                try:
+                    result = await self.upstox_service.authenticate(user.upstoxConfig)
+                    await session.commit()
+                    ok = bool(result.get("success"))
+                except Exception as ex:
+                    await session.rollback()
+                    logger.error(f"[UPSTOX_REAUTH] failed: {ex}")
+                    ok = False
+            _set_last_reauth(now, ok)
+            logger.info(f"[UPSTOX_REAUTH] token rejected by Upstox; re-login {'succeeded' if ok else 'failed'}")
+            return ok
+
+    async def refresh_expiring_tokens(self, within_minutes: int = 30) -> dict[str, Any]:
+        """
+        Scheduler entry point. Re-authenticates every auto-auth user whose token is missing,
+        expired, or expires within `within_minutes`. Own session; one user failing never blocks others.
+        """
+        refreshed: list[int] = []
+        failed: list[int] = []
+        horizon = datetime.now(UTC) + timedelta(minutes=within_minutes)
+        async with async_session_factory() as session:
+            users = await self.repo.list_auto_auth_users(session)
+            for user in users:
+                cfg = user.upstoxConfig
+                if cfg and cfg.lastAuthAt and cfg.tokenExpiresAt:
+                    # Old rows stored issue+24h; real expiry is 03:30 IST after issue.
+                    real_exp = next_upstox_expiry(_as_utc(cfg.lastAuthAt))
+                    if _as_utc(cfg.tokenExpiresAt) > real_exp:
+                        cfg.tokenExpiresAt = real_exp
+                        await session.commit()
+                exp = _as_utc(cfg.tokenExpiresAt) if cfg else None
+                if not cfg or (cfg.accessTokenEnc and exp is not None and exp > horizon):
+                    continue
+                try:
+                    result = await self.upstox_service.authenticate(cfg)
+                    await session.commit()
+                    (refreshed if result.get("success") else failed).append(user.id)
+                except Exception as ex:  # keep going for the other users
+                    await session.rollback()
+                    failed.append(user.id)
+                    logger.error(f"[UPSTOX_TOKEN_REFRESH] user {user.id} failed: {ex}")
+        if refreshed or failed:
+            logger.info(f"[UPSTOX_TOKEN_REFRESH] refreshed={refreshed} failed={failed}")
+        return {"refreshed": refreshed, "failed": failed}
+
     async def authenticate_user(
         self,
         session: AsyncSession,
@@ -330,3 +399,28 @@ class UserService:
         await session.flush()
         await session.commit()
         return res
+
+
+def _as_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def _effective_auth_status(cfg: UpstoxConfig) -> str:
+    """A stored VALID whose expiry has passed is reported as EXPIRED."""
+    status = cfg.authStatus or "NEVER"
+    exp = _as_utc(cfg.tokenExpiresAt)
+    if status == "VALID" and exp is not None and exp <= datetime.now(UTC):
+        return "EXPIRED"
+    return status
+
+
+_reauth_lock = asyncio.Lock()
+_last_reauth_at: datetime | None = None
+_last_reauth_ok: bool = False
+
+
+def _set_last_reauth(at: datetime, ok: bool) -> None:
+    global _last_reauth_at, _last_reauth_ok
+    _last_reauth_at, _last_reauth_ok = at, ok

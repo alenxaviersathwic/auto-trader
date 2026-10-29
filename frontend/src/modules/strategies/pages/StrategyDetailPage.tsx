@@ -201,6 +201,24 @@ export const StrategyDetailPage: React.FC = () => {
               <span className="badge-pill text-xs bg-elevated text-secondary">
                 {strategy.validationStatus}
               </span>
+              <span className="badge-pill bg-elevated font-mono text-xs" title="Active days">
+                {strategy.activeDays?.length ? strategy.activeDays.join(" · ") : "EVERY DAY"}
+              </span>
+              {strategy.activeToday === false && (
+                <span className="badge badge--slate" title="Not scheduled to run today">
+                  NOT TODAY
+                </span>
+              )}
+              {(() => {
+                const now = new Date();
+                const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+                const upcoming = (strategy.dayOverrides || []).filter((o) => o.date >= today).length;
+                return upcoming > 0 ? (
+                  <span className="badge badge--amber" title="Upcoming date overrides">
+                    {upcoming} OVERRIDE{upcoming > 1 ? "S" : ""}
+                  </span>
+                ) : null;
+              })()}
               {strategy.suggestable && (
                 <span className="badge-pill bg-emerald/20 text-emerald text-xs flex items-center gap-1">
                   <CheckCircle2 size={12} />

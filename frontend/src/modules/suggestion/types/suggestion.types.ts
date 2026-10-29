@@ -8,35 +8,49 @@ export interface StartSuggestionParams {
   ignoreMarketHours?: boolean;
 }
 
-export interface StartSuggestionResult {
-  started: boolean;
-  reason?: "NO_RESEARCH_DATA" | "NO_UNDERLYINGS" | "ALREADY_RUNNING";
-  message?: string;
-  loopId?: string;
+export type MasterState = "RUNNING" | "STOPPED";
+
+/** One card session (suggestion_masters row): created per card each time Start is clicked. */
+export interface SuggestionMaster {
+  id: number;
+  tradeDate: string;
+  sessionNo: number;
+  underlyingCode: string;
+  underlyingType: "INDEX" | "COMMODITY";
+  state: MasterState;
+  stopReason: string | null;
+  params: StartSuggestionParams & { loopGapSeconds?: number };
+  researchRunId: number | null;
+  researchScore: number | null;
+  direction: "BULLISH" | "BEARISH" | null;
+  newsStatus: string | null;
+  inResearch: boolean;
+  iterationsCompleted: number;
+  iterationsFailed: number;
+  suggestionsTotal: number;
+  lastSuggestionCount: number;
+  topConfidence: number;
+  lastNote: string | null;
+  lastError: string | null;
+  lastDurationMs: number | null;
+  startedAt: string;
+  lastStartedAt: string | null;
+  lastCompletedAt: string | null;
+  stoppedAt: string | null;
+  createdAt: string;
 }
 
-export interface SuggestionRunStatus {
-  isLooping: boolean;
-  loopId: string | null;
-  iteration: number;
-  active: string[];
-  stopReason: string | null;
-  researchHasData: boolean;
-  state: string;
-  currentNode: string | null;
-  progressPct: number;
-  startedAt: string | null;
-  finishedAt: string | null;
-  stats: {
-    underlyings?: number;
-    candidates?: number;
-    picked?: number;
-    aiUsed?: number;
-    baselineUsed?: number;
-    outcomesResolved?: number;
-    skipped?: { underlying: string; reason: string }[];
-  };
-  error: string | null;
+export interface StartSuggestionResult {
+  started: boolean;
+  reason?: "NO_RESEARCH_DATA" | "NO_UNDERLYINGS";
+  message?: string;
+  masters: SuggestionMaster[];
+}
+
+export interface IterateResult {
+  master: SuggestionMaster;
+  ran: boolean;
+  saved: number;
 }
 
 export interface Suggestion {
@@ -44,7 +58,8 @@ export interface Suggestion {
   ref: string;
   spot: number;
   riskLevel: "LOW" | "MEDIUM" | "HIGH";
-  runId: number;
+  masterId: number;
+  iterationNo: number;
   underlyingCode: string;
   underlyingType: "INDEX" | "COMMODITY";
   contractId: string;
@@ -66,6 +81,7 @@ export interface Suggestion {
   ageSeconds: number;
   expired: boolean;
   outcome: "PENDING" | "TARGET_HIT" | "STOP_HIT" | "EXPIRED";
+  isLatest: boolean;
   createdAt: string;
 }
 
@@ -74,23 +90,50 @@ export interface LatestSuggestions {
   generatedAt: string | null;
 }
 
-export interface SuggestionUnderlying {
+/** API 1: GET /suggestion/research-top -- best underlyings from the Research Engine. */
+export interface ResearchTopItem {
   code: string;
   type: "INDEX" | "COMMODITY";
   direction: "BULLISH" | "BEARISH" | null;
   newsStatus: string | null;
   score: number | null;
-  count: number;
-  callCount: number;
-  putCount: number;
-  topConfidence: number;
-  active: boolean;
-  lastIteratedAt: string | null;
-  lastLoop: number | null;
-  lastNote: string | null;
 }
 
-export interface SuggestionUnderlyings {
+export interface ResearchTop {
   hasResearch: boolean;
-  list: SuggestionUnderlying[];
+  researchRunId: number | null;
+  list: ResearchTopItem[];
+}
+
+/** API 2: GET /suggestion/masters/today -- today's newest session per underlying + live counts. */
+export interface TodayMaster extends SuggestionMaster {
+  liveCount: number;
+  callCount: number;
+  putCount: number;
+  liveTopConfidence: number;
+}
+
+export interface TodayMasters {
+  tradeDate: string;
+  list: TodayMaster[];
+}
+
+/** A card on the page, merged on the client from API 1 + API 2. */
+export interface SuggestionCardItem {
+  code: string;
+  type: "INDEX" | "COMMODITY";
+  inResearch: boolean;
+  direction: "BULLISH" | "BEARISH" | null;
+  newsStatus: string | null;
+  score: number | null;
+  master: TodayMaster | null;
+}
+
+/** Client-side loop state (the frontend iterates RUNNING cards one by one). */
+export interface LoopSnapshot {
+  running: boolean;
+  round: number;
+  currentMasterId: number | null;
+  currentCode: string | null;
+  lastError: string | null;
 }

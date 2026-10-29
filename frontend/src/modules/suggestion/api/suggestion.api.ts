@@ -1,27 +1,43 @@
 import { httpClient } from "../../../core/api/httpClient";
 import {
+  IterateResult,
   LatestSuggestions,
+  ResearchTop,
   StartSuggestionParams,
   StartSuggestionResult,
-  SuggestionRunStatus,
-  SuggestionUnderlyings,
+  SuggestionMaster,
+  TodayMasters,
 } from "../types/suggestion.types";
 
+/** One iteration = market data + one local-AI call (+ one retry): allow well past the 30s default. */
+const ITERATE_TIMEOUT_MS = 8 * 60 * 1000;
+
 export const suggestionApi = {
-  async run(params?: StartSuggestionParams): Promise<StartSuggestionResult> {
-    return httpClient.post("/suggestion/run", params ?? {});
+  /** API 1: top 5 INDEX + top 3 COMMODITY from the Research Engine. */
+  async getResearchTop(): Promise<ResearchTop> {
+    return httpClient.get("/suggestion/research-top");
   },
 
-  async stop(underlyings?: string[]): Promise<{ stopped: boolean; state: string }> {
-    return httpClient.post("/suggestion/stop", { underlyings });
+  /** API 2: today's newest session (master) per underlying. */
+  async getTodayMasters(): Promise<TodayMasters> {
+    return httpClient.get("/suggestion/masters/today");
   },
 
-  async getUnderlyings(): Promise<SuggestionUnderlyings> {
-    return httpClient.get("/suggestion/underlyings");
+  /** Creates a NEW session row per card (every Research card, or only `underlyings`). */
+  async start(params?: StartSuggestionParams): Promise<StartSuggestionResult> {
+    return httpClient.post("/suggestion/masters/start", params ?? {});
   },
 
-  async getRunStatus(): Promise<SuggestionRunStatus> {
-    return httpClient.get("/suggestion/run-status");
+  async iterate(masterId: number): Promise<IterateResult> {
+    return httpClient.post(`/suggestion/masters/${masterId}/iterate`, {}, { timeout: ITERATE_TIMEOUT_MS });
+  },
+
+  async stop(masterId: number): Promise<SuggestionMaster> {
+    return httpClient.post(`/suggestion/masters/${masterId}/stop`, {});
+  },
+
+  async stopAll(): Promise<{ stopped: number; masters: SuggestionMaster[] }> {
+    return httpClient.post("/suggestion/masters/stop-all", {});
   },
 
   async getLatest(underlying?: string): Promise<LatestSuggestions> {

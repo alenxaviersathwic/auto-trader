@@ -49,6 +49,8 @@ class StrategyCommandService:
             howItWorks=payload.get("howItWorks"),
             tags=payload.get("tags"),
             attributes=payload.get("attributes"),
+            activeDays=payload.get("activeDays") or [],
+            dayOverrides=payload.get("dayOverrides") or [],
             provenance=provenance,
             changeNote="Created from Master Chat Proposal",
         )
@@ -83,6 +85,8 @@ class StrategyCommandService:
             definition=payload.get("definition"),
             riskProfile=payload.get("riskProfile"),
             tags=payload.get("tags"),
+            activeDays=payload.get("activeDays"),
+            dayOverrides=payload.get("dayOverrides"),
             changeNote="Updated via Master Chat Proposal",
         )
         updated = await self.strategy_service.update(session, strat.id, request)

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 import hashlib
 import json
@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exception.app_exceptions import ConflictException, NotFoundException, ValidationException
 from app.core.pagination.page_result import PageResult
-from app.modules.strategies.entity.strategy_entity import Strategy
+from app.modules.strategies.entity.strategy_entity import IST, Strategy
 from app.modules.strategies.entity.strategy_performance_snapshot_entity import StrategyPerformanceSnapshot
 from app.modules.strategies.entity.strategy_version_entity import StrategyVersion
 from app.modules.strategies.repository.performance_repository import PerformanceRepository
@@ -17,6 +17,9 @@ from app.modules.strategies.schema.performance_schema import (
     PerformanceSnapshotResponse,
 )
 from app.modules.strategies.schema.strategy_schema import (
+    DayOverride,
+    DayShiftRequest,
+    DayShiftResponse,
     EvaluateStrategyRequest,
     EvaluateStrategyResponse,
     PerformanceSnapshotSummary,
@@ -133,6 +136,8 @@ class StrategyService:
             tradingModes=request.tradingModes,
             executionModes=request.executionModes,
             timeframe=request.timeframe,
+            activeDays=list(request.activeDays),
+            dayOverrides=_dump_overrides(request.dayOverrides),
             definitionFormat=request.definitionFormat,
             executable=executable,
             lifecycleStatus="DRAFT",
@@ -205,6 +210,10 @@ class StrategyService:
             strat.tags = request.tags
         if request.attributes is not None:
             strat.attributes = request.attributes
+        if request.activeDays is not None:
+            strat.activeDays = list(request.activeDays)
+        if request.dayOverrides is not None:
+            strat.dayOverrides = _dump_overrides(request.dayOverrides)
 
         # If definition is provided and changed, create new version
         if request.definition is not None:
@@ -275,6 +284,8 @@ class StrategyService:
             howItWorks=strat.howItWorks,
             tags=strat.tags,
             attributes=strat.attributes,
+            activeDays=strat.activeDays or [],
+            dayOverrides=[DayOverride.model_validate(o) for o in (strat.dayOverrides or [])],
             provenance={"source": "CUSTOM", "clonedFrom": strat.code},
             changeNote=f"Cloned from {strat.code}",
         )
@@ -462,14 +473,19 @@ class StrategyService:
 
     # Inter-module interface
     async def list_suggestable_summaries(
-        self, session: AsyncSession, market: str, underlying_type: Optional[str] = None
+        self,
+        session: AsyncSession,
+        market: str,
+        underlying_type: Optional[str] = None,
+        on_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
-        """Short public summaries (name, bias, optionSide, description) of suggestable strategies."""
+        """Short public summaries of suggestable strategies scheduled to run on on_date (default: today IST)."""
         filt = StrategyFilter(
             market=market,
             underlyingType=underlying_type,
             lifecycleStatus="ACTIVE",
             executable=True,
+            activeOn=on_date or _today(),
             limit=100,
         )
         page_res = await self.strategy_repo.search(session, filt)
@@ -492,8 +508,9 @@ class StrategyService:
         bias: Optional[str] = None,
         trading_mode: Optional[str] = None,
         execution_mode: Optional[str] = None,
+        on_date: Optional[date] = None,
     ) -> List[StrategyVersionResponse]:
-        """Returns all suggestable strategy versions for given parameters."""
+        """Returns all suggestable strategy versions scheduled to run on on_date (default: today IST)."""
         filt = StrategyFilter(
             market=market,
             underlyingType=underlying_type,
@@ -502,6 +519,7 @@ class StrategyService:
             executionMode=execution_mode,
             lifecycleStatus="ACTIVE",
             executable=True,
+            activeOn=on_date or _today(),
             limit=100,
         )
         page_res = await self.strategy_repo.search(session, filt)
@@ -512,3 +530,43 @@ class StrategyService:
                 if current_v:
                     results.append(StrategyVersionResponse.model_validate(current_v))
         return results
+
+    async def apply_day_shift(self, session: AsyncSession, request: DayShiftRequest) -> DayShiftResponse:
+        """
+        Holiday shift. For every target strategy scheduled on fromDate: block fromDate and,
+        when toDate is given, run on toDate instead. Existing overrides on those dates are replaced.
+        """
+        if request.strategyIds:
+            targets = []
+            for sid in request.strategyIds:
+                strat = await self.strategy_repo.get_by_id(session, sid)
+                if not strat:
+                    raise NotFoundException(message=f"Strategy with id {sid} not found")
+                targets.append(strat)
+        else:
+            targets = await self.strategy_repo.list_all_active(session)
+
+        affected: List[str] = []
+        for strat in targets:
+            if not strat.isActiveOn(request.fromDate):
+                continue
+            moved_dates = {request.fromDate.isoformat()}
+            new_items = [{"date": request.fromDate.isoformat(), "active": False, "reason": request.reason}]
+            if request.toDate is not None:
+                moved_dates.add(request.toDate.isoformat())
+                new_items.append({"date": request.toDate.isoformat(), "active": True, "reason": request.reason})
+            kept = [o for o in (strat.dayOverrides or []) if o.get("date") not in moved_dates]
+            strat.dayOverrides = sorted(kept + new_items, key=lambda o: o["date"])
+            await self.strategy_repo.save(session, strat)
+            affected.append(strat.code)
+
+        return DayShiftResponse(affectedCount=len(affected), strategyCodes=affected)
+
+
+def _today() -> date:
+    return datetime.now(IST).date()
+
+
+def _dump_overrides(overrides: List[DayOverride]) -> List[Dict[str, Any]]:
+    """JSONB-safe form: dates as ISO strings, sorted by date."""
+    return [o.model_dump(mode="json") for o in sorted(overrides, key=lambda o: o.date)]

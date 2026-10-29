@@ -1,42 +1,51 @@
 import asyncio
-import uuid
-from datetime import UTC, datetime
+import time
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import async_session_factory
+from app.core.exception.app_exceptions import ConflictException, NotFoundException
 from app.core.logging.logger import logger
 from app.modules.research.service.run_service import run_service as research_run_service
-from app.modules.suggestion.entity.suggestion_entity import SuggestionRun
-from app.modules.suggestion.graph.builder import suggestion_graph
-from app.modules.suggestion.repository.suggestion_repository import suggestion_repository
+from app.modules.suggestion.entity.suggestion_entity import SuggestionMaster, TradeSuggestion
+from app.modules.suggestion.graph.builder import underlying_graph
+from app.modules.suggestion.provider.underlying_config import get_config
+from app.modules.suggestion.repository.suggestion_repository import (
+    make_ref,
+    risk_level,
+    suggestion_master_repository as master_repo,
+    suggestion_repository,
+)
 from app.modules.suggestion.schema.suggestion_schema import StartSuggestionRequest
+from app.modules.suggestion.service import memory_service
 from app.modules.suggestion.service.selector import select_underlyings
+
+_IST = ZoneInfo("Asia/Kolkata")
+ALL_IN_RESEARCH = 12  # select_underlyings count large enough to return every researched underlying
+
+
+def _today() -> str:
+    return datetime.now(_IST).strftime("%Y-%m-%d")
 
 
 class SuggestionRunService:
     """
-    Runs the Suggestion graph in a loop: when one run finishes the next one starts,
-    until Stop is clicked. Single loop at a time (single uvicorn worker).
+    Card-session model (replaces the old server-side loop):
+
+      Start          -> one new suggestion_masters row per card (sessionNo = Nth start of the day)
+      Iterate(id)    -> ONE pass for that card: gather -> menu -> AI -> validate -> save to
+                        trade_suggestions, then the master's counters are updated
+      Stop(id)/all   -> state = STOPPED; later iterate calls are no-ops
+
+    The frontend drives the loop: it calls iterate on every RUNNING master one by one, waits
+    loopGapSeconds, and repeats. A per-master lock stops two tabs iterating the same card at once.
     """
 
     def __init__(self) -> None:
-        self._task: asyncio.Task | None = None
-        self._loop_id: str | None = None
-        self._iteration = 0
-        self._stop_reason: str | None = None
-        self._active: set[str] = set()
-        # cache: code -> {"at": ISO time the last COMPLETED loop finished, "loop": loop number}
-        self._completed: dict[str, dict[str, Any]] = {}
-        self._notes: dict[str, str] = {}
-        self._params: dict[str, Any] = {}
-        self._lock = asyncio.Lock()
-
-    @property
-    def is_looping(self) -> bool:
-        return self._task is not None and not self._task.done()
+        self._locks: dict[int, asyncio.Lock] = {}
 
     async def research_has_data(self, session: AsyncSession) -> bool:
         for utype in ("INDEX", "COMMODITY"):
@@ -45,181 +54,208 @@ class SuggestionRunService:
                 return True
         return False
 
+    # ───────────────────────── start / stop ─────────────────────────
     async def start(self, req: StartSuggestionRequest, session: AsyncSession) -> dict[str, Any]:
-        async with self._lock:
-            # 1. Run button rule: check Research has data first
-            if not await self.research_has_data(session):
-                return {
-                    "started": False,
-                    "reason": "NO_RESEARCH_DATA",
-                    "message": "Research Engine has no data yet. Run the Research Engine first.",
-                }
-            sel = await select_underlyings(session, req.indexCount, req.commodityCount, req.underlyings)
-            codes = {c["underlyingCode"] for c in sel["items"]}
-            if not codes:
-                return {"started": False, "reason": "NO_UNDERLYINGS",
-                        "message": "No matching underlyings in Research."}
-            self._active |= codes
-            self._stop_reason = None
-            if self.is_looping:  # card Run while the loop is going: just join it
-                return {"started": True, "loopId": self._loop_id, "active": sorted(self._active)}
-            self._params = req.model_dump()
-            self._loop_id = uuid.uuid4().hex[:12]
-            self._iteration = 0
-            self._task = asyncio.create_task(self._loop(self._loop_id))
-            return {"started": True, "loopId": self._loop_id, "active": sorted(self._active)}
+        """New master row per card. A card already RUNNING today is stopped and replaced by the new session."""
+        if not await self.research_has_data(session):
+            return {"started": False, "reason": "NO_RESEARCH_DATA",
+                    "message": "Research Engine has no data yet. Run the Research Engine first.", "masters": []}
+        today, now = _today(), datetime.now(UTC)
+        await master_repo.close_stale_days(session, today, now)
+        if req.underlyings:
+            sel = await select_underlyings(session, ALL_IN_RESEARCH, ALL_IN_RESEARCH, req.underlyings)
+            found = {c["underlyingCode"]: c for c in sel["items"]}
+            # A card the user asked for that is missing from Research still gets a session (shown as missing).
+            items = [found.get(code.upper()) or self._missing(code.upper()) for code in req.underlyings
+                     if get_config(code.upper())]
+        else:
+            sel = await select_underlyings(session, req.indexCount, req.commodityCount)
+            items = sel["items"]
+        if not items:
+            return {"started": False, "reason": "NO_UNDERLYINGS", "message": "No matching underlyings in Research.",
+                    "masters": []}
+        codes = [c["underlyingCode"] for c in items]
+        for old in await master_repo.running(session, today, codes):
+            old.state, old.stopReason, old.stoppedAt = "STOPPED", "REPLACED_BY_NEW_START", now
+        params = req.model_dump(exclude={"underlyings"})
+        created: list[SuggestionMaster] = []
+        for c in items:
+            code = c["underlyingCode"]
+            m = SuggestionMaster(
+                tradeDate=today, sessionNo=await master_repo.next_session_no(session, today, code),
+                underlyingCode=code, underlyingType=c["underlyingType"], state="RUNNING", params=params,
+                researchRunId=sel["runId"], researchScore=c.get("opportunityScore") or c.get("score"),
+                direction=(c.get("direction") or "").upper() or None, newsStatus=c.get("newsStatus"),
+                inResearch=not c.get("_missing", False), startedAt=now,
+                lastNote=None if not c.get("_missing") else "Not in the latest Research run",
+            )
+            created.append(await master_repo.save(session, m))
+        await session.commit()
+        return {"started": True, "masters": [self.master_dict(m) for m in created]}
 
-    async def stop(self, session: AsyncSession, underlyings: list[str] | None = None) -> dict[str, Any]:
-        if not self.is_looping:
-            self._active.clear()
-            return {"stopped": False, "state": "IDLE"}
-        if underlyings:
-            self._active -= {u.upper() for u in underlyings}
-            if self._active:  # others keep looping; removed ones drop out from the next run
-                return {"stopped": True, "state": "RUNNING", "active": sorted(self._active)}
-        self._active.clear()
-        self._stop_reason = "STOPPED_BY_USER"
-        assert self._task is not None
-        self._task.cancel()
+    async def stop(self, session: AsyncSession, master_id: int) -> dict[str, Any]:
+        m = await master_repo.get(session, master_id)
+        if m is None:
+            raise NotFoundException(f"Suggestion master {master_id} not found")
+        if m.state == "RUNNING":
+            m.state, m.stopReason, m.stoppedAt = "STOPPED", "STOPPED_BY_USER", datetime.now(UTC)
+            await session.commit()
+        return self.master_dict(m)
+
+    async def stop_all(self, session: AsyncSession) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        rows = await master_repo.running(session)
+        for m in rows:
+            m.state, m.stopReason, m.stoppedAt = "STOPPED", "STOPPED_BY_USER", now
+        await session.commit()
+        return {"stopped": len(rows), "masters": [self.master_dict(m) for m in rows]}
+
+    # ───────────────────────── one iteration ─────────────────────────
+    async def iterate(self, master_id: int) -> dict[str, Any]:
+        lock = self._locks.setdefault(master_id, asyncio.Lock())
+        if lock.locked():
+            raise ConflictException("This card is already iterating", error={"code": "ITERATION_IN_PROGRESS"})
+        async with lock:
+            return await self._iterate(master_id)
+
+    async def _iterate(self, master_id: int) -> dict[str, Any]:
+        t0, now = time.monotonic(), datetime.now(UTC)
+        async with async_session_factory() as s:
+            m = await master_repo.get(s, master_id)
+            if m is None:
+                raise NotFoundException(f"Suggestion master {master_id} not found")
+            if m.state == "RUNNING" and m.tradeDate != _today():
+                m.state, m.stopReason, m.stoppedAt = "STOPPED", "DAY_ENDED", now
+                await s.commit()
+            if m.state != "RUNNING":
+                return {"master": self.master_dict(m), "ran": False, "saved": 0}
+            m.lastStartedAt = now
+            code, params, iteration = m.underlyingCode, dict(m.params or {}), m.iterationsCompleted + 1
+            sel = await select_underlyings(s, ALL_IN_RESEARCH, ALL_IN_RESEARCH, [code])
+            research = sel["items"][0] if sel["items"] else None
+            await s.commit()
+
+        picks: list[dict[str, Any]] = []
+        prices: dict[str, float] = {}
+        note, error = "", None
         try:
-            await self._task
-        except (asyncio.CancelledError, Exception):
-            pass
-        return {"stopped": True, "state": "CANCELLED", "active": []}
+            if research is None:
+                note = "Not in the latest Research run -- nothing to analyse until Research covers it again"
+            else:
+                out = await underlying_graph.ainvoke(
+                    {"masterId": master_id, "params": params, "research": research, "code": code}
+                )
+                note = out.get("error") or out.get("note") or ""
+                ranked = sorted(out.get("candidates", []), key=lambda c: (c.get("edge", 0), c["confidence"]),
+                                reverse=True)
+                picks = ranked[: params.get("maxPerUnderlying", 2)]
+                for i, c in enumerate(picks, 1):
+                    c["rank"] = i
+                for ch in (out.get("market") or {}).get("chains", []):
+                    for row in ch["strikes"]:
+                        for side in ("CE", "PE"):
+                            if row[side]["key"]:
+                                prices[row[side]["key"]] = row[side]["ltp"]
+        except Exception as e:  # one bad iteration must not kill the card
+            logger.error(f"suggestion iterate master={master_id} {code} failed: {type(e).__name__}: {e}")
+            error = f"{type(e).__name__}: {e}"
 
-    async def underlyings(self, session: AsyncSession) -> dict[str, Any]:
-        """Default screen: top 5 INDEX + top 3 COMMODITY from Research, with suggestion counts."""
+        async with async_session_factory() as s:
+            m = await master_repo.get(s, master_id)
+            assert m is not None
+            saved = 0
+            if error is None:
+                saved = await self._save(s, m, iteration, picks, params)
+                await memory_service.resolve_outcomes(s, prices)
+                m.iterationsCompleted = iteration
+                m.lastCompletedAt = datetime.now(UTC)
+                m.lastNote, m.lastError = note or None, None
+                m.lastSuggestionCount = saved
+                m.suggestionsTotal += saved
+                m.topConfidence = max([m.topConfidence] + [c["confidence"] for c in picks])
+                m.inResearch = research is not None
+                if research is not None:
+                    m.researchScore = research.get("opportunityScore") or research.get("score")
+                    m.direction = (research.get("direction") or "").upper() or None
+                    m.newsStatus = research.get("newsStatus")
+            else:
+                m.iterationsFailed += 1
+                m.lastError = error[:2000]
+            m.lastDurationMs = int((time.monotonic() - t0) * 1000)
+            await s.commit()
+            return {"master": self.master_dict(m), "ran": True, "saved": saved}
+
+    async def _save(self, s: AsyncSession, m: SuggestionMaster, iteration: int,
+                    picks: list[dict[str, Any]], params: dict[str, Any]) -> int:
+        """This iteration's picks become the card's 'latest' set (an empty set clears the old one)."""
+        now = datetime.now(UTC)
+        valid_until = now + timedelta(minutes=params.get("validMinutes", 15))
+        rows = [
+            TradeSuggestion(
+                masterId=m.id, iterationNo=iteration, ref=make_ref(m.underlyingCode, m, iteration, c["rank"]),
+                underlyingCode=m.underlyingCode, underlyingType=m.underlyingType, contractId=c["id"],
+                instrumentKey=c.get("instrumentKey"), optionType=c["side"], spot=c.get("spot", 0),
+                strike=c["strike"], expiry=c["expiry"], entry=c["entry"], stop=c["stop"], target=c["target"],
+                profitMarginPct=c["marginPct"], rewardRisk=c["rewardRisk"], confidence=c["confidence"],
+                riskLevel=risk_level(c["confidence"], c["rewardRisk"], c.get("spreadPct", 0)), rank=c["rank"],
+                strategy=c.get("strategy"), reasons=c.get("reasons", []), risks=c.get("risks", []),
+                source=c["source"], validUntil=valid_until, isLatest=True,
+            )
+            for c in picks
+        ]
+        await suggestion_repository.replace_latest(s, m.underlyingCode, rows)
+        for row, c in zip(rows, picks, strict=True):
+            await memory_service.remember_pending(s, row, c.get("bias", "NEUTRAL"), "UNKNOWN")
+        return len(rows)
+
+    # ───────────────────────── reads ─────────────────────────
+    async def research_top(self, session: AsyncSession) -> dict[str, Any]:
+        """API 1 for the page: best underlyings from the Research Engine (top 5 INDEX + top 3 COMMODITY)."""
         sel = await select_underlyings(session, 5, 3)
-        rows = await suggestion_repository.latest(session, [c["underlyingCode"] for c in sel["items"]])
+        return {
+            "hasResearch": sel["runId"] is not None,
+            "researchRunId": sel["runId"],
+            "list": [
+                {
+                    "code": c["underlyingCode"],
+                    "type": c["underlyingType"],
+                    "direction": (c.get("direction") or "").upper() or None,
+                    "newsStatus": c.get("newsStatus"),
+                    "score": c.get("opportunityScore") or c.get("score"),
+                }
+                for c in sel["items"]
+            ],
+        }
+
+    async def today(self, session: AsyncSession) -> dict[str, Any]:
+        """
+        API 2 for the page: today's newest session (master) per underlying, with its live suggestion
+        counts. The page merges this with research_top(): a card with a master shows the master,
+        a card without one shows the Research item and a Start button.
+        """
+        today = _today()
+        if await master_repo.close_stale_days(session, today, datetime.now(UTC)):
+            await session.commit()
+        masters = await master_repo.latest_for_day(session, today)
+        latest = await suggestion_repository.latest(session, list(masters)) if masters else []
         now = datetime.now(UTC)
         stats: dict[str, dict[str, int]] = {}
-        for sg in rows:
+        for sg in latest:
             if sg.validUntil < now:
                 continue
             d = stats.setdefault(sg.underlyingCode, {"count": 0, "top": 0, "ce": 0, "pe": 0})
             d["count"] += 1
             d["ce" if sg.optionType == "CE" else "pe"] += 1
             d["top"] = max(d["top"], sg.confidence)
-        completed = await self._last_completed(session)
-        notes = await self._last_notes(session)
         items = []
-        for c in sel["items"]:
-            code = c["underlyingCode"]
-            dirn = (c.get("direction") or "").upper()
+        for code, m in masters.items():
+            st = stats.get(code, {})
             items.append({
-                "code": code, "type": c["underlyingType"], "direction": dirn or None,
-                "newsStatus": c.get("newsStatus"), "score": c.get("score"),
-                "count": stats.get(code, {}).get("count", 0),
-                "callCount": stats.get(code, {}).get("ce", 0),
-                "putCount": stats.get(code, {}).get("pe", 0),
-                "topConfidence": stats.get(code, {}).get("top", 0),
-                "active": code in self._active and self.is_looping,
-                "lastIteratedAt": (completed.get(code) or {}).get("at"),
-                "lastLoop": (completed.get(code) or {}).get("loop"),
-                "lastNote": notes.get(code),
+                **self.master_dict(m),
+                "liveCount": st.get("count", 0), "callCount": st.get("ce", 0), "putCount": st.get("pe", 0),
+                "liveTopConfidence": st.get("top", 0),
             })
-        return {"hasResearch": sel["runId"] is not None, "list": items}
-
-    async def _last_completed(self, session: AsyncSession) -> dict[str, dict[str, Any]]:
-        """Last completed loop per underlying: the cache first, then recent run stats after a restart."""
-        out = dict(self._completed)
-        res = await session.execute(
-            select(SuggestionRun).where(SuggestionRun.state == "COMPLETED").order_by(SuggestionRun.id.desc()).limit(30)
-        )
-        for r in res.scalars().all():
-            for code, entry in (r.stats or {}).get("iterated", {}).items():
-                if isinstance(entry, str):  # runs saved before the loop number was stored
-                    entry = {"at": entry, "loop": None}
-                if isinstance(entry, dict):
-                    out.setdefault(code, entry)
-        return out
-
-    async def _last_notes(self, session: AsyncSession) -> dict[str, str]:
-        out = dict(self._notes)
-        res = await session.execute(select(SuggestionRun).order_by(SuggestionRun.id.desc()).limit(30))
-        for r in res.scalars().all():
-            for code, note in (r.stats or {}).get("notes", {}).items():
-                if isinstance(note, str):
-                    out.setdefault(code, note)
-        return out
-
-    async def _loop(self, loop_id: str) -> None:
-        run_id: int | None = None
-        try:
-            while True:
-                self._iteration += 1
-                if not self._active:
-                    return
-                params = {**self._params, "only": sorted(self._active)}
-                async with async_session_factory() as s:
-                    run = SuggestionRun(loopId=loop_id, iteration=self._iteration, state="RUNNING", params=params,
-                                        startedAt=datetime.now(UTC), progressPct=1)
-                    s.add(run)
-                    await s.commit()
-                    run_id = run.id
-                final: dict[str, Any] = {}
-                try:
-                    final = await suggestion_graph.ainvoke({"runId": run_id, "params": params, "results": [],
-                                                            "skipped": [], "prices": {}})
-                    status = final.get("status", "OK")
-                    await self._finish(run_id, "COMPLETED" if status == "OK" else "FAILED", final, status)
-                    if status != "OK":
-                        self._stop_reason = status  # e.g. NO_RESEARCH: nothing to loop on
-                        return
-                except asyncio.CancelledError:
-                    await self._finish(run_id, "CANCELLED", final, None)
-                    raise
-                except Exception as e:  # one bad run must not kill the loop
-                    logger.error(f"suggestion run {run_id} failed: {e}")
-                    await self._finish(run_id, "FAILED", final, str(e))
-                await asyncio.sleep(params.get("loopGapSeconds", 20))
-        except asyncio.CancelledError:
-            raise
-
-    async def _finish(self, run_id: int, state: str, final: dict[str, Any], error: str | None) -> None:
-        async with async_session_factory() as s:
-            run = (await s.execute(select(SuggestionRun).where(SuggestionRun.id == run_id))).scalar_one()
-            run.state, run.finishedAt, run.progressPct = state, datetime.now(UTC), 100 if state == "COMPLETED" else run.progressPct
-            run.error = error if state == "FAILED" else None
-            run.researchRunId = final.get("researchRunId")
-            done = state == "COMPLETED"
-            entry = {"at": run.finishedAt.isoformat(), "loop": run.iteration}
-            completed = {code: entry for code in final.get("iterated", {})} if done else {}
-            run.stats = {
-                "underlyings": len(final.get("underlyings", [])),
-                "candidates": len(final.get("results", [])),
-                "picked": len(final.get("picks", [])),
-                "aiUsed": final.get("aiUsed", 0),
-                "baselineUsed": final.get("baselineUsed", 0),
-                "outcomesResolved": final.get("outcomesResolved", 0),
-                "skipped": final.get("skipped", []),
-                "iterated": completed,
-                "notes": final.get("notes", {}) if done else {},
-            }
-            if done:  # only a fully completed loop updates the "last completed" cache
-                self._completed.update(completed)
-                self._notes.update(final.get("notes", {}))
-            await s.commit()
-
-    async def status(self, session: AsyncSession) -> dict[str, Any]:
-        res = await session.execute(select(SuggestionRun).order_by(SuggestionRun.id.desc()).limit(1))
-        r = res.scalar_one_or_none()
-        has_research = await self.research_has_data(session)
-        return {
-            "isLooping": self.is_looping,
-            "loopId": self._loop_id,
-            "iteration": self._iteration,
-            "active": sorted(self._active) if self.is_looping else [],
-            "stopReason": self._stop_reason,
-            "researchHasData": has_research,
-            "state": (r.state if r else "IDLE") if self.is_looping or r else "IDLE",
-            "currentNode": r.currentNode if r and self.is_looping else None,
-            "progressPct": r.progressPct if r else 0,
-            "startedAt": r.startedAt.isoformat() if r and r.startedAt else None,
-            "finishedAt": r.finishedAt.isoformat() if r and r.finishedAt else None,
-            "stats": r.stats if r else {},
-            "error": r.error if r else None,
-        }
+        return {"tradeDate": today, "list": items}
 
     async def latest(self, session: AsyncSession, code: str | None = None) -> dict[str, Any]:
         rows = await suggestion_repository.latest(session, [code] if code else None)
@@ -228,16 +264,40 @@ class SuggestionRunService:
         return {"list": items, "generatedAt": max((i["createdAt"] for i in items), default=None)}
 
     @staticmethod
-    def to_dict(s: Any, now: datetime) -> dict[str, Any]:
+    def _missing(code: str) -> dict[str, Any]:
+        cfg = get_config(code)
+        return {"underlyingCode": code, "underlyingType": cfg.type if cfg else "INDEX", "_missing": True}
+
+    @staticmethod
+    def master_dict(m: SuggestionMaster) -> dict[str, Any]:
+        iso = lambda d: d.isoformat() if d else None  # noqa: E731
         return {
-            "id": s.id, "ref": s.ref, "runId": s.runId, "spot": float(s.spot), "riskLevel": s.riskLevel, "underlyingCode": s.underlyingCode, "underlyingType": s.underlyingType,
+            "id": m.id, "tradeDate": m.tradeDate, "sessionNo": m.sessionNo, "underlyingCode": m.underlyingCode,
+            "underlyingType": m.underlyingType, "state": m.state, "stopReason": m.stopReason,
+            "params": m.params, "researchRunId": m.researchRunId,
+            "researchScore": float(m.researchScore) if m.researchScore is not None else None,
+            "direction": m.direction, "newsStatus": m.newsStatus, "inResearch": m.inResearch,
+            "iterationsCompleted": m.iterationsCompleted, "iterationsFailed": m.iterationsFailed,
+            "suggestionsTotal": m.suggestionsTotal, "lastSuggestionCount": m.lastSuggestionCount,
+            "topConfidence": m.topConfidence, "lastNote": m.lastNote, "lastError": m.lastError,
+            "lastDurationMs": m.lastDurationMs, "startedAt": iso(m.startedAt), "lastStartedAt": iso(m.lastStartedAt),
+            "lastCompletedAt": iso(m.lastCompletedAt), "stoppedAt": iso(m.stoppedAt),
+            "createdAt": iso(m.createdAt),
+        }
+
+    @staticmethod
+    def to_dict(s: TradeSuggestion, now: datetime) -> dict[str, Any]:
+        return {
+            "id": s.id, "ref": s.ref, "masterId": s.masterId, "iterationNo": s.iterationNo, "spot": float(s.spot),
+            "riskLevel": s.riskLevel, "underlyingCode": s.underlyingCode, "underlyingType": s.underlyingType,
             "contractId": s.contractId, "optionType": s.optionType, "strike": float(s.strike), "expiry": s.expiry,
             "entry": float(s.entry), "stop": float(s.stop), "target": float(s.target),
             "profitMarginPct": float(s.profitMarginPct), "rewardRisk": float(s.rewardRisk),
             "confidence": s.confidence, "rank": s.rank, "strategy": s.strategy, "reasons": s.reasons,
             "risks": s.risks, "source": s.source, "validUntil": s.validUntil.isoformat(),
             "ageSeconds": int((now - s.createdAt).total_seconds()),
-            "expired": s.validUntil < now, "outcome": s.outcome, "createdAt": s.createdAt.isoformat(),
+            "expired": s.validUntil < now, "outcome": s.outcome, "isLatest": s.isLatest,
+            "createdAt": s.createdAt.isoformat(),
         }
 
 

@@ -176,6 +176,8 @@ class ImportExportService:
             existing.howItWorks = strat_data.get("howItWorks", existing.howItWorks)
             existing.tags = strat_data.get("tags", existing.tags)
             existing.reviewFlags = strat_data.get("reviewFlags", existing.reviewFlags)
+            existing.activeDays = strat_data.get("activeDays", existing.activeDays) or []
+            existing.dayOverrides = strat_data.get("dayOverrides", existing.dayOverrides) or []
 
             # Check if definition changed
             latest_v = existing.versions[0] if existing.versions else None
@@ -226,6 +228,8 @@ class ImportExportService:
                 attributes=strat_data.get("attributes"),
                 provenance=strat_data.get("provenance"),
                 reviewFlags=strat_data.get("reviewFlags"),
+                activeDays=strat_data.get("activeDays") or [],
+                dayOverrides=strat_data.get("dayOverrides") or [],
             )
             saved_strat = await self.strategy_repo.save(session, strat)
 
@@ -883,6 +887,8 @@ class ImportExportService:
                 "attributes": s.attributes,
                 "provenance": s.provenance,
                 "reviewFlags": s.reviewFlags,
+                "activeDays": s.activeDays or [],
+                "dayOverrides": s.dayOverrides or [],
                 "definition": v.definition if v else {},
                 "performanceSnapshots": snaps_out,
             })

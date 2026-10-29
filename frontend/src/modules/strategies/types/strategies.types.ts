@@ -28,6 +28,27 @@ export type UnderlyingType = "INDEX" | "COMMODITY";
 export type Exchange = "NSE" | "BSE" | "MCX";
 export type TradingMode = "INTRADAY" | "SHORT_TERM" | "POSITIONAL";
 export type ExecutionMode = "PAPER" | "LIVE";
+export type WeekdayCode = "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN";
+export const WEEKDAY_CODES: WeekdayCode[] = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+
+/** Date-specific exception. active=true runs on that date, active=false blocks it. Wins over activeDays. */
+export interface DayOverride {
+  date: string; // YYYY-MM-DD
+  active: boolean;
+  reason?: string | null;
+}
+
+export interface DayShiftPayload {
+  fromDate: string;
+  toDate?: string | null;
+  reason?: string | null;
+  strategyIds?: number[] | null;
+}
+
+export interface DayShiftResult {
+  affectedCount: number;
+  strategyCodes: string[];
+}
 export type DefinitionFormat = "RULE_TREE" | "EVALUATOR" | "SUMMARY";
 export type LifecycleStatus = "DRAFT" | "IN_REVIEW" | "ACTIVE" | "SUSPENDED" | "ARCHIVED";
 export type HealthStatus = "HEALTHY" | "DEGRADED" | "SUSPENDED" | "UNKNOWN";
@@ -214,9 +235,13 @@ export interface Strategy extends BaseEntity {
   attributes?: Record<string, any> | null;
   provenance?: Record<string, any> | null;
   reviewFlags?: string[] | null;
+  /** Weekdays the strategy runs on. Empty = every trading day. */
+  activeDays: WeekdayCode[];
+  dayOverrides: DayOverride[];
   currentVersionId?: number | null;
   // Computed on read:
   suggestable?: boolean;
+  activeToday?: boolean;
   effectiveHealth?: HealthStatus | string;
   currentVersion?: StrategyVersion | null;
   latestPerformance?: PerformanceSnapshot[] | null;
@@ -241,6 +266,7 @@ export interface StrategyFilter extends BaseFilter {
   hasReviewFlags?: boolean;
   tag?: string;
   source?: string;
+  activeOn?: string; // YYYY-MM-DD
 }
 
 export interface StrategyCreatePayload {
@@ -264,6 +290,8 @@ export interface StrategyCreatePayload {
   howItWorks?: Array<{ title: string; description: string }>;
   tags?: string[];
   attributes?: Record<string, any>;
+  activeDays?: WeekdayCode[];
+  dayOverrides?: DayOverride[];
   definition: Record<string, any>;
   changeNote?: string;
 }
@@ -287,6 +315,8 @@ export interface StrategyUpdatePayload {
   howItWorks?: Array<{ title: string; description: string }>;
   tags?: string[];
   attributes?: Record<string, any>;
+  activeDays?: WeekdayCode[];
+  dayOverrides?: DayOverride[];
   definition?: Record<string, any>;
   changeNote?: string;
 }

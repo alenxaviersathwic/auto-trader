@@ -28,6 +28,7 @@ class EmbeddingClient:
             payload = {
                 "model": self.model,
                 "prompt": text,
+                "keep_alive": "30m",  # stay loaded; avoids unload/reload churn next to the chat model
             }
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(f"{self.base_url}/api/embeddings", json=payload)

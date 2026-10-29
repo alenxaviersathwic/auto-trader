@@ -93,6 +93,10 @@ class OllamaClient(LlmClient):
         system_prompt: Optional[str] = None,
         temperature: float = 0.0,
         model: Optional[str] = None,
+        timeout: float = 90.0,
+        think: Optional[bool] = None,
+        num_predict: Optional[int] = None,
+        keep_alive: Optional[str] = None,
     ) -> T:
         prompt_msgs = []
         schema_json = json.dumps(schema.model_json_schema(), indent=2)
@@ -111,13 +115,24 @@ class OllamaClient(LlmClient):
             "stream": False,
             "options": {"temperature": temperature},
         }
+        if think is not None:
+            payload["think"] = think  # qwen3 & co: False skips the long reasoning pass
+            if think is False and "qwen3" in use_model.lower() and payload["messages"]:
+                # Soft switch too, for Ollama versions that ignore the "think" field.
+                last = payload["messages"][-1]
+                payload["messages"][-1] = {**last, "content": f"{last['content']}\n/no_think"}
+        if num_predict is not None:
+            payload["options"]["num_predict"] = num_predict  # hard cap on answer length
+        if keep_alive is not None:
+            payload["keep_alive"] = keep_alive  # keep the model in memory between calls
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             try:
                 resp = await client.post(f"{self.base_url}/api/chat", json=payload)
                 if resp.status_code != 200:
                     raise RuntimeError(f"Ollama returned {resp.status_code}: {resp.text}")
                 data = resp.json()
+                _log_timings(use_model, data)
                 content = data.get("message", {}).get("content", "").strip()
                 # 1. Remove <think>...</think> reasoning blocks if present (common in Qwen models)
                 content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
@@ -145,7 +160,7 @@ class OllamaClient(LlmClient):
                     except Exception:
                         raise parse_err
             except Exception as e:
-                logger.error(f"Ollama structured generate failed: {e}")
+                logger.error(f"Ollama structured generate failed: {type(e).__name__}: {e}")
                 # Fallback for intent classification so worker never crashes
                 if hasattr(schema, "__name__") and schema.__name__ == "IntentClassification":
                     return schema(intent="CHAT", confidence=0.7)  # type: ignore
@@ -154,3 +169,18 @@ class OllamaClient(LlmClient):
     async def is_healthy(self) -> bool:
         url = await self._resolve_healthy_url()
         return url is not None
+
+
+def _log_timings(model: str, data: Dict[str, Any]) -> None:
+    """Ollama returns nanosecond timings; logging them shows whether time goes to model load,
+    reading the prompt, or writing the answer."""
+    ns = 1_000_000_000
+    try:
+        logger.info(
+            f"[OLLAMA_TIMING] model={model} total={data.get('total_duration', 0) / ns:.1f}s "
+            f"load={data.get('load_duration', 0) / ns:.1f}s "
+            f"prompt={data.get('prompt_eval_count', 0)}tok/{data.get('prompt_eval_duration', 0) / ns:.1f}s "
+            f"answer={data.get('eval_count', 0)}tok/{data.get('eval_duration', 0) / ns:.1f}s"
+        )
+    except Exception:
+        pass

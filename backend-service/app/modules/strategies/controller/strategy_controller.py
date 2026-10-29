@@ -15,6 +15,8 @@ from app.modules.strategies.schema.performance_schema import (
     RecomputeHealthResponse,
 )
 from app.modules.strategies.schema.strategy_schema import (
+    DayShiftRequest,
+    DayShiftResponse,
     EvaluateStrategyRequest,
     EvaluateStrategyResponse,
     RequirementsResponse,
@@ -109,6 +111,20 @@ async def evaluate_strategy(
 ):
     eval_res = await _strategy_service.evaluate(session, payload)
     return success(data=eval_res, message="Strategy evaluation executed")
+
+
+@strategy_router.post(
+    "/day-shift",
+    response_model=ApiResponse[DayShiftResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Holiday shift: block a date and optionally move strategies to another date",
+)
+async def apply_day_shift(
+    payload: DayShiftRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    res = await _strategy_service.apply_day_shift(session, payload)
+    return success(data=res, message=f"Day shift applied to {res.affectedCount} strategies")
 
 
 @strategy_router.post(

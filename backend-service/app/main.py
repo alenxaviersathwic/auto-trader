@@ -33,6 +33,7 @@ from app.core.logging.http_logger import HttpTrafficLoggingMiddleware
 from app.core.response.api_response import ApiResponse
 from app.core.response.response_helper import success
 from app.core.scheduler.scheduler import shutdown_scheduler, start_scheduler
+from app.modules.strategies.service.seed_service import SeedService
 
 
 BANNER = rf"""
@@ -69,7 +70,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Database connection check warning: {e}")
 
-    # 2. Start scheduler
+    # 2. Seed strategy/rule registry (idempotent -- checks by code, skips what already exists).
+    # Includes the Oct-2026 research-backed strategy + guardrail registry
+    # (task wf-73cd02ba-57fd-81e6-bc87-e3915505046a).
+    try:
+        async with async_session_factory() as session:
+            seed_res = await SeedService().seed_defaults(session)
+            await session.commit()
+        logger.info(f"{BRIGHT_GREEN}Strategy/rule registry seeded: {seed_res}{RESET}")
+    except Exception as e:
+        logger.error(f"Strategy/rule registry seeding failed on startup: {e}")
+
+    # 3. Start scheduler
     start_scheduler()
     logger.info(f"{BRIGHT_YELLOW}APScheduler started with timezone {settings.SCHEDULER_TIMEZONE}.{RESET}")
 

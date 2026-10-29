@@ -56,6 +56,24 @@ class UserRepository:
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def list_auto_auth_users(
+        self,
+        session: AsyncSession,
+    ) -> list[User]:
+        """Active users whose Upstox config has auto-auth switched on."""
+        stmt = (
+            select(User)
+            .join(UpstoxConfig, UpstoxConfig.userId == User.id)
+            .options(selectinload(User.upstoxConfig))
+            .where(
+                User.status == EntityStatus.ACTIVE,
+                UpstoxConfig.status == EntityStatus.ACTIVE,
+                UpstoxConfig.autoAuthEnabled.is_(True),
+            )
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
     async def count_active_users(
         self,
         session: AsyncSession,

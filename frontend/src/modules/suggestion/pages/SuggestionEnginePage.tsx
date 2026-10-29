@@ -13,50 +13,46 @@ import {
   TrendingUp,
 } from "lucide-react";
 import {
-  useRunSuggestion,
-  useStopSuggestion,
-  useSuggestionStatus,
-  useSuggestionUnderlyings,
+  resumeSuggestionLoop,
+  useStartSuggestion,
+  useStopAll,
+  useStopCard,
+  useSuggestionCards,
+  useSuggestionLoop,
 } from "../hooks/useSuggestion";
 import { formatDateTime } from "../components/formatters";
 import { UNDERLYING_NAMES } from "../components/underlyingNames";
-import { SuggestionUnderlying } from "../types/suggestion.types";
-
-const NODE_LABELS: Record<string, string> = {
-  load_research: "Reading Research data",
-  analyze_underlying: "Analysing underlyings",
-  pick_top: "Picking top suggestions",
-  save: "Saving suggestions",
-  track_outcomes: "Checking past outcomes",
-};
 
 type Tab = "INDEX" | "COMMODITY";
+
+const STOP_REASON: Record<string, string> = {
+  STOPPED_BY_USER: "Stopped",
+  REPLACED_BY_NEW_START: "Replaced by a new start",
+  DAY_ENDED: "Day ended",
+};
 
 export const SuggestionEnginePage: React.FC = () => {
   const navigate = useNavigate();
   const [tab, setTab] = React.useState<Tab>("INDEX");
-  const { data: status, refetch: refetchStatus } = useSuggestionStatus();
-  const isLooping = Boolean(status?.isLooping);
-  const { data: under, refetch, isLoading } = useSuggestionUnderlyings(isLooping);
-  const runMutation = useRunSuggestion();
-  const stopMutation = useStopSuggestion();
+  const loop = useSuggestionLoop();
+  const { cards: all, hasResearch, tradeDate, isLoading, error, refetch } = useSuggestionCards(loop.running);
+  const startMutation = useStartSuggestion();
+  const stopCard = useStopCard();
+  const stopAll = useStopAll();
 
-  const all: SuggestionUnderlying[] = under?.list ?? [];
   const byType = (t: Tab) => all.filter((u) => u.type === t);
   const cards = byType(tab);
-  const activeSet = new Set(status?.active ?? []);
-  const totalSuggestions = all.reduce((sum, u) => sum + u.count, 0);
+  const runningCount = all.filter((c) => c.master?.state === "RUNNING").length;
+  const totalSuggestions = all.reduce((sum, u) => sum + (u.master?.liveCount ?? 0), 0);
 
-  const runResult = runMutation.data;
+  // Sessions still RUNNING in the DB (page reload, another visit) continue as soon as the page is open.
+  React.useEffect(() => {
+    if (runningCount > 0 && !loop.running) resumeSuggestionLoop();
+  }, [runningCount, loop.running]);
+
+  const startResult = startMutation.data;
   const noResearch =
-    (under && !under.hasResearch) ||
-    (runResult && !runResult.started && runResult.reason === "NO_RESEARCH_DATA") ||
-    status?.stopReason === "NO_RESEARCH";
-
-  const handleRefresh = () => {
-    refetchStatus();
-    refetch();
-  };
+    !hasResearch || (startResult && !startResult.started && startResult.reason === "NO_RESEARCH_DATA");
 
   return (
     <div className="page-container sp-page">
@@ -65,40 +61,40 @@ export const SuggestionEnginePage: React.FC = () => {
           <div className="sp-title-row">
             <h1 className="sp-title">Suggestion Engine</h1>
             {totalSuggestions > 0 && <span className="badge badge--green">{totalSuggestions} Suggestions</span>}
-            {isLooping && (
+            {loop.running && (
               <span className="badge badge--cyan sp-live">
                 <RefreshCw size={12} className="sp-spin" />
-                Loop {status?.iteration} · {status?.progressPct ?? 0}%
+                Round {loop.round}
+                {loop.currentCode ? ` · ${loop.currentCode}` : " · waiting"}
               </span>
             )}
           </div>
           <p className="sp-desc">
-            Small, frequent wins: each suggestion targets 5-10% on the premium with a tight stop. Top 5 index and
-            top 3 commodity underlyings from Research; strategies and rules choose CALL or PUT, the trend is only
-            context. Each underlying keeps looping until you stop it.
+            Each Start opens a new session per card. Cards are iterated one by one from this page; every card keeps
+            its own loop count until you stop it. Targets are 5-10% on the premium with a tight stop.
           </p>
         </div>
         <div className="sp-actions">
-          <button type="button" className="sp-btn" onClick={handleRefresh} title="Refresh">
-            <RefreshCw size={13} className={isLooping ? "sp-spin" : ""} /> Refresh
+          <button type="button" className="sp-btn" onClick={() => refetch()} title="Refresh">
+            <RefreshCw size={13} className={loop.running ? "sp-spin" : ""} /> Refresh
           </button>
-          {isLooping ? (
+          {runningCount > 0 && (
             <button
               type="button"
               className="sp-btn sp-btn--stop"
-              onClick={() => stopMutation.mutate(undefined)}
-              disabled={stopMutation.isPending}
+              onClick={() => stopAll.mutate()}
+              disabled={stopAll.isPending}
             >
               <Square size={14} /> Stop all
             </button>
-          ) : null}
+          )}
           <button
             type="button"
             className="sp-btn sp-btn--run"
-            onClick={() => runMutation.mutate(undefined)}
-            disabled={runMutation.isPending || all.length === 0}
+            onClick={() => startMutation.mutate(undefined)}
+            disabled={startMutation.isPending || all.length === 0}
           >
-            <Play size={14} /> Run all
+            <Play size={14} /> Start all
           </button>
         </div>
       </div>
@@ -109,15 +105,24 @@ export const SuggestionEnginePage: React.FC = () => {
           <span>Research Engine has no data yet. Run the Research Engine first, then start suggestions.</span>
         </div>
       )}
+      {error && (
+        <div className="sp-notice" role="alert">
+          <AlertTriangle size={16} />
+          <span>Could not load cards: {error.message}</span>
+        </div>
+      )}
+      {loop.lastError && (
+        <div className="sp-notice" role="alert">
+          <AlertTriangle size={16} />
+          <span>Last iteration error: {loop.lastError}</span>
+        </div>
+      )}
 
-      {isLooping && (
+      {loop.running && (
         <div className="sp-progress">
           <Loader2 size={14} className="sp-spin" />
-          <span>{NODE_LABELS[status?.currentNode ?? ""] ?? "Starting"}</span>
-          <span className="sp-muted">
-            · {status?.stats?.picked ?? 0} picked last run · AI {status?.stats?.aiUsed ?? 0} / code-only{" "}
-            {status?.stats?.baselineUsed ?? 0}
-          </span>
+          <span>{loop.currentCode ? `Iterating ${loop.currentCode}` : "Waiting for the next round"}</span>
+          <span className="sp-muted">· {runningCount} card(s) running · one card at a time</span>
         </div>
       )}
 
@@ -139,13 +144,13 @@ export const SuggestionEnginePage: React.FC = () => {
             </button>
           ))}
         </div>
-        <div className="sp-muted mono">Showing {cards.length} underlyings from Research</div>
+        <div className="sp-muted mono">{tradeDate}</div>
       </div>
 
       {isLoading ? (
         <div className="sp-empty">
           <RefreshCw size={24} className="sp-spin" />
-          <div className="sp-empty-title">Loading underlyings...</div>
+          <div className="sp-empty-title">Loading cards...</div>
         </div>
       ) : cards.length === 0 ? (
         <div className="sp-empty">
@@ -156,7 +161,9 @@ export const SuggestionEnginePage: React.FC = () => {
       ) : (
         <div className="sp-grid">
           {cards.map((u) => {
-            const running = u.active || activeSet.has(u.code);
+            const m = u.master;
+            const running = m?.state === "RUNNING";
+            const iterating = m !== null && loop.currentMasterId === m.id;
             const tone = u.direction === "BULLISH" ? "sp-card--bull" : u.direction === "BEARISH" ? "sp-card--bear" : "";
             return (
               <div key={u.code} className={`sp-card ${tone}`}>
@@ -174,35 +181,45 @@ export const SuggestionEnginePage: React.FC = () => {
                         <h2 className="sp-name">{UNDERLYING_NAMES[u.code] ?? u.code}</h2>
                       </div>
                       <div className="sp-muted sp-sub">
-                        {u.type} · {u.count} {u.count === 1 ? "suggestion" : "suggestions"}
+                        {u.type}
+                        {m ? ` · session #${m.sessionNo} · ${m.suggestionsTotal} saved today` : " · not started today"}
                       </div>
                     </div>
-                    {u.direction && (
-                      <span className={`badge ${u.direction === "BULLISH" ? "badge--green" : "badge--red"}`}>
-                        {u.direction === "BULLISH" ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-                        {u.direction}
+                    {!u.inResearch ? (
+                      <span className="badge badge--amber">
+                        <AlertTriangle size={13} /> NOT IN RESEARCH
                       </span>
+                    ) : (
+                      u.direction && (
+                        <span className={`badge ${u.direction === "BULLISH" ? "badge--green" : "badge--red"}`}>
+                          {u.direction === "BULLISH" ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                          {u.direction}
+                        </span>
+                      )
                     )}
                   </div>
 
                   <div className="sp-metrics">
                     <div>
-                      <div className="sp-metric-label">Suggestions</div>
+                      <div className="sp-metric-label">Loops</div>
                       <div className="sp-metric-value">
-                        {u.count}
-                        {running && <Loader2 size={13} className="sp-spin sp-loader" aria-label="Iterating" />}
+                        {m?.iterationsCompleted ?? 0}
+                        {iterating && <Loader2 size={13} className="sp-spin sp-loader" aria-label="Iterating" />}
                       </div>
                     </div>
                     <div>
-                      <div className="sp-metric-label">Top conf.</div>
-                      <div className="sp-metric-value">{u.count > 0 ? u.topConfidence : "—"}</div>
+                      <div className="sp-metric-label">Live</div>
+                      <div className="sp-metric-value">
+                        {m?.liveCount ?? 0}
+                        {m && m.liveCount > 0 && <span className="sp-dim"> · {m.liveTopConfidence}</span>}
+                      </div>
                     </div>
                     <div>
                       <div className="sp-metric-label">Call / Put</div>
                       <div className="sp-metric-value">
-                        <span className="sp-up">{u.callCount}</span>
+                        <span className="sp-up">{m?.callCount ?? 0}</span>
                         <span className="sp-dim"> / </span>
-                        <span className="sp-down">{u.putCount}</span>
+                        <span className="sp-down">{m?.putCount ?? 0}</span>
                       </div>
                     </div>
                   </div>
@@ -210,12 +227,16 @@ export const SuggestionEnginePage: React.FC = () => {
                   <div className="sp-iterated">
                     <Clock size={12} />
                     <span>
-                      {running ? "Loop running · " : ""}Last completed
-                      {u.lastLoop ? ` (loop ${u.lastLoop})` : ""}: {formatDateTime(u.lastIteratedAt)}
+                      {m
+                        ? `${running ? (iterating ? "Iterating now · " : "Running · ") : `${STOP_REASON[m.stopReason ?? ""] ?? "Stopped"} · `}` +
+                          `Last completed${m.iterationsCompleted ? ` (loop ${m.iterationsCompleted})` : ""}: ${formatDateTime(m.lastCompletedAt)}`
+                        : "Not started today"}
+                      {m && m.iterationsFailed > 0 ? ` · ${m.iterationsFailed} failed` : ""}
                     </span>
                   </div>
-                  {u.lastNote && (
-                    <div className={`sp-note ${u.count === 0 ? "sp-note--warn" : ""}`}>{u.lastNote}</div>
+                  {m?.lastError && <div className="sp-note sp-note--warn">Error: {m.lastError}</div>}
+                  {m?.lastNote && (
+                    <div className={`sp-note ${m.lastSuggestionCount === 0 ? "sp-note--warn" : ""}`}>{m.lastNote}</div>
                   )}
                 </button>
 
@@ -227,8 +248,8 @@ export const SuggestionEnginePage: React.FC = () => {
                     <button
                       type="button"
                       className="sp-btn sp-btn--stop"
-                      onClick={() => stopMutation.mutate([u.code])}
-                      disabled={stopMutation.isPending}
+                      onClick={() => stopCard.mutate(m.id)}
+                      disabled={stopCard.isPending}
                     >
                       <Square size={13} /> Stop
                     </button>
@@ -236,10 +257,11 @@ export const SuggestionEnginePage: React.FC = () => {
                     <button
                       type="button"
                       className="sp-btn sp-btn--run"
-                      onClick={() => runMutation.mutate({ underlyings: [u.code] })}
-                      disabled={runMutation.isPending}
+                      onClick={() => startMutation.mutate({ underlyings: [u.code] })}
+                      disabled={startMutation.isPending}
+                      title="Starts a new session for this card"
                     >
-                      <Play size={13} /> Run
+                      <Play size={13} /> Start
                     </button>
                   )}
                 </div>
@@ -249,7 +271,8 @@ export const SuggestionEnginePage: React.FC = () => {
         </div>
       )}
       <p className="sp-muted sp-footnote">
-        Prices are from the last run. They are re-checked at Trade Lock before any order.
+        Iterations run from this browser tab: closing the tab pauses them, reopening the page resumes running cards.
+        Prices are re-checked at Trade Lock before any order.
       </p>
     </div>
   );

@@ -1,9 +1,38 @@
-from datetime import datetime
+from datetime import date as Date, datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Literal, Optional, Union
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.core.filter.base_filter import BaseFilter
 from app.core.db.entity_status import EntityStatus
+
+
+WeekdayCode = Literal["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+_WEEK_ORDER = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+
+
+class DayOverride(BaseModel):
+    """Date-specific exception: active=True runs on that date, active=False blocks it."""
+
+    date: Date
+    active: bool
+    reason: Optional[str] = Field(default=None, max_length=200)
+
+
+def _clean_active_days(v: Optional[List[str]]) -> Optional[List[str]]:
+    if v is None:
+        return v
+    return sorted(set(v), key=_WEEK_ORDER.index)
+
+
+def _check_overrides(v: Optional[List[DayOverride]]) -> Optional[List[DayOverride]]:
+    if v is None:
+        return v
+    seen = set()
+    for o in v:
+        if o.date in seen:
+            raise ValueError(f"duplicate override for {o.date.isoformat()}")
+        seen.add(o.date)
+    return sorted(v, key=lambda o: o.date)
 
 
 class StrategyFilter(BaseFilter):
@@ -25,6 +54,7 @@ class StrategyFilter(BaseFilter):
     hasReviewFlags: Optional[bool] = None
     tag: Optional[str] = None
     source: Optional[str] = None
+    activeOn: Optional[Date] = None  # only strategies scheduled to run on this date
 
 
 class StrategyVersionResponse(BaseModel):
@@ -94,6 +124,9 @@ class StrategyResponse(BaseModel):
     attributes: Optional[Dict[str, Any]] = None
     provenance: Optional[Dict[str, Any]] = None
     reviewFlags: Optional[List[str]] = None
+    activeDays: List[str] = Field(default_factory=list)
+    dayOverrides: List[DayOverride] = Field(default_factory=list)
+    activeToday: bool = True
     currentVersionId: Optional[int] = None
     suggestable: bool = False
     latestSnapshot: Optional[PerformanceSnapshotSummary] = None
@@ -129,7 +162,12 @@ class StrategyCreate(BaseModel):
     tags: Optional[List[str]] = None
     attributes: Optional[Dict[str, Any]] = None
     provenance: Optional[Dict[str, Any]] = None
+    activeDays: List[WeekdayCode] = Field(default_factory=list)
+    dayOverrides: List[DayOverride] = Field(default_factory=list)
     changeNote: Optional[str] = "Initial version"
+
+    _v_days = field_validator("activeDays")(_clean_active_days)
+    _v_overrides = field_validator("dayOverrides")(_check_overrides)
 
 
 class StrategyUpdate(BaseModel):
@@ -152,7 +190,32 @@ class StrategyUpdate(BaseModel):
     howItWorks: Optional[List[Dict[str, str]]] = None
     tags: Optional[List[str]] = None
     attributes: Optional[Dict[str, Any]] = None
+    activeDays: Optional[List[WeekdayCode]] = None
+    dayOverrides: Optional[List[DayOverride]] = None
     changeNote: Optional[str] = None
+
+    _v_days = field_validator("activeDays")(_clean_active_days)
+    _v_overrides = field_validator("dayOverrides")(_check_overrides)
+
+
+class DayShiftRequest(BaseModel):
+    """Holiday shift: block fromDate and (optionally) run on toDate instead, for many strategies at once."""
+
+    fromDate: Date
+    toDate: Optional[Date] = None
+    reason: Optional[str] = Field(default=None, max_length=200)
+    strategyIds: Optional[List[int]] = None  # null = every strategy scheduled on fromDate
+
+    @model_validator(mode="after")
+    def _dates_differ(self) -> "DayShiftRequest":
+        if self.toDate is not None and self.toDate == self.fromDate:
+            raise ValueError("toDate must differ from fromDate")
+        return self
+
+
+class DayShiftResponse(BaseModel):
+    affectedCount: int
+    strategyCodes: List[str] = Field(default_factory=list)
 
 
 class StrategyLifecycleUpdate(BaseModel):

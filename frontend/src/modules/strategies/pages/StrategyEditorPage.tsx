@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Save } from "lucide-react";
 import { useCreateStrategy, useStrategyDetail, useUpdateStrategy } from "../hooks/useStrategies";
 import { DefinitionEditor } from "../components/DefinitionEditor";
+import { StrategyScheduleEditor } from "../components/StrategyScheduleEditor";
+import { DayOverride, WeekdayCode } from "../types/strategies.types";
 
 export const StrategyEditorPage: React.FC = () => {
   const { id } = useParams({ strict: false }) as { id?: string };
@@ -14,7 +16,24 @@ export const StrategyEditorPage: React.FC = () => {
   const createMutation = useCreateStrategy();
   const updateMutation = useUpdateStrategy();
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    code: string;
+    name: string;
+    description: string;
+    category: string;
+    structure: string;
+    bias: string;
+    optionSide: string;
+    markets: string[];
+    underlyingTypes: string[];
+    exchange: string;
+    tradingModes: string[];
+    executionModes: string[];
+    timeframe: string;
+    definitionFormat: string;
+    activeDays: WeekdayCode[];
+    dayOverrides: DayOverride[];
+  }>({
     code: "",
     name: "",
     description: "",
@@ -29,6 +48,8 @@ export const StrategyEditorPage: React.FC = () => {
     executionModes: ["PAPER", "LIVE"],
     timeframe: "5m",
     definitionFormat: "RULE_TREE",
+    activeDays: [],
+    dayOverrides: [],
   });
 
   const [definition, setDefinition] = useState<Record<string, any>>({
@@ -98,6 +119,8 @@ export const StrategyEditorPage: React.FC = () => {
       executionModes: existingStrategy.executionModes || ["PAPER"],
       timeframe: existingStrategy.timeframe || "5m",
       definitionFormat: existingStrategy.definitionFormat || "RULE_TREE",
+      activeDays: existingStrategy.activeDays || [],
+      dayOverrides: existingStrategy.dayOverrides || [],
     });
     if (existingStrategy.currentVersion?.definition) {
       setDefinition(existingStrategy.currentVersion.definition);
@@ -304,6 +327,16 @@ export const StrategyEditorPage: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, timeframe: e.target.value })}
             />
           </div>
+        </div>
+
+        {/* Schedule Card */}
+        <div className="card-surface p-4 border border-subtle rounded-lg mb-4">
+          <h3 className="font-semibold text-primary mb-2 text-sm">Schedule</h3>
+          <StrategyScheduleEditor
+            activeDays={formData.activeDays}
+            dayOverrides={formData.dayOverrides}
+            onChange={({ activeDays, dayOverrides }) => setFormData({ ...formData, activeDays, dayOverrides })}
+          />
         </div>
 
         {/* Definition Editor Card */}

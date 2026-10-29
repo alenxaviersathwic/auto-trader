@@ -354,6 +354,15 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
             </span>
           )}
 
+          {strategy.activeToday === false && (
+            <span
+              className="badge badge--slate"
+              title={strategy.activeDays?.length ? `Runs on ${strategy.activeDays.join(", ")}` : "Blocked today"}
+            >
+              NOT TODAY
+            </span>
+          )}
+
           {strategy.suggestable && (
             <span
               style={{
