@@ -1,3 +1,4 @@
+import { z } from "zod";
 import React from "react";
 import {
   createRouter,
@@ -13,8 +14,8 @@ import { StrategyEditorPage } from "../../modules/strategies/pages/StrategyEdito
 import { RulesPage } from "../../modules/strategies/pages/RulesPage";
 import { MasterPage } from "../../modules/master/pages/MasterPage";
 import { ResearchEnginePage } from "../../modules/research/pages/ResearchEnginePage";
-import { SuggestionDetailPage } from "../../modules/suggestion/pages/SuggestionDetailPage";
-import { SuggestionEnginePage } from "../../modules/suggestion/pages/SuggestionEnginePage";
+import { OpportunityDetailPage } from "../../modules/opportunities/pages/OpportunityDetailPage";
+import { OpportunitiesPage } from "../../modules/opportunities/pages/OpportunitiesPage";
 
 // Root Route housing AppLayout
 const rootRoute = createRootRoute({
@@ -92,16 +93,33 @@ const researchRoute = createRoute({
   component: ResearchEnginePage,
 });
 
-const suggestionRoute = createRoute({
+const opportunitiesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/suggestion",
-  component: SuggestionEnginePage,
+  path: "/opportunities",
+  validateSearch: z.object({
+    tab: z.enum(["INDEX", "COMMODITY"]).optional(),
+    card: z.string().optional(),
+  }),
+  component: OpportunitiesPage,
 });
 
-const suggestionDetailRoute = createRoute({
+const opportunityDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/suggestion/$underlying/detail",
-  component: SuggestionDetailPage,
+  path: "/opportunities/$underlying/detail",
+  component: OpportunityDetailPage,
+});
+
+const legacySuggestionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/suggestion",
+  validateSearch: z.object({
+    tab: z.enum(["INDEX", "COMMODITY"]).optional(),
+    card: z.string().optional(),
+  }),
+  component: function LegacySuggestionRedirect() {
+    const search = legacySuggestionRoute.useSearch();
+    return <Navigate to="/opportunities" search={search} replace />;
+  },
 });
 
 // Build route tree
@@ -116,8 +134,9 @@ const routeTree = rootRoute.addChildren([
   rulesRoute,
   masterRoute,
   researchRoute,
-  suggestionRoute,
-  suggestionDetailRoute,
+  opportunitiesRoute,
+  opportunityDetailRoute,
+  legacySuggestionRoute,
 ]);
 
 export const router = createRouter({

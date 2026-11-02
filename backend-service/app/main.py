@@ -62,10 +62,28 @@ async def lifespan(app: FastAPI):
     print(BANNER)
     logger.info(f"Booting {settings.APP_NAME} in [{settings.APP_ENV}] mode...")
 
-    # 1. Verify DB connection
+    # 1. Verify DB connection & apply idempotent opportunities table rename if needed
     try:
         async with async_session_factory() as session:
             await session.execute(text("SELECT 1"))
+            for stmt in (
+                "ALTER TABLE IF EXISTS suggestion_runs RENAME TO opportunity_runs;",
+                "ALTER TABLE IF EXISTS suggestion_masters RENAME TO opportunity_masters;",
+                "DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='opportunity_masters' AND column_name='suggestions_total') THEN ALTER TABLE opportunity_masters RENAME COLUMN suggestions_total TO opportunities_total; END IF; END $$;",
+                "DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='opportunity_masters' AND column_name='last_suggestion_count') THEN ALTER TABLE opportunity_masters RENAME COLUMN last_suggestion_count TO last_opportunity_count; END IF; END $$;",
+                "ALTER INDEX IF EXISTS ix_suggestion_masters_day_code RENAME TO ix_opportunity_masters_day_code;",
+                "ALTER INDEX IF EXISTS uq_suggestion_masters_day_code_session RENAME TO uq_opportunity_masters_day_code_session;",
+                "ALTER INDEX IF EXISTS ix_suggestion_masters_state RENAME TO ix_opportunity_masters_state;",
+                "ALTER TABLE IF EXISTS trade_suggestions RENAME TO trade_opportunities;",
+                "ALTER INDEX IF EXISTS ix_trade_suggestions_master_id RENAME TO ix_trade_opportunities_master_id;",
+                "ALTER INDEX IF EXISTS ix_trade_suggestions_code_latest RENAME TO ix_trade_opportunities_code_latest;",
+                "ALTER INDEX IF EXISTS ix_trade_suggestions_outcome RENAME TO ix_trade_opportunities_outcome;",
+                "ALTER TABLE IF EXISTS suggestion_memories RENAME TO opportunity_memories;",
+                "DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='opportunity_memories' AND column_name='suggestion_id') THEN ALTER TABLE opportunity_memories RENAME COLUMN suggestion_id TO opportunity_id; END IF; END $$;",
+                "ALTER INDEX IF EXISTS ix_suggestion_memories_underlying RENAME TO ix_opportunity_memories_underlying;",
+            ):
+                await session.execute(text(stmt))
+            await session.commit()
         logger.info(f"{BRIGHT_GREEN}PostgreSQL & pgvector connection established successfully.{RESET}")
     except Exception as e:
         logger.error(f"Database connection check warning: {e}")
@@ -175,8 +193,8 @@ def create_application() -> FastAPI:
     from app.modules.research.controller import research_router
     from app.modules.research.mcp import research_mcp_router
     from app.modules.research.engine import research_engine  # auto-registers research engine
-    from app.modules.suggestion.controller import suggestion_router
-    from app.modules.suggestion.engine import suggestion_engine  # auto-registers suggestion engine
+    from app.modules.opportunities.controller import opportunity_router
+    from app.modules.opportunities.engine import opportunity_engine  # auto-registers opportunities engine
 
     app.include_router(user_router, prefix=settings.API_V1_PREFIX)
     app.include_router(oauth_router, prefix=settings.API_V1_PREFIX)
@@ -185,7 +203,7 @@ def create_application() -> FastAPI:
     app.include_router(rule_router, prefix=settings.API_V1_PREFIX)
     app.include_router(master_router, prefix=settings.API_V1_PREFIX)
     app.include_router(research_router, prefix=settings.API_V1_PREFIX)
-    app.include_router(suggestion_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(opportunity_router, prefix=settings.API_V1_PREFIX)
 
     app.include_router(strategy_mcp_router)
     app.include_router(research_mcp_router)

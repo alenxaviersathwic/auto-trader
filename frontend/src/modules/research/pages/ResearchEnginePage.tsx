@@ -53,11 +53,6 @@ export const ResearchEnginePage: React.FC = () => {
     }
   };
 
-  const handleRefresh = () => {
-    refetchStatus();
-    refetchCandidates();
-  };
-
   // Candidates list sorted by opportunity score
   const allCandidates: ResearchCandidate[] = candidateSearchData?.list || [];
 
@@ -194,223 +189,82 @@ export const ResearchEnginePage: React.FC = () => {
   };
 
   return (
-    <div className="module-page research-page" style={{ padding: "24px 32px", maxWidth: "1600px", margin: "0 auto" }}>
-      {/* ── Top Header Section matching StrategiesPage.tsx ──────────────────── */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: "20px",
-          flexWrap: "wrap",
-          gap: "16px",
-        }}
-      >
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <h1
-              style={{
-                fontSize: "22px",
-                fontWeight: 800,
-                color: "#ffffff",
-                margin: 0,
-                letterSpacing: "-0.3px",
-              }}
+    <div className="sp-page">
+      {/* ── Minimal Command & Telemetry Toolbar ──────────────────────────── */}
+      <div className="sp-toolbar">
+        <div className="sp-toolbar-left">
+          <div className="sp-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "INDEX"}
+              className={`sp-tab ${activeTab === "INDEX" ? "sp-tab--active" : ""}`}
+              onClick={() => setActiveTab("INDEX")}
             >
-              Research Engine
-            </h1>
+              <Layers size={13} />
+              <span>Indices</span>
+              <span className="sp-tab-count mono">{indexCandidates.length}</span>
+              {indexOpportunityCount > 0 && (
+                <span className="sp-tab-live mono">{indexOpportunityCount} clear</span>
+              )}
+            </button>
 
-            {allCandidates.length > 0 && (
-              <span
-                style={{
-                  background: "rgba(0, 230, 118, 0.12)",
-                  border: "1px solid rgba(0, 230, 118, 0.3)",
-                  color: "#00e676",
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  padding: "2px 8px",
-                  borderRadius: "12px",
-                }}
-              >
-                {allCandidates.length} Monitored
-              </span>
-            )}
-
-            {isRunning && (
-              <span
-                style={{
-                  background: "rgba(56, 189, 248, 0.15)",
-                  border: "1px solid rgba(56, 189, 248, 0.35)",
-                  color: "#38bdf8",
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  padding: "2px 8px",
-                  borderRadius: "12px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                <RefreshCw size={12} className="animate-spin" />
-                Pipeline {runStatus?.progressPct || 0}%
-              </span>
-            )}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "COMMODITY"}
+              className={`sp-tab ${activeTab === "COMMODITY" ? "sp-tab--active" : ""}`}
+              onClick={() => setActiveTab("COMMODITY")}
+            >
+              <TrendingUp size={13} />
+              <span>Commodities</span>
+              <span className="sp-tab-count mono">{commodityCandidates.length}</span>
+              {commodityOpportunityCount > 0 && (
+                <span className="sp-tab-live mono">{commodityOpportunityCount} clear</span>
+              )}
+            </button>
           </div>
 
-          <p style={{ fontSize: "13px", color: "#888", marginTop: "6px", marginBottom: 0 }}>
-            Deterministic market sentiment clearance, thesis verification, and real-time risk screening across Indian trading underlyings.
-          </p>
+          <div className="sp-summary-strip">
+            <div className="sp-stat-pill">
+              <span className="sp-stat-label">Monitored</span>
+              <span className="sp-stat-val mono">{allCandidates.length}</span>
+            </div>
+            <div className="sp-stat-pill">
+              <Sparkles size={12} className="sp-up" />
+              <span className="sp-stat-label">Cleared</span>
+              <span className="sp-stat-val mono sp-up">
+                {indexOpportunityCount + commodityOpportunityCount}
+              </span>
+            </div>
+            {isRunning && (
+              <div className="sp-stat-pill sp-stat-pill--live">
+                <RefreshCw size={12} className="sp-spin" />
+                <span className="mono">Pipeline {runStatus?.progressPct || 0}%</span>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div className="sp-actions">
           <button
             type="button"
-            onClick={handleRefresh}
-            style={{
-              background: "#18202e",
-              border: "1px solid #283449",
-              borderRadius: "8px",
-              color: "#cbd5e1",
-              padding: "8px 14px",
-              fontSize: "12px",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-            title="Refresh candidate list"
-          >
-            <RefreshCw size={13} className={isRunning ? "animate-spin" : ""} /> Refresh
-          </button>
-
-          <button
-            type="button"
+            className="sp-btn sp-btn--run"
             onClick={handleRunEngine}
             disabled={isRunning}
-            style={{
-              background: isRunning ? "#253147" : "#00e676",
-              border: "none",
-              borderRadius: "8px",
-              color: isRunning ? "#94a3b8" : "#000",
-              padding: "8px 18px",
-              fontSize: "12px",
-              fontWeight: 800,
-              cursor: isRunning ? "not-allowed" : "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              boxShadow: isRunning ? "none" : "0 4px 12px rgba(0, 230, 118, 0.25)",
-              transition: "all 0.15s ease",
-            }}
           >
             {isRunning ? (
               <>
-                <RefreshCw size={14} className="animate-spin" />
-                <span>Running Engine ({runStatus?.progressPct || 0}%)</span>
+                <RefreshCw size={13} className="sp-spin" />
+                <span>Running ({runStatus?.progressPct || 0}%)</span>
               </>
             ) : (
               <>
-                <Play size={14} fill="#000" />
+                <Play size={13} />
                 <span>Run Research Engine</span>
               </>
             )}
           </button>
-        </div>
-      </div>
-
-      {/* ── Tab Bar matching Zerodha Kite Aesthetic ───────────────────────── */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderBottom: "1px solid var(--border-subtle)",
-          paddingBottom: "12px",
-          marginBottom: "20px",
-          gap: "12px",
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <button
-            type="button"
-            onClick={() => setActiveTab("INDEX")}
-            style={{
-              background: activeTab === "INDEX" ? "var(--kite-blue, #387ed1)" : "#161b26",
-              color: activeTab === "INDEX" ? "#ffffff" : "#94a3b8",
-              border: activeTab === "INDEX" ? "1px solid var(--kite-blue, #387ed1)" : "1px solid #232d3f",
-              borderRadius: "6px",
-              padding: "7px 16px",
-              fontSize: "12px",
-              fontWeight: 700,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              transition: "all 0.15s ease",
-            }}
-          >
-            <Layers size={14} />
-            <span>Indices ({indexCandidates.length})</span>
-            {indexOpportunityCount > 0 && (
-              <span
-                style={{
-                  background: activeTab === "INDEX" ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 230, 118, 0.2)",
-                  color: activeTab === "INDEX" ? "#ffffff" : "#00e676",
-                  padding: "1px 6px",
-                  borderRadius: "10px",
-                  fontSize: "10px",
-                  fontWeight: 800,
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                {indexOpportunityCount} Opportunities
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("COMMODITY")}
-            style={{
-              background: activeTab === "COMMODITY" ? "var(--kite-blue, #387ed1)" : "#161b26",
-              color: activeTab === "COMMODITY" ? "#ffffff" : "#94a3b8",
-              border: activeTab === "COMMODITY" ? "1px solid var(--kite-blue, #387ed1)" : "1px solid #232d3f",
-              borderRadius: "6px",
-              padding: "7px 16px",
-              fontSize: "12px",
-              fontWeight: 700,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              transition: "all 0.15s ease",
-            }}
-          >
-            <TrendingUp size={14} />
-            <span>Commodities ({commodityCandidates.length})</span>
-            {commodityOpportunityCount > 0 && (
-              <span
-                style={{
-                  background: activeTab === "COMMODITY" ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 230, 118, 0.2)",
-                  color: activeTab === "COMMODITY" ? "#ffffff" : "#00e676",
-                  padding: "1px 6px",
-                  borderRadius: "10px",
-                  fontSize: "10px",
-                  fontWeight: 800,
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                {commodityOpportunityCount} Opportunities
-              </span>
-            )}
-          </button>
-        </div>
-
-        <div style={{ color: "#64748b", fontSize: "12px", fontFamily: "var(--font-mono)" }}>
-          Showing {candidates.length} underlyings sorted by opportunity score
         </div>
       </div>
 

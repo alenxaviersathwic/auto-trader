@@ -54,14 +54,11 @@ export const UsersPage: React.FC = () => {
   const {
     data: pagedData,
     isLoading: isSearchLoading,
-    refetch: refetchSearch,
   } = useUserSearch(filterState);
 
   const {
     data: defaultUser,
     isLoading: isDefaultLoading,
-    refetch: refetchDefault,
-    isFetching: isDefaultFetching,
   } = useDefaultUser();
 
   // Mutations
@@ -188,28 +185,37 @@ export const UsersPage: React.FC = () => {
         </div>
       )}
 
-      {/* Page Header */}
-      <div className="page-header">
-        <div className="header-title-wrap">
-          <div className="header-icon-box">
-            <Users size={22} className="text-emerald" />
-          </div>
-          <div>
-            <h1 className="header-title">Settings &bull; Users &amp; Upstox Accounts</h1>
-            <p className="header-desc">
-              Manage multi-account Upstox credentials, automated TOTP daily authentication, and primary market data feeds.
-            </p>
+      {/* Minimal Command & Summary Toolbar */}
+      <div className="sp-toolbar">
+        <div className="sp-toolbar-left">
+          <div className="sp-summary-strip">
+            <div className="sp-stat-pill">
+              <Users size={12} className="sp-loader" />
+              <span className="sp-stat-label">Accounts</span>
+              <span className="sp-stat-val mono">{pagedData?.totalItems ?? 0}</span>
+            </div>
+            {defaultUser && (
+              <div className="sp-stat-pill">
+                <span
+                  className={`sp-status-dot ${
+                    defaultUser.upstox?.authStatus === "VALID" ? "sp-status-dot--live" : ""
+                  }`}
+                />
+                <span className="sp-stat-label">Default</span>
+                <span className="sp-stat-val mono">{defaultUser.name}</span>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="page-actions">
+        <div className="sp-actions">
           <button
             type="button"
-            className="btn btn--primary"
+            className="sp-btn sp-btn--run"
             onClick={handleOpenAddUser}
           >
-            <UserPlus size={16} />
-            <span>+ Add User</span>
+            <UserPlus size={14} />
+            <span>Add User</span>
           </button>
         </div>
       </div>
@@ -218,11 +224,6 @@ export const UsersPage: React.FC = () => {
       <UserBanner
         defaultUser={defaultUser}
         isLoading={isDefaultLoading}
-        onRefresh={() => {
-          refetchDefault();
-          refetchSearch();
-        }}
-        isRefreshing={isDefaultFetching}
       />
 
       {/* Main Content: FilterBar + Table or Empty State */}

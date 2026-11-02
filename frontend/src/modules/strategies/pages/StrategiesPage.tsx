@@ -19,7 +19,6 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Play,
   CalendarDays,
 } from "lucide-react";
 import { DayShiftModal } from "../components/DayShiftModal";
@@ -82,10 +81,6 @@ export const StrategiesPage: React.FC = () => {
         ))
   ).length;
 
-  const totalTradesCount = strategies.reduce(
-    (acc, s) => acc + (s.latestPerformance?.[0]?.totalTrades || 0),
-    0
-  );
   const perfWithWinRate = strategies.filter(
     (s) => s.latestPerformance?.[0]?.winRatePct != null
   );
@@ -168,90 +163,67 @@ export const StrategiesPage: React.FC = () => {
   const endRecord = Math.min((filter.page + 1) * filter.limit, totalItems);
 
   return (
-    <div className="strategies-page module-page">
-      {/* Top Header Section matching trading-engine */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: "18px",
-          flexWrap: "wrap",
-          gap: "16px",
-        }}
-      >
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <h1
-              style={{
-                fontSize: "22px",
-                fontWeight: 800,
-                color: "#ffffff",
-                margin: 0,
-                letterSpacing: "-0.3px",
-              }}
+    <div className="strategies-page module-page sp-page">
+      {/* Minimal Command & Summary Strip */}
+      <div className="sp-toolbar">
+        <div className="sp-toolbar-left">
+          <div className="sp-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "strategies"}
+              className={`sp-tab ${activeTab === "strategies" ? "sp-tab--active" : ""}`}
+              onClick={() => setActiveTab("strategies")}
             >
-              Trading Strategies &amp; Regimes
-            </h1>
-            {totalItems > 0 && (
-              <span
-                style={{
-                  background: "rgba(0, 230, 118, 0.12)",
-                  border: "1px solid rgba(0, 230, 118, 0.3)",
-                  color: "#00e676",
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  padding: "2px 8px",
-                  borderRadius: "12px",
-                }}
-              >
-                {totalItems.toLocaleString()} Total
-              </span>
-            )}
+              <TrendingUp size={13} />
+              <span>Strategies</span>
+              <span className="sp-tab-count mono">{totalItems}</span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "rules"}
+              className={`sp-tab ${activeTab === "rules" ? "sp-tab--active" : ""}`}
+              onClick={() => setActiveTab("rules")}
+            >
+              <ShieldCheck size={13} />
+              <span>Trading Rules</span>
+            </button>
           </div>
-          <p style={{ fontSize: "13px", color: "#888", marginTop: "6px", marginBottom: 0 }}>
-            Authoritative strategy registry, version control, regime scoring, health and execution rules.
-          </p>
+
+          <div className="sp-summary-strip">
+            <div className="sp-stat-pill">
+              <span className="sp-status-dot sp-status-dot--live" />
+              <span className="sp-stat-label">Active</span>
+              <span className="sp-stat-val mono sp-up">{activeCount}</span>
+              <span className="sp-stat-sub mono">/ {totalItems}</span>
+            </div>
+
+            <div className="sp-stat-pill">
+              <span className="sp-stat-label">Review</span>
+              <span
+                className="sp-stat-val mono"
+                style={{ color: attentionCount > 0 ? "var(--warning-amber)" : "var(--text-secondary)" }}
+              >
+                {attentionCount}
+              </span>
+            </div>
+
+            <div className="sp-stat-pill">
+              <span className="sp-stat-label">Win Rate</span>
+              <span className="sp-stat-val mono" style={{ color: "var(--cyan)" }}>
+                {avgWinRate}%
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div className="sp-actions">
           <button
             type="button"
-            onClick={() => refetch()}
-            style={{
-              background: "#18202e",
-              border: "1px solid #283449",
-              borderRadius: "8px",
-              color: "#cbd5e1",
-              padding: "8px 14px",
-              fontSize: "12px",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-            title="Refresh strategy list"
-          >
-            <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} /> Refresh
-          </button>
-
-          <button
-            type="button"
+            className="sp-btn"
             onClick={() => setShowDayShift(true)}
-            style={{
-              background: "#18202e",
-              border: "1px solid #283449",
-              borderRadius: "8px",
-              color: "#cbd5e1",
-              padding: "8px 14px",
-              fontSize: "12px",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
             title="Block a holiday and move strategies to another date"
           >
             <CalendarDays size={13} /> Holiday Shift
@@ -259,165 +231,21 @@ export const StrategiesPage: React.FC = () => {
 
           <button
             type="button"
+            className="sp-btn"
             onClick={handleSeedDefaults}
             disabled={seedDefaultsMutation.isPending}
-            style={{
-              background: "#18202e",
-              border: "1px solid #283449",
-              borderRadius: "8px",
-              color: "#ffb74d",
-              padding: "8px 14px",
-              fontSize: "12px",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
           >
             Load Defaults
           </button>
 
           <button
             type="button"
+            className="sp-btn sp-btn--run"
             onClick={() => navigate({ to: "/strategies/create" as any })}
-            style={{
-              background: "#00e676",
-              border: "none",
-              borderRadius: "8px",
-              color: "#000",
-              padding: "8px 16px",
-              fontSize: "12px",
-              fontWeight: 800,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              boxShadow: "0 4px 12px rgba(0, 230, 118, 0.25)",
-            }}
           >
-            <Plus size={15} strokeWidth={2.5} /> New Strategy
+            <Plus size={14} strokeWidth={2.5} /> New Strategy
           </button>
         </div>
-      </div>
-
-      {/* 4-Card Executive Metric Strip from trading-engine */}
-      <div className="dashboard-metrics">
-        <div className="dashboard-metric">
-          <div className="dashboard-metric__icon">
-            <TrendingUp size={20} />
-          </div>
-          <div>
-            <small>Total Regimes</small>
-            <strong>{totalItems}</strong>
-            <span className="metric-sub">Authoritative strategies</span>
-          </div>
-        </div>
-
-        <div className="dashboard-metric">
-          <div className="dashboard-metric__icon green">
-            <Play size={20} />
-          </div>
-          <div>
-            <small>Active Execution</small>
-            <strong style={{ color: "#00e676" }}>{activeCount}</strong>
-            <span className="metric-sub">Live automated orders active</span>
-          </div>
-        </div>
-
-        <div className="dashboard-metric">
-          <div className="dashboard-metric__icon amber">
-            <AlertTriangle size={20} />
-          </div>
-          <div>
-            <small>Review Required</small>
-            <strong style={{ color: attentionCount > 0 ? "#ff9800" : "#94a3b8" }}>{attentionCount}</strong>
-            <span className="metric-sub">Audit flags / warnings</span>
-          </div>
-        </div>
-
-        <div className="dashboard-metric">
-          <div className="dashboard-metric__icon purple">
-            <ShieldCheck size={20} />
-          </div>
-          <div>
-            <small>Average Win Rate</small>
-            <strong style={{ color: "#a78bfa" }}>{avgWinRate}%</strong>
-            <span className="metric-sub">
-              {totalTradesCount > 0 ? `${totalTradesCount} executed trades` : "Empirical paper & backtest"}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Top Navigation Tabs: Strategies vs Trading Rules */}
-      <div
-        className="tabs-header"
-        style={{
-          borderBottom: "1px solid #232b3b",
-          marginBottom: "18px",
-          display: "flex",
-          gap: "8px",
-        }}
-      >
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === "strategies" ? "active" : ""}`}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            padding: "9px 18px",
-            fontSize: "13px",
-            fontWeight: 700,
-            background: activeTab === "strategies" ? "#1c2230" : "transparent",
-            color: activeTab === "strategies" ? "#fff" : "var(--text-secondary)",
-            border: activeTab === "strategies" ? "1px solid #2e384d" : "1px solid transparent",
-            borderBottom: activeTab === "strategies" ? "2px solid #00e676" : "none",
-            borderRadius: "6px 6px 0 0",
-            cursor: "pointer",
-            transition: "all 0.15s ease",
-          }}
-          onClick={() => setActiveTab("strategies")}
-        >
-          <TrendingUp size={15} color={activeTab === "strategies" ? "#00e676" : "currentColor"} />
-          <span>Strategies</span>
-          <span
-            style={{
-              background: "#161b26",
-              padding: "2px 7px",
-              borderRadius: "10px",
-              fontSize: "11px",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            {totalItems}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === "rules" ? "active" : ""}`}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            padding: "9px 18px",
-            fontSize: "13px",
-            fontWeight: 700,
-            background: activeTab === "rules" ? "#1c2230" : "transparent",
-            color: activeTab === "rules" ? "#fff" : "var(--text-secondary)",
-            border: activeTab === "rules" ? "1px solid #2e384d" : "1px solid transparent",
-            borderBottom: activeTab === "rules" ? "2px solid #00e676" : "none",
-            borderRadius: "6px 6px 0 0",
-            cursor: "pointer",
-            transition: "all 0.15s ease",
-          }}
-          onClick={() => setActiveTab("rules")}
-        >
-          <ShieldCheck size={15} color={activeTab === "rules" ? "#00e676" : "currentColor"} />
-          <span>Trading Rules</span>
-        </button>
       </div>
 
       {/* Tab 1: Strategies View */}

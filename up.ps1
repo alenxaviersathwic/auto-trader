@@ -34,16 +34,13 @@ function Perform-BackupAndShutdown {
 
     $running = docker ps --format '{{.Names}}' | Select-String "^$PostgresContainer$"
     if ($running) {
-        $timestamp = (Get-Date).ToString("yyyyMMdd_HHmmss")
-        $backupFile = "$BackupDir/autotrader_backup_$timestamp.sql"
         $latestFile = "$BackupDir/latest.sql"
 
-        Write-Host "[BACKUP] Exporting database, pgvector embeddings, and tables..." -ForegroundColor Green
-        docker exec -t $PostgresContainer pg_dump -U $DbUser -d $DbName --clean --if-exists --no-owner --no-privileges | Out-File -Encoding utf8 $backupFile
-        Copy-Item -Path $backupFile -Destination $latestFile -Force
+        Write-Host "[BACKUP] Exporting database, pgvector embeddings, and tables to single latest backup..." -ForegroundColor Green
+        docker exec -t $PostgresContainer pg_dump -U $DbUser -d $DbName --clean --if-exists --no-owner --no-privileges | Out-File -Encoding utf8 $latestFile
+        Remove-Item -Path "$BackupDir/autotrader_backup_*" -Force -ErrorAction SilentlyContinue
 
         Write-Host "[BACKUP SUCCESS] Data safely saved to:" -ForegroundColor Green
-        Write-Host "   -> $backupFile"
         Write-Host "   -> $latestFile"
     } else {
         Write-Host "[BACKUP WARNING] PostgreSQL container is not running; skipping backup." -ForegroundColor Yellow

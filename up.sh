@@ -129,9 +129,10 @@ for arg in "$@"; do
     fi
 done
 
-# Step 3: Boot PostgreSQL first and restore latest backup if database is uninitialized
+# Step 3: Boot PostgreSQL first and restore latest backup into DB & vector memory
 echo ""
 echo " ==> [DATABASE] Starting PostgreSQL with pgvector..."
+docker volume inspect autotrader_postgres_data >/dev/null 2>&1 || docker volume create autotrader_postgres_data >/dev/null
 docker compose -p autotrader -f "$COMPOSE_FILE" up -d postgres
 
 echo -n " ==> [WAIT] Waiting for PostgreSQL (${POSTGRES_CONTAINER}) to be ready..."
@@ -144,13 +145,13 @@ echo " Ready!"
 # Ensure vector extension is present
 docker exec "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS vector;" > /dev/null 2>&1 || true
 
-# Check if tables exist; if not, restore latest backup
-HAS_USERS_TABLE=$(docker exec "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -A -c "SELECT to_regclass('public.users');" 2>/dev/null || echo "")
-if [ -z "$HAS_USERS_TABLE" ] || [ "$HAS_USERS_TABLE" = "" ]; then
-    if [ -f "$ROOT/restore.sh" ] && ([ -f "$BACKUP_DIR/latest.sql.gz" ] || [ -f "$BACKUP_DIR/latest.sql" ]); then
-        echo " ==> [RESTORE] Fresh database detected. Restoring snapshot from backup/..."
-        "$ROOT/restore.sh" || echo " [WARN] Database restore completed with warnings."
-    fi
+# Clean up any legacy timestamped backup files so only the single latest backup remains
+rm -f "$BACKUP_DIR"/autotrader_backup_* "$BACKUP_DIR"/latest.sql 2>/dev/null || true
+
+# Always restore latest backup snapshot into DB and pgvector memory on startup
+if [ -f "$ROOT/restore.sh" ] && ([ -f "$BACKUP_DIR/latest.sql.gz" ] || [ -f "$BACKUP_DIR/latest.sql" ]); then
+    echo " ==> [RESTORE] Restoring latest snapshot from backup/ into Database & Vector Memory..."
+    "$ROOT/restore.sh" || echo " [WARN] Database restore completed with warnings."
 fi
 
 echo ""

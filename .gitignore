@@ -43,6 +43,8 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-# Database Backup (ignore individual timestamped sql dumps, keep directory and latest.sql if desired, or ignore all .sql)
+# Database Backup (keep only single latest.sql.gz in backup/, ignore any uncompressed or timestamped dumps)
 backup/*.sql
+backup/autotrader_backup_*
+!backup/latest.sql.gz
 !backup/.gitkeep

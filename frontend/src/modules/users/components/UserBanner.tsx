@@ -7,21 +7,16 @@ import {
   XCircle,
   Clock,
   Zap,
-  RefreshCw,
 } from "lucide-react";
 
 interface UserBannerProps {
   defaultUser: User | null | undefined;
   isLoading: boolean;
-  onRefresh?: () => void;
-  isRefreshing?: boolean;
 }
 
 export const UserBanner: React.FC<UserBannerProps> = ({
   defaultUser,
   isLoading,
-  onRefresh,
-  isRefreshing,
 }) => {
   if (isLoading) {
     return (
@@ -144,20 +139,7 @@ export const UserBanner: React.FC<UserBannerProps> = ({
         </div>
       </div>
 
-      <div className="banner-right">
-        {onRefresh && (
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={onRefresh}
-            disabled={isRefreshing}
-            title="Refresh default user status"
-          >
-            <RefreshCw size={14} className={isRefreshing ? "spin" : ""} />
-            <span>{isRefreshing ? "Checking..." : "Refresh"}</span>
-          </button>
-        )}
-      </div>
+      <div className="banner-right" />
     </div>
   );
 };

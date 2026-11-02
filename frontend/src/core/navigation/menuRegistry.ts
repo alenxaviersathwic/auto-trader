@@ -64,11 +64,11 @@ menuRegistry.register({
   order: 3,
 });
 
-// Register Suggestion Engine navigation item
+// Register Opportunities navigation item
 menuRegistry.register({
-  id: "suggestion-engine",
-  label: "Suggestion Engine",
-  path: "/suggestion",
+  id: "opportunities-engine",
+  label: "Opportunities",
+  path: "/opportunities",
   icon: Lightbulb,
   order: 4,
 });
