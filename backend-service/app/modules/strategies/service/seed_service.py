@@ -72,8 +72,8 @@ class SeedService:
     async def _seed_research_data(self, session: AsyncSession) -> Tuple[int, int]:
         """Seeds the strategy registry and guardrail rules from the Oct-2026 Claude research run
         (task wf-73cd02ba-57fd-81e6-bc87-e3915505046a): intraday index-option / MCX commodity
-        strategies with activeDays scheduling, and the Section-4 guardrail rules. Idempotent by code,
-        same pattern as _seed_legacy_data."""
+        strategies and the Section-4 guardrail rules. Idempotent by code, same pattern as
+        _seed_legacy_data."""
         seed_path = os.path.join(os.path.dirname(__file__), "data", "research_strategies_seed.json")
         if not os.path.exists(seed_path):
             logger.warning(f"Research seed file not found at {seed_path}")
@@ -109,8 +109,6 @@ class SeedService:
                 tradingModes=s.get("tradingModes", []),
                 executionModes=s.get("executionModes", []),
                 timeframe=s.get("timeframe"),
-                activeDays=s.get("activeDays", []),
-                dayOverrides=s.get("dayOverrides", []),
                 definitionFormat=s.get("definitionFormat", "SUMMARY"),
                 executable=val_res.executable,
                 lifecycleStatus=s.get("lifecycleStatus", "DRAFT"),

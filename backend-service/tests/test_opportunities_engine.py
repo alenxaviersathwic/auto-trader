@@ -57,6 +57,14 @@ def patched(monkeypatch):
     async def no_strats(*a, **k):
         return [{"name": "Resistance Rejection", "bias": "BEARISH", "optionSide": "PE", "description": "x"}]
 
+    fake_setups = [
+        {"name": "ORB", "side": "CE", "strength": 3, "reason": "test", "entry": 24000.0, "stop": 23950.0,
+         "target": 24100.0, "targetLevel": "pdh", "rr": 2.0, "withTrend": True, "conflict": None},
+        {"name": "ORB", "side": "PE", "strength": 3, "reason": "test", "entry": 24000.0, "stop": 24050.0,
+         "target": 23900.0, "targetLevel": "pdl", "rr": 2.0, "withTrend": False, "conflict": None},
+    ]
+    monkeypatch.setattr(nodes.setup_detector, "detect", lambda a, cfg: fake_setups)
+    monkeypatch.setattr(nodes.setup_detector, "confirm_timeframes", lambda a, found: (found, []))
     monkeypatch.setattr(nodes, "async_session_factory", lambda: _Ctx())
     monkeypatch.setattr(nodes.market_data, "fetch", fake_fetch)
 
@@ -96,7 +104,7 @@ async def test_valid_ai_pick_and_confidence_threshold(patched, monkeypatch):
 
     async def fake_ai(msgs, schema, system_prompt=None, **k):
         return AiAnswer(picks=[AiPick(id="NIFTY-2026-10-29-24000-CE", confidence=85, strategy="trend"),
-                               AiPick(id="NIFTY-2026-10-29-24050-CE", confidence=60)])
+                               AiPick(id="NIFTY-2026-10-29-23950-CE", confidence=60)])
 
     monkeypatch.setattr(nodes._llm, "_resolve_healthy_url", healthy)
     monkeypatch.setattr(nodes._llm, "generate_structured", fake_ai)
@@ -111,12 +119,13 @@ async def test_ai_down_falls_back_to_baseline(patched, monkeypatch):
         return None
 
     monkeypatch.setattr(nodes._llm, "_resolve_healthy_url", unhealthy)
-    # No coded setup fired on this synthetic market: the code-only ranking stays below a 50 bar on purpose
-    # (reward:risk alone is not evidence) and only clears a lower one.
+    # The AI is only a ranker: with it down, the code-only ranking of the validated menu still produces picks,
+    # but cannot clear an unrealistically high confidence bar.
     out = await underlying_graph.ainvoke(_payload(conf=50))
-    assert out["usedBaseline"] is True and out["candidates"] == []
-    out = await underlying_graph.ainvoke(_payload(conf=40))
-    assert out["candidates"] and all(c["source"] == "BASELINE" for c in out["candidates"])
+    assert out["usedBaseline"] is True and out["candidates"]
+    assert all(c["source"] == "BASELINE" for c in out["candidates"])
+    out = await underlying_graph.ainvoke(_payload(conf=95))
+    assert out["candidates"] == [] and out["diag"]["result"] == "DROPPED"
 
 
 @pytest.mark.asyncio
@@ -159,7 +168,8 @@ async def test_against_trend_put_needs_a_listed_strategy(patched, monkeypatch):
     monkeypatch.setattr(nodes._llm, "generate_structured", fake_ai)
     out = await underlying_graph.ainvoke(_payload(conf=70))  # research BULLISH => PE is against the trend
     ids = [c["id"] for c in out["candidates"]]
-    assert ids == ["NIFTY-2026-10-29-24000-PE"]
+    # a contract on a validated setup is a legitimate against-trend trade (the citation rule only guards setup-less picks)
+    assert ids == ["NIFTY-2026-10-29-24000-PE", "NIFTY-2026-10-29-24050-PE"]
     assert out["candidates"][0]["risks"][0].startswith("Against the bullish trend")
 
 
@@ -210,3 +220,31 @@ def test_expected_edge_needs_real_probability():
     assert expected_edge_pct(70, 7.5, 3.75) > 3
     assert expected_edge_pct(30, 7.5, 3.75) < 0
 
+
+
+@pytest.mark.asyncio
+async def test_no_setup_means_no_menu_and_a_diagnosis(patched, monkeypatch):
+    monkeypatch.setattr(nodes.setup_detector, "detect", lambda a, cfg: [])
+    out = await underlying_graph.ainvoke(_payload())
+    assert not out.get("candidates") and out["diag"]["result"] == "NO_SETUP"
+
+
+@pytest.mark.asyncio
+async def test_setup_failing_timeframes_is_reported(patched, monkeypatch):
+    rejected = [{"name": "ORB", "side": "CE", "reason": "15-min trend is FLAT, needs UP"}]
+    monkeypatch.setattr(nodes.setup_detector, "confirm_timeframes", lambda a, found: ([], rejected))
+    out = await underlying_graph.ainvoke(_payload())
+    assert out["diag"]["result"] == "SETUP_REJECTED" and out["diag"]["setupsRejected"] == rejected
+
+
+@pytest.mark.asyncio
+async def test_menu_is_atm_or_one_itm_with_delta_floor(patched, monkeypatch):
+    async def unhealthy():
+        return None
+
+    monkeypatch.setattr(nodes._llm, "_resolve_healthy_url", unhealthy)
+    out = await underlying_graph.ainvoke(_payload(conf=40))
+    for m in out["menu"]:
+        assert m["delta"] >= 0.5
+        assert m["strike"] in ((24000, 23950) if m["side"] == "CE" else (24000, 24050))
+        assert m["setup"] == "ORB"

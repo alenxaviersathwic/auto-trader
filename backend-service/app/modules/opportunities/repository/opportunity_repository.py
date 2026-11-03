@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.opportunities.entity.opportunity_entity import OpportunityMaster, TradeOpportunity
+from app.modules.opportunities.entity.opportunity_entity import OpportunityIteration, OpportunityMaster, TradeOpportunity
 
 
 class OpportunityRepository:
@@ -38,6 +38,34 @@ class OpportunityRepository:
             select(TradeOpportunity).where(TradeOpportunity.status == 1).where(TradeOpportunity.outcome == "PENDING")
         )
         return list(res.scalars().all())
+
+    async def get(self, session: AsyncSession, opp_id: int) -> TradeOpportunity | None:
+        res = await session.execute(
+            select(TradeOpportunity).where(TradeOpportunity.id == opp_id).where(TradeOpportunity.status == 1)
+        )
+        return res.scalar_one_or_none()
+
+    async def for_master(
+        self, session: AsyncSession, master_id: int, iteration_no: int | None = None
+    ) -> list[TradeOpportunity]:
+        q = (
+            select(TradeOpportunity)
+            .where(TradeOpportunity.status == 1)
+            .where(TradeOpportunity.masterId == master_id)
+        )
+        if iteration_no is not None:
+            q = q.where(TradeOpportunity.iterationNo == iteration_no)
+        q = q.order_by(TradeOpportunity.iterationNo.desc(), TradeOpportunity.rank.asc())
+        return list((await session.execute(q)).scalars().all())
+
+
+class OpportunityIterationRepository:
+    """Reads and writes opportunity_iterations (one diagnostics row per iteration)."""
+
+    async def save(self, session: AsyncSession, row: OpportunityIteration) -> OpportunityIteration:
+        session.add(row)
+        await session.flush()
+        return row
 
 
 class OpportunityMasterRepository:
@@ -112,4 +140,5 @@ def risk_level(confidence: int, reward_risk: float, spread_pct: float) -> str:
 
 opportunity_repository = OpportunityRepository()
 opportunity_master_repository = OpportunityMasterRepository()
+opportunity_iteration_repository = OpportunityIterationRepository()
 

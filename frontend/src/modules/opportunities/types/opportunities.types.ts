@@ -1,6 +1,9 @@
 export interface StartOpportunityParams {
   confidenceWanted?: number;
   minProfitMargin?: number;
+  maxProfitMargin?: number;
+  maxStopLossPct?: number;
+  validMinutes?: number;
   maxOpportunities?: number;
   maxPerUnderlying?: number;
   loopGapSeconds?: number;
@@ -138,3 +141,135 @@ export interface LoopSnapshot {
   lastError: string | null;
 }
 
+
+/** Filter for POST /opportunities/search -- full trade_opportunities history (latestOnly=false = every loop). */
+export interface OpportunitySearchFilter {
+  page: number;
+  limit: number;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+  masterId?: number;
+  underlyingCode?: string;
+  outcome?: string;
+  latestOnly?: boolean;
+}
+
+export interface OpportunitySearchResult {
+  list: Opportunity[];
+  page: number;
+  limit: number;
+  totalPages: number;
+  totalItems: number;
+}
+
+export type IterationResult =
+  | "SAVED"
+  | "DROPPED"
+  | "NO_SETUP"
+  | "SETUP_REJECTED"
+  | "NO_CONTRACT"
+  | "BLOCKED_WINDOW"
+  | "MARKET_CLOSED"
+  | "NOT_IN_RESEARCH"
+  | "DATA_ERROR"
+  | "ERROR";
+
+export interface SetupRef {
+  name: string;
+  side: "CE" | "PE";
+  strength: number;
+}
+
+export interface IterationDetails {
+  result?: IterationResult;
+  reason?: string;
+  regime?: string;
+  window?: string;
+  trend15?: string;
+  trend15Source?: string | null;
+  setupsFired?: SetupRef[];
+  setupsConfirmed?: SetupRef[];
+  setupsRejected?: { name: string; side: "CE" | "PE"; reason: string }[];
+  menuSize?: number;
+  menuDropped?: Record<string, number>;
+  picks?: number;
+  kept?: number;
+  dropped?: Record<string, number>;
+  source?: "AI" | "BASELINE";
+  confidenceWanted?: number;
+}
+
+/** One row per batch (iteration), written even when the batch found nothing. */
+export interface OpportunityIteration {
+  id: number;
+  masterId: number;
+  iterationNo: number;
+  underlyingCode: string;
+  result: IterationResult;
+  summary: string | null;
+  savedCount: number;
+  details: IterationDetails;
+  durationMs: number | null;
+  createdAt: string;
+}
+
+export interface IterationSearchResult {
+  list: OpportunityIteration[];
+  page: number;
+  limit: number;
+  totalPages: number;
+  totalItems: number;
+}
+
+export interface OpportunityCandlePoint {
+  t: string;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+}
+
+export interface OpportunityCheckItem {
+  opportunityId: number;
+  masterId: number;
+  iterationNo: number;
+  ref: string;
+  strike: number;
+  optionType: "CE" | "PE";
+  expiry: string;
+  createdAt: string;
+  validUntil: string;
+  entry: number;
+  stop: number;
+  target: number;
+  exitPrice: number;
+  peakPrice: number;
+  troughPrice: number;
+  pnlPoints: number;
+  pnlPct: number;
+  maxGainPct: number;
+  achievedPct: number;
+  targetAchieved: boolean;
+  outcome: "PENDING" | "TARGET_HIT" | "STOP_HIT" | "EXPIRED";
+  hitAt: string | null;
+  candlesChecked: number;
+  windowEnded: boolean;
+  series?: OpportunityCandlePoint[];
+}
+
+export interface BatchCheckSummary {
+  iterationNo: number;
+  total: number;
+  targetHits: number;
+  avgAchievedPct: number;
+  bestAchievedPct: number;
+  items: OpportunityCheckItem[];
+}
+
+export interface BatchCheckResult {
+  masterId: number;
+  iterationNo: number | null;
+  checkedAt: string;
+  results: OpportunityCheckItem[];
+  batches: Record<number, BatchCheckSummary>;
+}

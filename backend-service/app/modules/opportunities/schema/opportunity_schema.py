@@ -7,10 +7,10 @@ from app.core.filter.base_filter import BaseFilter
 
 class StartOpportunityRequest(BaseModel):
     confidenceWanted: int = Field(default=50, ge=1, le=100)
-    minProfitMargin: float = Field(default=5.0, ge=0, le=500, description="Smallest target, % of premium")
-    maxProfitMargin: float = Field(default=10.0, ge=1, le=500, description="Largest target, % of premium")
-    maxStopLossPct: float = Field(default=5.0, ge=1, le=50, description="Widest stop, % of premium")
-    validMinutes: int = Field(default=15, ge=1, le=120, description="How long an opportunity stays valid")
+    minProfitMargin: float = Field(default=3.0, ge=0, le=500, description="Smallest target, % of premium")
+    maxProfitMargin: float = Field(default=6.0, ge=1, le=500, description="Largest target, % of premium")
+    maxStopLossPct: float = Field(default=3.0, ge=1, le=50, description="Widest stop, % of premium")
+    validMinutes: int = Field(default=25, ge=1, le=120, description="How long an opportunity stays valid")
     maxOpportunities: int = Field(default=10, ge=1, le=30)
     maxPerUnderlying: int = Field(default=2, ge=1, le=5)
     loopGapSeconds: int = Field(default=20, ge=5, le=600)
@@ -29,12 +29,24 @@ class OpportunityFilter(BaseFilter):
     latestOnly: bool | None = False
 
 
+class OpportunityIterationFilter(BaseFilter):
+    """opportunity_iterations search (the per-batch diagnostics)."""
+
+    masterId: int | None = None
+    underlyingCode: str | None = None
+    result: str | None = None
+
+
 class OpportunityMasterFilter(BaseFilter):
     """opportunity_masters search (card session history)."""
 
     underlyingCode: str | None = None
     tradeDate: str | None = Field(default=None, description="YYYY-MM-DD (IST)")
     state: str | None = Field(default=None, description="RUNNING | STOPPED")
+
+
+class CheckBatchRequest(BaseModel):
+    iterationNo: int | None = Field(default=None, description="Batch number to check; null checks all batches")
 
 
 # --- LLM structured answer (picks from the menu only) ---

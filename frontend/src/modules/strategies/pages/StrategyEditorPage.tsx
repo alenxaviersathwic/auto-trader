@@ -3,8 +3,6 @@ import { useParams, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Save } from "lucide-react";
 import { useCreateStrategy, useStrategyDetail, useUpdateStrategy } from "../hooks/useStrategies";
 import { DefinitionEditor } from "../components/DefinitionEditor";
-import { StrategyScheduleEditor } from "../components/StrategyScheduleEditor";
-import { DayOverride, WeekdayCode } from "../types/strategies.types";
 
 export const StrategyEditorPage: React.FC = () => {
   const { id } = useParams({ strict: false }) as { id?: string };
@@ -30,9 +28,9 @@ export const StrategyEditorPage: React.FC = () => {
     tradingModes: string[];
     executionModes: string[];
     timeframe: string;
+    stopLossPct: string;
     definitionFormat: string;
-    activeDays: WeekdayCode[];
-    dayOverrides: DayOverride[];
+    tags: string[];
   }>({
     code: "",
     name: "",
@@ -47,9 +45,9 @@ export const StrategyEditorPage: React.FC = () => {
     tradingModes: ["INTRADAY"],
     executionModes: ["PAPER", "LIVE"],
     timeframe: "5m",
+    stopLossPct: "3.5",
     definitionFormat: "RULE_TREE",
-    activeDays: [],
-    dayOverrides: [],
+    tags: [],
   });
 
   const [definition, setDefinition] = useState<Record<string, any>>({
@@ -118,9 +116,10 @@ export const StrategyEditorPage: React.FC = () => {
       tradingModes: existingStrategy.tradingModes || ["INTRADAY"],
       executionModes: existingStrategy.executionModes || ["PAPER"],
       timeframe: existingStrategy.timeframe || "5m",
+      stopLossPct:
+        existingStrategy.stopLossPct != null ? String(existingStrategy.stopLossPct) : "3.5",
       definitionFormat: existingStrategy.definitionFormat || "RULE_TREE",
-      activeDays: existingStrategy.activeDays || [],
-      dayOverrides: existingStrategy.dayOverrides || [],
+      tags: existingStrategy.tags || [],
     });
     if (existingStrategy.currentVersion?.definition) {
       setDefinition(existingStrategy.currentVersion.definition);
@@ -130,6 +129,10 @@ export const StrategyEditorPage: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const parsedStopLoss =
+      formData.stopLossPct.trim() !== "" && !Number.isNaN(Number(formData.stopLossPct))
+        ? Number(formData.stopLossPct)
+        : undefined;
 
     if (isEditing && strategyId) {
       updateMutation.mutate(
@@ -137,6 +140,7 @@ export const StrategyEditorPage: React.FC = () => {
           id: strategyId,
           payload: {
             ...formData,
+            stopLossPct: parsedStopLoss,
             definition,
             changeNote: "Updated definition and metadata",
           },
@@ -151,6 +155,7 @@ export const StrategyEditorPage: React.FC = () => {
       createMutation.mutate(
         {
           ...formData,
+          stopLossPct: parsedStopLoss,
           definition,
           changeNote: "Initial creation",
         },
@@ -327,16 +332,76 @@ export const StrategyEditorPage: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, timeframe: e.target.value })}
             />
           </div>
+
+          <div className="form-group">
+            <label className="text-xs text-muted block mb-1">
+              Stop Loss % (Win-Rate Calibrated)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              min="0.5"
+              max="50"
+              className="input w-full font-mono text-xs"
+              placeholder="Auto from win rate (e.g. 3.5)"
+              value={formData.stopLossPct}
+              onChange={(e) => setFormData({ ...formData, stopLossPct: e.target.value })}
+            />
+            <span className="text-[10px] text-muted block mt-1">
+              Auto-updates from strategy win rate on backtest/snapshots, or set manually.
+            </span>
+          </div>
         </div>
 
-        {/* Schedule Card */}
+        {/* Tags Card */}
         <div className="card-surface p-4 border border-subtle rounded-lg mb-4">
-          <h3 className="font-semibold text-primary mb-2 text-sm">Schedule</h3>
-          <StrategyScheduleEditor
-            activeDays={formData.activeDays}
-            dayOverrides={formData.dayOverrides}
-            onChange={({ activeDays, dayOverrides }) => setFormData({ ...formData, activeDays, dayOverrides })}
-          />
+          <h3 className="font-semibold text-primary mb-2 text-sm">Tags</h3>
+          <p className="text-xs text-muted mb-2">
+            The opportunities engine computes what kind of day today is (day of week, day after/before a
+            holiday, expiry day/week, month end) and gives a small confidence boost to any pick whose
+            strategy carries a matching tag. Tags must match these spellings exactly to take effect.
+          </p>
+          <div className="form-group">
+            <label className="text-xs text-muted block mb-1">Tags (comma-separated)</label>
+            <input
+              type="text"
+              className="input w-full text-xs"
+              placeholder="AFTER_HOLIDAY, EXPIRY_DAY"
+              value={formData.tags.join(", ")}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  tags: e.target.value.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean),
+                })
+              }
+            />
+          </div>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {[
+              "DAY_MONDAY", "DAY_TUESDAY", "DAY_WEDNESDAY", "DAY_THURSDAY", "DAY_FRIDAY",
+              "AFTER_HOLIDAY", "BEFORE_HOLIDAY", "EXPIRY_DAY", "EXPIRY_WEEK", "MONTH_END",
+              "MCX_EVENING_ONLY",
+            ].map((tag) => {
+              const active = formData.tags.includes(tag);
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  className={`tag-chip-btn text-[10px] px-2 py-1 rounded border ${
+                    active ? "border-emerald text-emerald bg-emerald/10" : "border-subtle text-muted"
+                  }`}
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      tags: active ? formData.tags.filter((t) => t !== tag) : [...formData.tags, tag],
+                    })
+                  }
+                >
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Definition Editor Card */}

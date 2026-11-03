@@ -1,8 +1,7 @@
 import { httpClient } from "../../../core/api/httpClient";
 import { PageResult } from "../../../core/types/pagination.types";
 import {
-  DayShiftPayload,
-  DayShiftResult,
+  BacktestResult,
   EvaluateResult,
   GuardrailCheckResponse,
   HealthDetails,
@@ -48,10 +47,6 @@ export async function updateStrategy(
 
 export async function deleteStrategy(id: number): Promise<void> {
   return httpClient.delete(`/strategies/${id}`);
-}
-
-export async function applyDayShift(payload: DayShiftPayload): Promise<DayShiftResult> {
-  return httpClient.post("/strategies/day-shift", payload);
 }
 
 export async function cloneStrategy(id: number): Promise<Strategy> {
@@ -112,6 +107,34 @@ export async function evaluateStrategy(
   context: Record<string, any>
 ): Promise<EvaluateResult> {
   return httpClient.post("/strategies/evaluate", { versionId, context });
+}
+
+export async function backtestStrategy(
+  id: number,
+  payload: { underlyingCode?: string | null; years?: number } = {}
+): Promise<BacktestResult> {
+  return httpClient.post(`/strategies/${id}/backtest`, { years: 20, ...payload });
+}
+
+export interface BacktestAllSummary {
+  total: number;
+  backtested: number;
+  skipped: number;
+  errors: number;
+  results: Array<{
+    id: number;
+    code: string;
+    status: "ok" | "skipped" | "error";
+    reason?: string;
+    underlyingCode?: string;
+    totalTrades?: number;
+    winRatePct?: number;
+    totalReturnPct?: number;
+  }>;
+}
+
+export async function backtestAllStrategies(years: number = 20): Promise<BacktestAllSummary> {
+  return httpClient.post(`/strategies/backtest-all?years=${years}`);
 }
 
 // ================= Performance & Health API =================

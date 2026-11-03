@@ -66,6 +66,34 @@ export function useLatestOpportunities(looping: boolean, underlying?: string) {
   });
 }
 
+/**
+ * Full per-loop history for ONE card session (every opportunity trade_opportunities has ever saved
+ * for this masterId, not just the current isLatest batch). This -- not useLatestOpportunities -- is
+ * what the side sheet's "Loop #1 / #2 / #3" batches must read, otherwise every loop except the
+ * newest always renders 0 contracts: /opportunities/latest only ever returns isLatest=True rows,
+ * which belong to the single most recent loop (replace_latest() flips every older row to
+ * isLatest=False the moment a new one is saved).
+ */
+export function useMasterOpportunityHistory(masterId: number | null, looping: boolean) {
+  return useQuery({
+    queryKey: opportunitiesQueryKeys.masterHistory(masterId ?? 0),
+    queryFn: () =>
+      opportunitiesApi.search({ page: 0, limit: 100, masterId: masterId!, latestOnly: false, sortBy: "iterationNo", sortDir: "desc" }),
+    enabled: masterId != null,
+    refetchInterval: looping ? 5000 : false,
+  });
+}
+
+/** Per-batch diagnostics (empty-batch reasons, rejected setups, dropped picks) for ONE card session. */
+export function useMasterIterations(masterId: number | null, looping: boolean) {
+  return useQuery({
+    queryKey: opportunitiesQueryKeys.masterIterations(masterId ?? 0),
+    queryFn: () => opportunitiesApi.searchIterations(masterId!),
+    enabled: masterId != null,
+    refetchInterval: looping ? 5000 : false,
+  });
+}
+
 /** Start = new session row per card, then the loop iterates them one by one. */
 export function useStartOpportunity() {
   const queryClient = useQueryClient();
@@ -94,6 +122,37 @@ export function useStopAll() {
       return opportunitiesApi.stopAll();
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: opportunitiesQueryKeys.all }),
+  });
+}
+
+export function useCheckBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ masterId, iterationNo }: { masterId: number; iterationNo?: number }) =>
+      opportunitiesApi.checkBatch(masterId, iterationNo),
+    onSuccess: (_data, vars) => {
+      void queryClient.invalidateQueries({
+        queryKey: opportunitiesQueryKeys.masterHistory(vars.masterId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: opportunitiesQueryKeys.todayMasters(),
+      });
+    },
+  });
+}
+
+export function useCheckOpportunity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (opportunityId: number) => opportunitiesApi.checkOpportunity(opportunityId),
+    onSuccess: (res) => {
+      void queryClient.invalidateQueries({
+        queryKey: opportunitiesQueryKeys.masterHistory(res.masterId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: opportunitiesQueryKeys.todayMasters(),
+      });
+    },
   });
 }
 

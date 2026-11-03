@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { Activity, AlertTriangle, Clock, Settings } from "lucide-react";
 import { useOverrideStrategyHealth, useStrategyHealth } from "../hooks/useStrategies";
 
 interface HealthSectionProps {
@@ -29,7 +28,11 @@ export const HealthSection: React.FC<HealthSectionProps> = ({ strategyId }) => {
   };
 
   if (isLoading) {
-    return <div className="p-4 text-center text-muted">Loading health state...</div>;
+    return (
+      <div className="sd-card">
+        <div className="sd-empty-inline">Loading strategy health telemetry…</div>
+      </div>
+    );
   }
 
   const effective = healthData?.effectiveHealth || "UNKNOWN";
@@ -37,67 +40,77 @@ export const HealthSection: React.FC<HealthSectionProps> = ({ strategyId }) => {
   const events = healthData?.recentEvents || [];
 
   return (
-    <div className="health-section">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    <div className="sd-panel">
+      <div className="sd-overview-cols">
         {/* Effective Health Card */}
-        <div className="card-surface p-4 border border-subtle rounded">
-          <div className="flex items-center gap-2 mb-3">
-            <Activity size={18} className="text-cyan" />
-            <h4 className="font-semibold text-primary">Effective Health Status</h4>
-          </div>
-          <div className="flex items-center gap-3">
+        <div className="sd-card">
+          <div className="sd-card-header">
+            <span className="sd-card-title">Effective Health &amp; Policy Thresholds</span>
             <span
-              className={`badge-pill text-sm px-3 py-1 font-bold ${
+              className={`sd-tag ${
                 effective === "HEALTHY"
-                  ? "bg-emerald text-white"
+                  ? "sd-tag--green"
                   : effective === "DEGRADED"
-                  ? "bg-amber text-black"
+                  ? "sd-tag--amber"
                   : effective === "SUSPENDED"
-                  ? "bg-rose text-white"
-                  : "bg-surface text-muted"
+                  ? "sd-tag--red"
+                  : ""
               }`}
             >
               {effective}
             </span>
-            {healthData?.healthOverride && (
-              <span className="text-xs text-amber flex items-center gap-1">
-                <AlertTriangle size={12} />
-                Manually Overridden (Until: {healthData.healthOverrideUntil || "Indefinite"})
+          </div>
+
+          <div className="sd-spec-list">
+            <div className="sd-spec-row">
+              <span className="sd-spec-key">Active Policy</span>
+              <span className="sd-spec-val mono">{policy?.name || policy?.code || "Default"}</span>
+            </div>
+            <div className="sd-spec-row">
+              <span className="sd-spec-key">Min Trade Sample</span>
+              <span className="sd-spec-val mono">{policy?.params?.minTrades ?? 30} Trades</span>
+            </div>
+            <div className="sd-spec-row">
+              <span className="sd-spec-key">Degrade Threshold</span>
+              <span className="sd-spec-val mono text-amber">
+                Profit Factor &lt; {policy?.params?.degradeIfProfitFactorBelow ?? 1.0}
               </span>
+            </div>
+            <div className="sd-spec-row">
+              <span className="sd-spec-key">Suspend Threshold</span>
+              <span className="sd-spec-val mono text-red">
+                Profit Factor &lt; {policy?.params?.suspendIfProfitFactorBelow ?? 0.8}
+              </span>
+            </div>
+            <div className="sd-spec-row">
+              <span className="sd-spec-key">Max Consecutive Losses</span>
+              <span className="sd-spec-val mono text-red">
+                {policy?.params?.suspendAfterConsecutiveLosses ?? 5} Losses
+              </span>
+            </div>
+            {healthData?.healthOverride && (
+              <div className="sd-spec-row">
+                <span className="sd-spec-key">Manual Override</span>
+                <span className="sd-spec-val mono text-amber">
+                  {healthData.healthOverride} ({healthData.healthOverrideReason || "Manual"})
+                </span>
+              </div>
             )}
           </div>
-          {healthData?.healthOverrideReason && (
-            <p className="text-xs text-muted mt-2 italic">
-              Override reason: "{healthData.healthOverrideReason}"
-            </p>
-          )}
-
-          {policy && (
-            <div className="mt-4 pt-3 border-t border-subtle">
-              <span className="text-xs text-muted block mb-1">
-                Evaluating Policy: <strong>{policy.name || policy.code}</strong>
-              </span>
-              <div className="text-xs text-secondary grid grid-cols-2 gap-2 mt-2 font-mono">
-                <div>Min Trades: {policy.params?.minTrades ?? 30}</div>
-                <div>PF Suspend &lt; {policy.params?.suspendIfProfitFactorBelow ?? 0.8}</div>
-                <div>PF Degrade &lt; {policy.params?.degradeIfProfitFactorBelow ?? 1.0}</div>
-                <div>Max Loss Streak: {policy.params?.suspendAfterConsecutiveLosses ?? 5}</div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Manual Override Form */}
-        <div className="card-surface p-4 border border-subtle rounded">
-          <div className="flex items-center gap-2 mb-3">
-            <Settings size={18} className="text-amber" />
-            <h4 className="font-semibold text-primary">Apply Manual Health Override</h4>
+        <div className="sd-card">
+          <div className="sd-card-header">
+            <span className="sd-card-title">Manual Health Override</span>
+            <span className="sd-tag mono">ADMIN</span>
           </div>
-          <form onSubmit={handleOverrideSubmit} className="space-y-3">
-            <div>
-              <label className="text-xs text-muted block mb-1">Target Health</label>
+
+          <form onSubmit={handleOverrideSubmit} className="sd-panel" style={{ gap: 10 }}>
+            <div className="form-group">
+              <label className="form-label">Target Health State</label>
               <select
-                className="select w-full"
+                className="select"
                 value={overrideHealth}
                 onChange={(e) => setOverrideHealth(e.target.value)}
               >
@@ -107,48 +120,51 @@ export const HealthSection: React.FC<HealthSectionProps> = ({ strategyId }) => {
                 <option value="UNKNOWN">UNKNOWN</option>
               </select>
             </div>
-            <div>
-              <label className="text-xs text-muted block mb-1">Override Reason (Mandatory)</label>
+            <div className="form-group">
+              <label className="form-label">Justification (Required)</label>
               <input
                 type="text"
-                className="input w-full text-xs"
-                placeholder="e.g. Market regime shift, under manual live review"
+                className="input"
+                placeholder="Reason for manual health override…"
                 value={overrideReason}
                 onChange={(e) => setOverrideReason(e.target.value)}
                 required
               />
             </div>
-            <div>
-              <label className="text-xs text-muted block mb-1">Active Until (Optional)</label>
+            <div className="form-group">
+              <label className="form-label">Active Until (Optional)</label>
               <input
                 type="datetime-local"
-                className="input w-full text-xs"
+                className="input mono"
                 value={overrideUntil}
                 onChange={(e) => setOverrideUntil(e.target.value)}
               />
             </div>
-            <button
-              type="submit"
-              className="btn-kite-primary text-xs w-full mt-2"
-              disabled={overrideMutation.isPending || !overrideReason.trim()}
-            >
-              {overrideMutation.isPending ? "Applying Override..." : "Save Health Override"}
-            </button>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+              <button
+                type="submit"
+                className="sd-ctrl-btn sd-ctrl-btn--primary"
+                disabled={overrideMutation.isPending || !overrideReason.trim()}
+              >
+                {overrideMutation.isPending ? "Applying…" : "Apply Health Override"}
+              </button>
+            </div>
           </form>
         </div>
       </div>
 
       {/* Health Event Log */}
-      <div className="health-events-container">
-        <h4 className="text-sm font-semibold text-primary mb-2 flex items-center gap-1.5">
-          <Clock size={16} className="text-cyan" />
-          Health Transition Events
-        </h4>
+      <div className="sd-card">
+        <div className="sd-card-header">
+          <span className="sd-card-title">Health Transition Log ({events.length})</span>
+        </div>
         {events.length === 0 ? (
-          <p className="text-xs text-muted">No historical health transition events logged.</p>
+          <div className="sd-empty-inline">
+            No historical health state transitions recorded.
+          </div>
         ) : (
-          <div className="table-responsive">
-            <table className="data-table text-xs">
+          <div className="table-scroll-container">
+            <table className="data-table sd-compact-table">
               <thead>
                 <tr>
                   <th>Timestamp</th>
@@ -160,30 +176,28 @@ export const HealthSection: React.FC<HealthSectionProps> = ({ strategyId }) => {
               <tbody>
                 {events.map((ev) => (
                   <tr key={ev.id}>
-                    <td className="text-muted">
-                      {ev.createdAt ? new Date(ev.createdAt).toLocaleString() : "—"}
+                    <td className="mono text-muted">
+                      {ev.createdAt ? new Date(ev.createdAt).toLocaleString("en-IN") : "—"}
                     </td>
-                    <td>
-                      <span className="font-mono text-muted">{ev.fromHealth}</span>{" "}
-                      <span className="text-cyan">→</span>{" "}
+                    <td className="mono">
+                      <span className="text-muted">{ev.fromHealth}</span>
+                      {" → "}
                       <span
-                        className={`badge-pill font-bold ${
+                        className={
                           ev.toHealth === "HEALTHY"
-                            ? "text-emerald"
+                            ? "text-green"
                             : ev.toHealth === "DEGRADED"
                             ? "text-amber"
-                            : "text-rose"
-                        }`}
+                            : "text-red"
+                        }
                       >
                         {ev.toHealth}
                       </span>
                     </td>
                     <td>
-                      <span className="badge-pill bg-elevated font-mono">
-                        {ev.triggeredBy}
-                      </span>
+                      <span className="sd-tag mono">{ev.triggeredBy}</span>
                     </td>
-                    <td className="text-secondary">{ev.reason}</td>
+                    <td>{ev.reason}</td>
                   </tr>
                 ))}
               </tbody>

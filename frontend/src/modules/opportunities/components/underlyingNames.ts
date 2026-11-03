@@ -13,3 +13,19 @@ export const UNDERLYING_NAMES: Record<string, string> = {
   ZINC: "Zinc (MCX)",
 };
 
+export const LOT_SIZES: Record<string, number> = {
+  NIFTY: 25,
+  BANKNIFTY: 15,
+  FINNIFTY: 25,
+  MIDCPNIFTY: 50,
+  SENSEX: 10,
+  BANKEX: 15,
+  CRUDEOIL: 100,
+  NATURALGAS: 1250,
+  GOLD: 100,
+  SILVER: 30,
+  COPPER: 2500,
+  ZINC: 5000,
+};
+
+

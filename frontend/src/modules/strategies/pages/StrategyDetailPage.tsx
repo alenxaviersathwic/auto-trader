@@ -6,15 +6,10 @@ import {
   Copy,
   Trash2,
   AlertTriangle,
-  CheckCircle2,
-  BookOpen,
-  Layers,
-  Settings,
-  Activity,
-  History,
-  Terminal,
-  ListChecks,
   ExternalLink,
+  RotateCcw,
+  Save,
+  ChevronRight,
 } from "lucide-react";
 import {
   useCloneStrategy,
@@ -30,6 +25,7 @@ import { HealthSection } from "../components/HealthSection";
 import { VersionsSection } from "../components/VersionsSection";
 import { RequirementsSection } from "../components/RequirementsSection";
 import { StrategyTestPanel } from "../components/StrategyTestPanel";
+import { StrategyBacktestPanel } from "../components/StrategyBacktestPanel";
 
 export const StrategyDetailPage: React.FC = () => {
   const { id } = useParams({ strict: false }) as { id: string };
@@ -45,6 +41,7 @@ export const StrategyDetailPage: React.FC = () => {
     | "versions"
     | "requirements"
     | "test"
+    | "backtest"
   >("overview");
 
   const { data: strategy, isLoading, refetch } = useStrategyDetail(strategyId);
@@ -59,20 +56,30 @@ export const StrategyDetailPage: React.FC = () => {
   const [paramsInitialized, setParamsInitialized] = useState(false);
 
   if (isLoading) {
-    return <div className="p-8 text-center text-muted">Loading strategy #{strategyId}...</div>;
+    return (
+      <div className="sd-page">
+        <div className="sd-card sd-loading-box">
+          <div className="spinner" />
+          <span>Loading strategy #{strategyId}…</span>
+        </div>
+      </div>
+    );
   }
 
   if (!strategy) {
     return (
-      <div className="p-8 text-center text-rose">
-        <h2>Strategy #{strategyId} not found.</h2>
-        <button
-          type="button"
-          className="btn-outline mt-4"
-          onClick={() => navigate({ to: "/strategies" as any })}
-        >
-          Back to Strategies
-        </button>
+      <div className="sd-page">
+        <div className="sd-card sd-loading-box">
+          <span className="text-red">Strategy #{strategyId} not found.</span>
+          <button
+            type="button"
+            className="sd-ctrl-btn"
+            onClick={() => navigate({ to: "/strategies" as any })}
+          >
+            <ArrowLeft size={13} />
+            <span>Back to Strategies</span>
+          </button>
+        </div>
       </div>
     );
   }
@@ -80,22 +87,36 @@ export const StrategyDetailPage: React.FC = () => {
   const currentVersion = strategy.currentVersion;
   const definition = currentVersion?.definition || {};
   const parameters = definition.parameters || {};
+  const paramKeys = Object.keys(parameters);
+  const snapshot = strategy.latestPerformance && strategy.latestPerformance[0];
+  const hasReviewFlags = strategy.reviewFlags && strategy.reviewFlags.length > 0;
 
-  if (!paramsInitialized && Object.keys(parameters).length > 0) {
+  if (!paramsInitialized && paramKeys.length > 0) {
     const initial: Record<string, any> = {};
     Object.entries(parameters).forEach(([k, v]: any) => {
-      initial[k] = v?.default ?? v;
+      initial[k] = typeof v === "object" && v !== null ? v.default ?? "" : v;
     });
     setParamsForm(initial);
     setParamsInitialized(true);
   }
+
+  const handleResetParameters = () => {
+    const reset: Record<string, any> = {};
+    Object.entries(parameters).forEach(([k, v]: any) => {
+      reset[k] = typeof v === "object" && v !== null ? v.default ?? "" : v;
+    });
+    setParamsForm(reset);
+  };
 
   const handleLifecycleChange = (to: string) => {
     if (!strategy.executable && to === "ACTIVE") {
       alert("Cannot activate: Strategy has definition issues or missing handlers and is not executable.");
       return;
     }
-    const reason = window.prompt(`Reason for transitioning lifecycle to ${to}:`, `Manual review change to ${to}`);
+    const reason = window.prompt(
+      `Reason for transitioning lifecycle to ${to}:`,
+      `Manual review change to ${to}`
+    );
     if (reason) {
       updateLifecycleMutation.mutate({ id: strategyId, to, reason });
     }
@@ -108,11 +129,13 @@ export const StrategyDetailPage: React.FC = () => {
         ...parameters,
       },
     };
-    // Update defaults from form
     Object.entries(paramsForm).forEach(([k, v]) => {
-      if (updatedDef.parameters[k]) {
-        if (typeof updatedDef.parameters[k] === "object") {
-          updatedDef.parameters[k].default = Number(v);
+      if (updatedDef.parameters[k] !== undefined) {
+        if (typeof updatedDef.parameters[k] === "object" && updatedDef.parameters[k] !== null) {
+          updatedDef.parameters[k] = {
+            ...updatedDef.parameters[k],
+            default: Number(v),
+          };
         } else {
           updatedDef.parameters[k] = Number(v);
         }
@@ -136,327 +159,673 @@ export const StrategyDetailPage: React.FC = () => {
     );
   };
 
+  const formatOptimalTag = () => {
+    if (strategy.tags && strategy.tags.length > 0) {
+      const rawTags: string[] = Array.isArray(strategy.tags)
+        ? strategy.tags
+        : String(strategy.tags).split(",");
+      const cleaned = rawTags
+        .map((t: string) => t.replace(/_/g, " ").trim())
+        .filter((t: string) => !["BUILT IN", "TEXTBOOK", "LEGACY"].includes(t.toUpperCase()))
+        .filter(Boolean);
+      if (cleaned.length > 0) return cleaned.join(", ");
+    }
+    if (strategy.structure) {
+      return `${strategy.bias ? strategy.bias + " " : ""}${strategy.structure.replace(/_/g, " ")}`;
+    }
+    return "—";
+  };
+
+  const effectiveHealth = strategy.effectiveHealth || strategy.health || "UNKNOWN";
+  const sessionEntry = definition.bounds?.session?.entryTime || "09:15";
+  const sessionExit = definition.bounds?.session?.exitTime || "15:14";
+  const maxTradesPerDay = definition.bounds?.maxTradesPerDay;
+
+  const formatRupeeValue = (val: number | string | null | undefined, showSign = false) => {
+    if (val === null || val === undefined || val === "") return "—";
+    const num = Number(val);
+    if (Number.isNaN(num)) return "—";
+    const sign = showSign && num > 0 ? "+" : num < 0 ? "-" : "";
+    return `${sign}₹${Math.abs(num).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+  };
+
   return (
-    <div className="strategy-detail-page module-page">
-      {/* Top Navigation Back */}
-      <button
-        type="button"
-        className="btn-back flex items-center gap-1.5 text-xs text-muted hover:text-primary mb-3"
-        onClick={() => navigate({ to: "/strategies" as any })}
-      >
-        <ArrowLeft size={14} />
-        <span>Back to Strategies List</span>
-      </button>
+    <div className="sd-page">
+      {/* 1. Compact Aligned Top Bar */}
+      <div className="sd-topbar">
+        <div className="sd-topbar-left">
+          <button
+            type="button"
+            className="sd-ctrl-btn"
+            onClick={() => navigate({ to: "/strategies" as any })}
+          >
+            <ArrowLeft size={13} />
+            <span>Strategies</span>
+          </button>
 
-      {/* Header Card */}
-      <div className="detail-header-card card-surface p-5 border border-subtle rounded-lg mb-4">
-        <div className="flex flex-wrap justify-between items-start gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-xl font-bold text-primary">{strategy.name}</h1>
-              <span className="font-mono text-xs text-cyan bg-cyan/10 px-2 py-0.5 rounded">
-                {strategy.code}
-              </span>
-              <span className="badge-pill bg-elevated text-xs font-mono">
-                v{currentVersion?.versionNo || 1}
-              </span>
-            </div>
-            <p className="text-xs text-secondary max-w-3xl leading-relaxed">
-              {strategy.description || "No description provided."}
+          <span className="sd-topbar-sep">/</span>
+          <span className="sd-code-tag mono">{strategy.code.toUpperCase()}</span>
+          <span className="sd-ver-tag mono">v{currentVersion?.versionNo || 1}</span>
+          <span
+            className={`sd-status-pill ${
+              strategy.lifecycleStatus === "ACTIVE"
+                ? "is-green"
+                : strategy.lifecycleStatus === "SUSPENDED"
+                ? "is-red"
+                : strategy.lifecycleStatus === "IN_REVIEW"
+                ? "is-amber"
+                : "is-blue"
+            }`}
+          >
+            <span className="sd-status-dot" />
+            {strategy.lifecycleStatus}
+          </span>
+        </div>
+
+        <div className="sd-topbar-right">
+          {/* Enable / Disable Toggle Control */}
+          <label className={`sd-toggle-pill ${strategy.enabled ? "is-on" : ""}`}>
+            <span className="sd-toggle-label">
+              {strategy.enabled ? "Live Active" : "Disabled"}
+            </span>
+            <span className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={strategy.enabled}
+                onChange={(e) =>
+                  toggleEnabledMutation.mutate({
+                    id: strategy.id,
+                    enabled: e.target.checked,
+                  })
+                }
+              />
+              <span className="slider round"></span>
+            </span>
+          </label>
+
+          {/* Lifecycle Select */}
+          <select
+            className="sd-ctrl-select mono"
+            value={strategy.lifecycleStatus}
+            onChange={(e) => handleLifecycleChange(e.target.value)}
+            title="Transition Lifecycle Status"
+          >
+            <option value="DRAFT">DRAFT</option>
+            <option value="IN_REVIEW">IN_REVIEW</option>
+            <option value="ACTIVE" disabled={!strategy.executable}>
+              ACTIVE {!strategy.executable ? "(Not Executable)" : ""}
+            </option>
+            <option value="SUSPENDED">SUSPENDED</option>
+            <option value="ARCHIVED">ARCHIVED</option>
+          </select>
+
+          <button
+            type="button"
+            className="sd-ctrl-btn"
+            onClick={() => navigate({ to: `/strategies/${strategy.id}/edit` as any })}
+          >
+            <Edit size={13} />
+            <span>Edit</span>
+          </button>
+
+          <button
+            type="button"
+            className="sd-ctrl-btn"
+            onClick={() =>
+              cloneMutation.mutate(strategy.id, {
+                onSuccess: (c) => navigate({ to: `/strategies/${c.id}` as any }),
+              })
+            }
+            disabled={cloneMutation.isPending}
+          >
+            <Copy size={13} />
+            <span>Clone</span>
+          </button>
+
+          <button
+            type="button"
+            className="sd-ctrl-btn sd-ctrl-btn--danger"
+            title="Delete Strategy"
+            onClick={() => {
+              if (window.confirm(`Soft delete "${strategy.name}"?`)) {
+                deleteMutation.mutate(strategy.id, {
+                  onSuccess: () => navigate({ to: "/strategies" as any }),
+                });
+              }
+            }}
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Compact Summary & Telemetry Card */}
+      <div className="sd-summary-card">
+        <div className="sd-summary-head">
+          <div className="sd-summary-title-block">
+            <h1 className="sd-title">{strategy.name}</h1>
+            <p className="sd-desc">
+              {strategy.description || "Algorithmic option strategy."}
             </p>
-
-            {/* Chips bar */}
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              <span className="badge-pill bg-elevated font-mono text-xs">
-                {strategy.structure || strategy.category}
-              </span>
-              <span className="badge-pill bg-elevated text-xs">
-                {strategy.bias || "DYNAMIC"}
-              </span>
-              <span className="badge-pill bg-elevated text-xs">
-                {strategy.markets?.join(", ")}
-              </span>
-              <span
-                className={`badge-pill text-xs font-semibold ${
-                  strategy.lifecycleStatus === "ACTIVE"
-                    ? "bg-emerald/20 text-emerald"
-                    : strategy.lifecycleStatus === "SUSPENDED"
-                    ? "bg-rose/20 text-rose"
-                    : "bg-surface text-muted"
-                }`}
-              >
-                {strategy.lifecycleStatus}
-              </span>
-              <span
-                className={`badge-pill text-xs font-bold ${
-                  strategy.effectiveHealth === "HEALTHY"
-                    ? "text-emerald"
-                    : strategy.effectiveHealth === "DEGRADED"
-                    ? "text-amber"
-                    : "text-rose"
-                }`}
-              >
-                Health: {strategy.effectiveHealth || strategy.health}
-              </span>
-              <span className="badge-pill text-xs bg-elevated text-secondary">
-                {strategy.validationStatus}
-              </span>
-              <span className="badge-pill bg-elevated font-mono text-xs" title="Active days">
-                {strategy.activeDays?.length ? strategy.activeDays.join(" · ") : "EVERY DAY"}
-              </span>
-              {strategy.activeToday === false && (
-                <span className="badge badge--slate" title="Not scheduled to run today">
-                  NOT TODAY
-                </span>
-              )}
-              {(() => {
-                const now = new Date();
-                const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-                const upcoming = (strategy.dayOverrides || []).filter((o) => o.date >= today).length;
-                return upcoming > 0 ? (
-                  <span className="badge badge--amber" title="Upcoming date overrides">
-                    {upcoming} OVERRIDE{upcoming > 1 ? "S" : ""}
-                  </span>
-                ) : null;
-              })()}
-              {strategy.suggestable && (
-                <span className="badge-pill bg-emerald/20 text-emerald text-xs flex items-center gap-1">
-                  <CheckCircle2 size={12} />
-                  Suggestable
-                </span>
-              )}
-            </div>
           </div>
 
-          {/* Action controls */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 pr-3 border-r border-subtle">
-              <span className="text-xs text-muted">Enabled:</span>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={strategy.enabled}
-                  onChange={(e) =>
-                    toggleEnabledMutation.mutate({
-                      id: strategy.id,
-                      enabled: e.target.checked,
-                    })
-                  }
-                />
-                <span className="slider round"></span>
-              </label>
-            </div>
-
-            {/* Lifecycle Dropdown */}
-            <select
-              className="select text-xs"
-              value={strategy.lifecycleStatus}
-              onChange={(e) => handleLifecycleChange(e.target.value)}
+          <div className="sd-summary-badges">
+            <span className="sd-tag sd-tag--cyan">
+              {strategy.structure || strategy.category}
+            </span>
+            <span
+              className={`sd-tag ${
+                strategy.bias === "BULLISH"
+                  ? "sd-tag--green"
+                  : strategy.bias === "BEARISH"
+                  ? "sd-tag--red"
+                  : "sd-tag--amber"
+              }`}
             >
-              <option value="DRAFT">DRAFT</option>
-              <option value="IN_REVIEW">IN_REVIEW</option>
-              <option value="ACTIVE" disabled={!strategy.executable}>
-                ACTIVE {!strategy.executable ? "(Blocked: Not Executable)" : ""}
-              </option>
-              <option value="SUSPENDED">SUSPENDED</option>
-              <option value="ARCHIVED">ARCHIVED</option>
-            </select>
-
-            <button
-              type="button"
-              className="btn-outline text-xs flex items-center gap-1"
-              onClick={() => navigate({ to: `/strategies/${strategy.id}/edit` as any })}
-            >
-              <Edit size={13} />
-              <span>Edit</span>
-            </button>
-            <button
-              type="button"
-              className="btn-outline text-xs flex items-center gap-1"
-              onClick={() =>
-                cloneMutation.mutate(strategy.id, {
-                  onSuccess: (c) => navigate({ to: `/strategies/${c.id}` as any }),
-                })
-              }
-            >
-              <Copy size={13} />
-              <span>Clone</span>
-            </button>
-            <button
-              type="button"
-              className="btn-icon text-rose"
-              onClick={() => {
-                if (window.confirm("Soft delete this strategy?")) {
-                  deleteMutation.mutate(strategy.id, {
-                    onSuccess: () => navigate({ to: "/strategies" as any }),
-                  });
-                }
-              }}
-            >
-              <Trash2 size={15} />
-            </button>
+              {strategy.bias || "DYNAMIC"}
+            </span>
+            {strategy.markets?.map((m) => (
+              <span key={m} className="sd-tag">
+                {m}
+              </span>
+            ))}
+            {strategy.timeframe && (
+              <span className="sd-tag mono">{strategy.timeframe}</span>
+            )}
+            {strategy.suggestable && (
+              <span className="sd-tag sd-tag--green">SUGGESTABLE</span>
+            )}
           </div>
         </div>
 
-        {/* Untested Notice Banner if UNTESTED */}
-        {strategy.validationStatus === "UNTESTED" && (
-          <div className="mt-3 p-2.5 bg-amber/10 border border-amber/30 rounded text-amber text-xs flex items-center gap-2">
-            <AlertTriangle size={15} className="shrink-0" />
-            <span>
-              <strong>Untested Notice:</strong> No live validation yet. No win probability is shown. Historical numbers are from legacy import (domain unknown).
+        {/* 6-Column Compact Telemetry Strip (Matching StrategyCard aesthetic) */}
+        <div className="sd-telemetry-strip">
+          <div className="sd-telemetry-cell">
+            <span className="sd-telemetry-label">Win Rate</span>
+            <span
+              className={`sd-telemetry-val mono ${
+                snapshot && snapshot.winRatePct >= 50
+                  ? "text-green"
+                  : snapshot
+                  ? "text-red"
+                  : ""
+              }`}
+            >
+              {snapshot ? `${Number(snapshot.winRatePct).toFixed(1)}%` : "—"}
             </span>
+            <span className="sd-telemetry-sub mono">
+              {snapshot
+                ? `${snapshot.totalTrades}T (${snapshot.winningTrades}W/${snapshot.losingTrades}L)`
+                : strategy.validationStatus}
+            </span>
+          </div>
+
+          <div className="sd-telemetry-cell">
+            <span className="sd-telemetry-label">Profit Factor</span>
+            <span className="sd-telemetry-val mono text-amber">
+              {snapshot?.profitFactor ? Number(snapshot.profitFactor).toFixed(2) : "—"}
+            </span>
+            <span className="sd-telemetry-sub mono">
+              {snapshot?.domain || strategy.validationStatus}
+            </span>
+          </div>
+
+          <div className="sd-telemetry-cell">
+            <span className="sd-telemetry-label">Net P&amp;L</span>
+            <span
+              className={`sd-telemetry-val mono ${
+                snapshot && snapshot.netPnl > 0
+                  ? "text-green"
+                  : snapshot && snapshot.netPnl < 0
+                  ? "text-red"
+                  : ""
+              }`}
+            >
+              {snapshot ? formatRupeeValue(snapshot.netPnl, true) : "—"}
+            </span>
+            <span className="sd-telemetry-sub mono">
+              DD: {snapshot?.maxDrawdown ? formatRupeeValue(snapshot.maxDrawdown) : "—"}
+            </span>
+          </div>
+
+          <div className="sd-telemetry-cell">
+            <span className="sd-telemetry-label">Est. Margin</span>
+            <span className="sd-telemetry-val mono">
+              {formatRupeeValue(strategy.riskProfile?.marginAmount)}
+            </span>
+            <span className="sd-telemetry-sub mono">
+              Max DD Cap: {formatRupeeValue(strategy.riskProfile?.declaredMaxDrawdown)}
+            </span>
+          </div>
+
+          <div className="sd-telemetry-cell">
+            <span className="sd-telemetry-label">Session Window</span>
+            <span className="sd-telemetry-val mono text-cyan">
+              {sessionEntry}–{sessionExit}
+            </span>
+            <span className="sd-telemetry-sub mono">
+              {maxTradesPerDay ? `Max ${maxTradesPerDay} trades/d` : "Unlimited trades"}
+            </span>
+          </div>
+
+          <div className="sd-telemetry-cell">
+            <span className="sd-telemetry-label">Health &amp; Tags</span>
+            <span
+              className={`sd-telemetry-val mono ${
+                effectiveHealth === "HEALTHY"
+                  ? "text-green"
+                  : effectiveHealth === "DEGRADED"
+                  ? "text-amber"
+                  : effectiveHealth === "SUSPENDED"
+                  ? "text-red"
+                  : ""
+              }`}
+            >
+              {effectiveHealth}
+            </span>
+            <span className="sd-telemetry-sub mono">
+              {strategy.tags?.length ? `${strategy.tags.length} tag${strategy.tags.length > 1 ? "s" : ""}` : "No tags"} ·{" "}
+              {strategy.executionModes?.join("/") || "PAPER"}
+            </span>
+          </div>
+        </div>
+
+        {/* Compact Single-Line Notices */}
+        {(hasReviewFlags || strategy.validationStatus === "UNTESTED") && (
+          <div className="sd-notices-row">
+            {hasReviewFlags && (
+              <div className="sd-compact-notice is-warn">
+                <AlertTriangle size={12} />
+                <span>
+                  <strong>Review Flags:</strong> {strategy.reviewFlags?.join(", ")}
+                </span>
+              </div>
+            )}
+            {strategy.validationStatus === "UNTESTED" && (
+              <div className="sd-compact-notice">
+                <AlertTriangle size={12} />
+                <span>
+                  <strong>Untested:</strong> No live validation yet. Run Backtest or record Paper snapshots to verify edge.
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="tabs-header border-b border-subtle mb-4 flex gap-1">
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === "overview" ? "active" : ""}`}
-          onClick={() => setActiveTab("overview")}
-        >
-          <BookOpen size={14} />
-          <span>Overview</span>
-        </button>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === "definition" ? "active" : ""}`}
-          onClick={() => setActiveTab("definition")}
-        >
-          <Layers size={14} />
-          <span>Definition</span>
-        </button>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === "parameters" ? "active" : ""}`}
-          onClick={() => setActiveTab("parameters")}
-        >
-          <Settings size={14} />
-          <span>Parameters</span>
-        </button>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === "performance" ? "active" : ""}`}
-          onClick={() => setActiveTab("performance")}
-        >
-          <Activity size={14} />
-          <span>Performance</span>
-        </button>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === "health" ? "active" : ""}`}
-          onClick={() => setActiveTab("health")}
-        >
-          <Activity size={14} />
-          <span>Health</span>
-        </button>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === "versions" ? "active" : ""}`}
-          onClick={() => setActiveTab("versions")}
-        >
-          <History size={14} />
-          <span>Versions</span>
-        </button>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === "requirements" ? "active" : ""}`}
-          onClick={() => setActiveTab("requirements")}
-        >
-          <ListChecks size={14} />
-          <span>Requirements</span>
-        </button>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === "test" ? "active" : ""}`}
-          onClick={() => setActiveTab("test")}
-        >
-          <Terminal size={14} />
-          <span>Test / Evaluate</span>
-        </button>
+      {/* 3. Clean Uniform Tab Navigation */}
+      <div className="sd-tabs-nav" role="tablist">
+        {(
+          [
+            { id: "overview", label: "Overview" },
+            { id: "definition", label: "Rule Definition" },
+            {
+              id: "parameters",
+              label: "Parameters",
+              count: paramKeys.length > 0 ? String(paramKeys.length) : undefined,
+            },
+            { id: "performance", label: "Performance" },
+            { id: "health", label: "Health" },
+            {
+              id: "versions",
+              label: "Versions",
+              count: `v${currentVersion?.versionNo || 1}`,
+            },
+            { id: "requirements", label: "Requirements" },
+            { id: "test", label: "Evaluate" },
+            { id: "backtest", label: "Backtest" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === t.id}
+            className={`sd-nav-tab ${activeTab === t.id ? "active" : ""}`}
+            onClick={() => setActiveTab(t.id)}
+          >
+            <span>{t.label}</span>
+            {"count" in t && t.count && (
+              <span className="sd-nav-tab-badge mono">{t.count}</span>
+            )}
+          </button>
+        ))}
       </div>
 
-      {/* Tab Panels */}
-      <div className="tab-content">
+      {/* 4. Tab Content Area */}
+      <div className="sd-content">
         {activeTab === "overview" && (
-          <div className="overview-tab space-y-4">
-            {/* How It Works Steps */}
+          <div className="sd-panel">
+            {/* Equal 2-Column Spec & Schedule Sheet */}
+            <div className="sd-overview-cols">
+              {/* Left Column: Strategy Configuration */}
+              <div className="sd-card">
+                <div className="sd-card-header">
+                  <span className="sd-card-title">Strategy Specification</span>
+                  <span className="sd-tag mono">
+                    {strategy.executable ? "EXECUTABLE" : "SUMMARY ONLY"}
+                  </span>
+                </div>
+                <div className="sd-spec-list">
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Strategy Code</span>
+                    <span className="sd-spec-val mono text-amber">{strategy.code}</span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Category &amp; Structure</span>
+                    <span className="sd-spec-val mono">
+                      {strategy.category} · {strategy.structure || "SINGLE_LONG"}
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Bias &amp; Option Side</span>
+                    <span
+                      className={`sd-spec-val mono ${
+                        strategy.bias === "BULLISH"
+                          ? "text-green"
+                          : strategy.bias === "BEARISH"
+                          ? "text-red"
+                          : ""
+                      }`}
+                    >
+                      {strategy.bias || "DYNAMIC"} · {strategy.optionSide || "BOTH"}
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Markets &amp; Exchange</span>
+                    <span className="sd-spec-val mono">
+                      {strategy.markets?.join(", ") || "—"} ({strategy.exchange || "NSE"})
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Timeframe &amp; Mode</span>
+                    <span className="sd-spec-val mono">
+                      {strategy.timeframe || "5m"} ·{" "}
+                      {strategy.tradingModes?.join(", ") || "INTRADAY"}
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Execution Domains</span>
+                    <span className="sd-spec-val mono">
+                      {strategy.executionModes?.join(" / ") || "PAPER"}
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Definition Format</span>
+                    <span className="sd-spec-val mono text-cyan">
+                      {strategy.definitionFormat} (v{currentVersion?.versionNo || 1})
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Optimal Focus / Tags</span>
+                    <span className="sd-spec-val">{formatOptimalTag()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Risk Limits & Day-Context Tags */}
+              <div className="sd-card">
+                <div className="sd-card-header">
+                  <span className="sd-card-title">Risk Limits &amp; Day-Context Tags</span>
+                  <span className={`sd-tag ${strategy.tags?.length ? "sd-tag--green" : "sd-tag--amber"}`}>
+                    {strategy.tags?.length ? `${strategy.tags.length} TAG${strategy.tags.length > 1 ? "S" : ""}` : "NO TAGS"}
+                  </span>
+                </div>
+
+                {/* Day-Context Tags: matched against today's computed context (AFTER_HOLIDAY, EXPIRY_DAY,
+                    DAY_MONDAY, ...) to nudge opportunity confidence -- replaces the old fixed weekly
+                    schedule / Holiday Shift concept entirely. */}
+                <div className="sd-schedule-bar">
+                  <span className="sd-spec-key">Tags</span>
+                  <div className="sd-weekdays-inline">
+                    {strategy.tags && strategy.tags.length > 0 ? (
+                      strategy.tags.map((tag) => (
+                        <span key={tag} className="sd-day-chip mono is-on">
+                          {tag}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="sd-spec-val mono">None set</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="sd-spec-list">
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Session Entry – Exit</span>
+                    <span className="sd-spec-val mono text-cyan">
+                      {sessionEntry} – {sessionExit} IST
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Max Trades / Day</span>
+                    <span className="sd-spec-val mono">
+                      {maxTradesPerDay ?? "Unlimited"}
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Stop Loss % (Win-Rate Driven)</span>
+                    <span className="sd-spec-val mono text-red">
+                      {strategy.stopLossPct != null ? `${Number(strategy.stopLossPct).toFixed(1)}%` : "3.5%"}
+                      {snapshot?.winRatePct != null && (
+                        <span className="text-muted text-[11px] font-normal ml-1">
+                          (WR: {Number(snapshot.winRatePct).toFixed(0)}%)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Risk Category &amp; Stop Mode</span>
+                    <span className="sd-spec-val mono">
+                      {strategy.riskProfile?.riskCategory || "Standard"} ·{" "}
+                      {definition.riskPolicy?.stopMode || "STRATEGY_FIXED"}
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Estimated Margin</span>
+                    <span className="sd-spec-val mono">
+                      {formatRupeeValue(strategy.riskProfile?.marginAmount)}
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Declared Max Drawdown</span>
+                    <span className="sd-spec-val mono text-red">
+                      {formatRupeeValue(strategy.riskProfile?.declaredMaxDrawdown)}
+                    </span>
+                  </div>
+                  <div className="sd-spec-row">
+                    <span className="sd-spec-key">Day Stop Gain / Loss</span>
+                    <span className="sd-spec-val mono">
+                      <span className="text-green">
+                        {formatRupeeValue(definition.bounds?.dayStopGain?.value, true)}
+                      </span>
+                      {" / "}
+                      <span className="text-red">
+                        {formatRupeeValue(definition.bounds?.dayStopLoss?.value)}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Execution Workflow Steps (if present) */}
             {strategy.howItWorks && strategy.howItWorks.length > 0 && (
-              <div className="card-surface p-4 border border-subtle rounded-lg">
-                <h3 className="font-semibold text-primary mb-3 text-sm">
-                  How It Works (Execution Logic)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="sd-card">
+                <div className="sd-card-header">
+                  <span className="sd-card-title">Execution Workflow</span>
+                  <span className="sd-tag mono">{strategy.howItWorks.length} STEPS</span>
+                </div>
+                <div className="sd-steps-grid">
                   {strategy.howItWorks.map((step, idx) => (
-                    <div key={idx} className="step-card p-3 bg-base/50 rounded border border-subtle">
-                      <div className="text-cyan font-semibold text-xs mb-1">
-                        {idx + 1}. {step.title}
+                    <div key={idx} className="sd-step-item">
+                      <div className="sd-step-top">
+                        <span className="sd-step-index mono">{idx + 1}</span>
+                        <span className="sd-step-name">{step.title}</span>
                       </div>
-                      <p className="text-xs text-secondary leading-relaxed">
-                        {step.description}
-                      </p>
+                      <p className="sd-step-body">{step.description}</p>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Risk Profile & Capital */}
-            <div className="card-surface p-4 border border-subtle rounded-lg">
-              <h3 className="font-semibold text-primary mb-3 text-sm">Risk & Capital Profile</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                <div>
-                  <span className="text-muted block">Risk Category</span>
-                  <span className="font-semibold text-secondary">
-                    {strategy.riskProfile?.riskCategory || "Standard"}
+            {/* Compact Execution Legs Summary Table (if definition.cases exist) */}
+            {Array.isArray(definition.cases) && definition.cases.length > 0 && (
+              <div className="sd-card">
+                <div className="sd-card-header">
+                  <span className="sd-card-title">
+                    Configured Cases &amp; Option Legs ({definition.cases.length})
                   </span>
+                  <button
+                    type="button"
+                    className="sd-link-btn"
+                    onClick={() => setActiveTab("definition")}
+                  >
+                    <span>View Full Rule Tree</span>
+                    <ChevronRight size={13} />
+                  </button>
                 </div>
-                <div>
-                  <span className="text-muted block">Estimated Margin</span>
-                  <span className="font-semibold text-primary">
-                    {strategy.riskProfile?.marginAmount
-                      ? `₹${Number(strategy.riskProfile.marginAmount).toLocaleString()}`
-                      : "—"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted block">Declared Max DD</span>
-                  <span className="font-semibold text-rose">
-                    {strategy.riskProfile?.declaredMaxDrawdown
-                      ? `₹${Number(strategy.riskProfile.declaredMaxDrawdown).toLocaleString()}`
-                      : "—"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted block">Execution Modes</span>
-                  <span className="font-semibold text-secondary">
-                    {strategy.executionModes?.join(", ") || "PAPER"}
-                  </span>
+                <div className="table-scroll-container">
+                  <table className="data-table sd-compact-table">
+                    <thead>
+                      <tr>
+                        <th>Case</th>
+                        <th>Bias</th>
+                        <th>Leg</th>
+                        <th>Side</th>
+                        <th>Option</th>
+                        <th>Expiry</th>
+                        <th>Strike</th>
+                        <th>Qty</th>
+                        <th>Stop Loss</th>
+                        <th>Target</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {definition.cases.flatMap((c: any, cIdx: number) => {
+                        const legs = c.entry?.legs || [];
+                        if (legs.length === 0) {
+                          return [
+                            <tr key={`case-${cIdx}`}>
+                              <td className="mono">#{c.key ?? cIdx + 1}</td>
+                              <td>
+                                <span className="sd-tag">{c.bias || "DYNAMIC"}</span>
+                              </td>
+                              <td colSpan={8} className="text-muted">
+                                No option legs configured
+                              </td>
+                            </tr>,
+                          ];
+                        }
+                        return legs.map((leg: any, lIdx: number) => (
+                          <tr key={`${cIdx}-${leg.legId || lIdx}`}>
+                            <td className="mono">#{c.key ?? cIdx + 1}</td>
+                            <td>
+                              <span
+                                className={`sd-tag ${
+                                  c.bias === "BULLISH"
+                                    ? "sd-tag--green"
+                                    : c.bias === "BEARISH"
+                                    ? "sd-tag--red"
+                                    : "sd-tag--cyan"
+                                }`}
+                              >
+                                {c.bias || "DYNAMIC"}
+                              </span>
+                            </td>
+                            <td className="mono">L{leg.legId || lIdx + 1}</td>
+                            <td>
+                              <span
+                                className={`sd-tag ${
+                                  leg.side === "BUY" ? "sd-tag--green" : "sd-tag--red"
+                                }`}
+                              >
+                                {leg.side}
+                              </span>
+                            </td>
+                            <td className="mono">{leg.instrument?.optionType || "CE/PE"}</td>
+                            <td className="mono">
+                              {leg.instrument?.expiry?.cycle || "WEEKLY"} (
+                              {leg.instrument?.expiry?.index || 1})
+                            </td>
+                            <td className="mono text-cyan">
+                              {leg.instrument?.strike?.selector === "ATM_OFFSET"
+                                ? `ATM${
+                                    leg.instrument.strike.steps > 0
+                                      ? `+${leg.instrument.strike.steps}`
+                                      : leg.instrument.strike.steps === 0
+                                      ? ""
+                                      : leg.instrument.strike.steps
+                                  }`
+                                : leg.instrument?.strike?.selector || "ATM"}
+                            </td>
+                            <td className="mono">
+                              {leg.quantity?.value ?? 1} {leg.quantity?.unit || "LOT"}
+                            </td>
+                            <td className="mono text-red">
+                              {leg.stopLoss
+                                ? `-${leg.stopLoss.value}${
+                                    leg.stopLoss.type === "PERCENT" ? "%" : "pt"
+                                  }`
+                                : "—"}
+                            </td>
+                            <td className="mono text-green">
+                              {leg.target
+                                ? `+${leg.target.value}${
+                                    leg.target.type === "PERCENT" ? "%" : "pt"
+                                  }`
+                                : "—"}
+                            </td>
+                          </tr>
+                        ));
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Research References */}
-            {strategy.references && strategy.references.length > 0 && (
-              <div className="card-surface p-4 border border-subtle rounded-lg">
-                <h3 className="font-semibold text-primary mb-2 text-sm">Research References</h3>
-                <ul className="space-y-2 text-xs">
-                  {strategy.references.map((ref, idx) => (
-                    <li key={idx} className="border-b border-subtle/50 pb-2">
-                      <a
-                        href={ref.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-cyan hover:underline flex items-center gap-1 font-medium"
-                      >
-                        {ref.title}
-                        <ExternalLink size={11} />
-                      </a>
-                      <p className="text-muted text-[11px] mt-0.5">{ref.scope}</p>
-                    </li>
-                  ))}
-                </ul>
+            {/* Risk Notes & References Row */}
+            {((strategy.riskNotes && strategy.riskNotes.length > 0) ||
+              (strategy.references && strategy.references.length > 0)) && (
+              <div className="sd-overview-cols">
+                {strategy.riskNotes && strategy.riskNotes.length > 0 && (
+                  <div className="sd-card">
+                    <div className="sd-card-header">
+                      <span className="sd-card-title">Risk Notes</span>
+                    </div>
+                    <ul className="sd-bullet-list">
+                      {strategy.riskNotes.map((note, idx) => (
+                        <li key={idx}>{note}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {strategy.references && strategy.references.length > 0 && (
+                  <div className="sd-card">
+                    <div className="sd-card-header">
+                      <span className="sd-card-title">Research References</span>
+                    </div>
+                    <ul className="sd-ref-list">
+                      {strategy.references.map((ref, idx) => (
+                        <li key={idx} className="sd-ref-item">
+                          <a
+                            href={ref.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="sd-ref-link"
+                          >
+                            <span>{ref.title}</span>
+                            <ExternalLink size={11} />
+                          </a>
+                          <p className="sd-ref-scope">{ref.scope}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -467,51 +836,82 @@ export const StrategyDetailPage: React.FC = () => {
         )}
 
         {activeTab === "parameters" && (
-          <div className="parameters-tab card-surface p-4 border border-subtle rounded-lg">
-            <div className="flex justify-between items-center mb-4">
+          <div className="sd-card">
+            <div className="sd-card-header">
               <div>
-                <h3 className="font-semibold text-primary text-sm">Strategy Parameters</h3>
-                <p className="text-xs text-muted">
-                  Configurable threshold parameters. Modifying parameters creates a new version.
+                <span className="sd-card-title">
+                  Strategy Parameters ({paramKeys.length})
+                </span>
+                <p className="sd-card-sub">
+                  Modifying parameter defaults creates a new immutable strategy version.
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn-kite-primary text-xs"
-                onClick={handleSaveParameters}
-                disabled={updateStrategyMutation.isPending}
-              >
-                {updateStrategyMutation.isPending ? "Saving..." : "Save Parameters"}
-              </button>
+              {paramKeys.length > 0 && (
+                <div className="sd-topbar-right">
+                  <button
+                    type="button"
+                    className="sd-ctrl-btn"
+                    onClick={handleResetParameters}
+                  >
+                    <RotateCcw size={12} />
+                    <span>Reset</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="sd-ctrl-btn sd-ctrl-btn--primary"
+                    onClick={handleSaveParameters}
+                    disabled={updateStrategyMutation.isPending}
+                  >
+                    <Save size={12} />
+                    <span>
+                      {updateStrategyMutation.isPending ? "Saving…" : "Save Parameters"}
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
 
-            {Object.keys(parameters).length === 0 ? (
-              <p className="text-xs text-muted">This strategy has no parameterized variables.</p>
+            {paramKeys.length === 0 ? (
+              <div className="sd-empty-inline">
+                No configurable parameters defined for this strategy.
+              </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(parameters).map(([key, config]: any) => (
-                  <div key={key} className="form-group border border-subtle p-3 rounded">
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs font-mono font-semibold text-cyan">{key}</label>
-                      {config?.min !== undefined && (
-                        <span className="text-[10px] text-muted">
-                          Range: {config.min} – {config.max}
-                        </span>
+              <div className="sd-param-grid">
+                {Object.entries(parameters).map(([key, config]: any) => {
+                  const defaultVal =
+                    typeof config === "object" && config !== null ? config.default : config;
+                  return (
+                    <div key={key} className="sd-param-card">
+                      <div className="sd-param-head">
+                        <label className="sd-param-key">{key}</label>
+                        <div className="sd-summary-badges">
+                          {config?.min !== undefined && (
+                            <span className="sd-tag mono">
+                              {config.min} – {config.max}
+                            </span>
+                          )}
+                          {defaultVal !== undefined && (
+                            <span className="sd-tag sd-tag--cyan mono">
+                              Def: {defaultVal}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <input
+                        type="number"
+                        step="any"
+                        className="input mono"
+                        value={paramsForm[key] ?? ""}
+                        onChange={(e) =>
+                          setParamsForm({ ...paramsForm, [key]: e.target.value })
+                        }
+                      />
+                      {config?.description && (
+                        <p className="sd-param-desc">{config.description}</p>
                       )}
                     </div>
-                    <input
-                      type="number"
-                      className="input w-full text-xs"
-                      value={paramsForm[key] ?? ""}
-                      onChange={(e) =>
-                        setParamsForm({ ...paramsForm, [key]: e.target.value })
-                      }
-                    />
-                    {config?.description && (
-                      <p className="text-[11px] text-muted mt-1">{config.description}</p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -537,6 +937,13 @@ export const StrategyDetailPage: React.FC = () => {
 
         {activeTab === "test" && currentVersion && (
           <StrategyTestPanel versionId={currentVersion.id} />
+        )}
+
+        {activeTab === "backtest" && (
+          <StrategyBacktestPanel
+            strategyId={strategyId}
+            markets={strategy.markets || []}
+          />
         )}
       </div>
     </div>

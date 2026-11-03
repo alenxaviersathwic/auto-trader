@@ -28,27 +28,6 @@ export type UnderlyingType = "INDEX" | "COMMODITY";
 export type Exchange = "NSE" | "BSE" | "MCX";
 export type TradingMode = "INTRADAY" | "SHORT_TERM" | "POSITIONAL";
 export type ExecutionMode = "PAPER" | "LIVE";
-export type WeekdayCode = "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN";
-export const WEEKDAY_CODES: WeekdayCode[] = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
-
-/** Date-specific exception. active=true runs on that date, active=false blocks it. Wins over activeDays. */
-export interface DayOverride {
-  date: string; // YYYY-MM-DD
-  active: boolean;
-  reason?: string | null;
-}
-
-export interface DayShiftPayload {
-  fromDate: string;
-  toDate?: string | null;
-  reason?: string | null;
-  strategyIds?: number[] | null;
-}
-
-export interface DayShiftResult {
-  affectedCount: number;
-  strategyCodes: string[];
-}
 export type DefinitionFormat = "RULE_TREE" | "EVALUATOR" | "SUMMARY";
 export type LifecycleStatus = "DRAFT" | "IN_REVIEW" | "ACTIVE" | "SUSPENDED" | "ARCHIVED";
 export type HealthStatus = "HEALTHY" | "DEGRADED" | "SUSPENDED" | "UNKNOWN";
@@ -227,6 +206,7 @@ export interface Strategy extends BaseEntity {
   healthOverrideUntil?: string | null;
   validationStatus: ValidationStatus | string;
   enabled: boolean;
+  stopLossPct?: number | null;
   riskProfile?: Record<string, any> | null;
   references?: Array<{ title: string; url: string; scope: string }> | null;
   riskNotes?: string[] | null;
@@ -235,15 +215,12 @@ export interface Strategy extends BaseEntity {
   attributes?: Record<string, any> | null;
   provenance?: Record<string, any> | null;
   reviewFlags?: string[] | null;
-  /** Weekdays the strategy runs on. Empty = every trading day. */
-  activeDays: WeekdayCode[];
-  dayOverrides: DayOverride[];
   currentVersionId?: number | null;
   // Computed on read:
   suggestable?: boolean;
-  activeToday?: boolean;
   effectiveHealth?: HealthStatus | string;
   currentVersion?: StrategyVersion | null;
+  latestSnapshot?: PerformanceSnapshot | null;
   latestPerformance?: PerformanceSnapshot[] | null;
 }
 
@@ -284,14 +261,13 @@ export interface StrategyCreatePayload {
   executionModes?: string[];
   timeframe?: string;
   definitionFormat?: string;
+  stopLossPct?: number | null;
   riskProfile?: Record<string, any>;
   references?: Array<{ title: string; url: string; scope: string }>;
   riskNotes?: string[];
   howItWorks?: Array<{ title: string; description: string }>;
   tags?: string[];
   attributes?: Record<string, any>;
-  activeDays?: WeekdayCode[];
-  dayOverrides?: DayOverride[];
   definition: Record<string, any>;
   changeNote?: string;
 }
@@ -309,14 +285,13 @@ export interface StrategyUpdatePayload {
   tradingModes?: string[];
   executionModes?: string[];
   timeframe?: string;
+  stopLossPct?: number | null;
   riskProfile?: Record<string, any>;
   references?: Array<{ title: string; url: string; scope: string }>;
   riskNotes?: string[];
   howItWorks?: Array<{ title: string; description: string }>;
   tags?: string[];
   attributes?: Record<string, any>;
-  activeDays?: WeekdayCode[];
-  dayOverrides?: DayOverride[];
   definition?: Record<string, any>;
   changeNote?: string;
 }
@@ -461,6 +436,33 @@ export interface EvaluateResult {
     actions: any[];
   }>;
   targetLegs: any[];
+}
+
+export interface BacktestTrade {
+  entryDate: string;
+  exitDate: string;
+  side: "UP" | "DOWN";
+  entryPrice: number;
+  exitPrice: number;
+  pnlPct: number;
+  outcome: "TARGET" | "STOP" | "RULE_EXIT" | "TIME_STOP";
+}
+
+export interface BacktestResult {
+  underlyingCode: string;
+  fromDate: string;
+  toDate: string;
+  barsUsed: number;
+  totalTrades: number;
+  winRatePct: number;
+  avgWinPct: number;
+  avgLossPct: number;
+  profitFactor?: number | null;
+  expectancyPct: number;
+  totalReturnPct: number;
+  maxDrawdownPct: number;
+  note: string;
+  trades: BacktestTrade[];
 }
 
 export interface ImportBatch extends BaseEntity {

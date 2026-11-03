@@ -122,6 +122,44 @@ class UpstoxMarketData:
             return await self._with_token(session, lambda t: self._fetch_mcx(cfg, t))
         return await self._with_token(session, lambda t: self._fetch_index(cfg, t))
 
+    async def historical_daily(self, cfg: UnderlyingConfig, session: AsyncSession, years: int = 20) -> list[dict[str, Any]]:
+        """Long daily-candle history for the strategy backtester. Upstox's own retention for day+
+        intervals is far shorter than `years` (community answers say ~5 years) -- and unlike the
+        intraday endpoints, a `from` date beyond that retention is REJECTED outright with HTTP 400
+        (errorCode UDAPI1148 "Invalid date range"), not silently clipped to what it actually has.
+        Confirmed live: a 20-year request 400'd. So this backs the lookback window off (20y, then
+        10y, 7y, 5y, 4y, 3y, 2y, 1y, capped at `years`) and returns the first window Upstox accepts,
+        rather than hardcoding a retention guess that can go stale or vary by instrument.
+        Index underlyings only: MCX futures roll monthly and Upstox has no historical series for an
+        expired contract, so there is no single instrument key to request years of MCX history from."""
+        key = cfg.instrumentKey
+        if not key:
+            raise MarketDataUnavailable(f"{cfg.code}: no fixed instrument key for long-range history "
+                                         f"(MCX futures roll monthly -- not backtestable this way)")
+
+        async def run(token: str) -> list[dict[str, Any]]:
+            async with self._client(token) as c:
+                today = datetime.now(_IST).date()
+                k = key.replace("|", "%7C")
+                candidate_years = sorted({y for y in (years, 10, 7, 5, 4, 3, 2, 1) if y <= years}, reverse=True)
+                last_err: MarketDataUnavailable | None = None
+                for y in candidate_years:
+                    frm = today - timedelta(days=365 * y)
+                    try:
+                        r = await self._get(
+                            c, f"{BASE}/v3/historical-candle/{k}/days/1/{today.isoformat()}/{frm.isoformat()}",
+                            "backtest daily candles",
+                        )
+                    except MarketDataUnavailable as e:
+                        last_err = e
+                        if "Invalid date range" in str(e) or "UDAPI1148" in str(e):
+                            continue  # too far back for Upstox's retention -- shrink the window and retry
+                        raise  # a different failure (bad key, auth, etc.) -- no point retrying shorter windows
+                    return _bars((r.json().get("data") or {}).get("candles", []))
+                raise last_err or MarketDataUnavailable(f"{cfg.code}: Upstox rejected every date range tried")
+
+        return await self._with_token(session, run)
+
     async def ltp(self, keys: list[str], session: AsyncSession) -> dict[str, float]:
         """Light re-price of a few instruments (used after a slow AI step)."""
         keys = [k for k in dict.fromkeys(keys) if k]
@@ -132,6 +170,41 @@ class UpstoxMarketData:
             async with self._client(token) as c:
                 data = await self._quotes(c, keys, "ltp")
             return {k: float(v.get("last_price") or 0) for k, v in data.items() if v.get("last_price")}
+
+        return await self._with_token(session, run)
+
+    async def candles_1m_range(
+        self, key: str, from_date: str, to_date: str, session: AsyncSession
+    ) -> list[dict[str, Any]]:
+        """1-minute candles for an instrument across [from_date, to_date] (YYYY-MM-DD in IST),
+        combining Upstox historical 1-minute candles with today's intraday candles when needed."""
+        if not key:
+            return []
+
+        async def run(token: str) -> list[dict[str, Any]]:
+            today = datetime.now(_IST).strftime("%Y-%m-%d")
+            k = key.replace("|", "%7C")
+            bars: list[dict[str, Any]] = []
+            async with self._client(token) as c:
+                if from_date < today or to_date < today:
+                    try:
+                        r = await self._get(
+                            c,
+                            f"{BASE}/v2/historical-candle/{k}/1minute/{to_date}/{from_date}",
+                            "historical 1m candles",
+                        )
+                        bars.extend(_bars((r.json().get("data") or {}).get("candles", [])))
+                    except MarketDataUnavailable as e:
+                        logger.warning(f"[CANDLES_1M_HIST_UNAVAILABLE] {key}: {e}")
+                if to_date >= today:
+                    try:
+                        bars.extend(await self._intraday(c, key))
+                    except MarketDataUnavailable as e:
+                        logger.warning(f"[CANDLES_1M_INTRA_UNAVAILABLE] {key}: {e}")
+            seen: dict[str, dict[str, Any]] = {}
+            for b in bars:
+                seen[b["t"]] = b
+            return sorted(seen.values(), key=lambda x: x["t"])
 
         return await self._with_token(session, run)
 
@@ -385,6 +458,8 @@ def _chain(expiry: str, spot: float, strikes: list[dict[str, Any]]) -> dict[str,
         "expiry": expiry,
         "spot": spot,
         "pcr": round(tot_pe / tot_ce, 2),
+        "ceOi": tot_ce,
+        "peOi": tot_pe,
         "resistance": call_wall["strike"] if call_wall and call_wall["CE"]["oi"] > 0 else None,
         "support": put_wall["strike"] if put_wall and put_wall["PE"]["oi"] > 0 else None,
         "atmStraddle": round(straddle, 2),

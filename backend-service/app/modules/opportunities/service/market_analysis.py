@@ -9,7 +9,7 @@ Pure functions (no I/O) so every number can be unit-tested:
   volume       latest completed 5-minute futures bar vs the previous 12
   OI buildup   futures price change vs OI change over the last 3 completed 5-minute bars
   regime       TREND / RANGE / MIXED / VOLATILE
-  session      time window + hard no-entry windows (first 10 minutes, last 25 minutes)
+  session      time window + hard no-entry windows (first 5 minutes, 12:00-13:30 chop, last 25 minutes)
 """
 
 from datetime import datetime
@@ -18,7 +18,9 @@ from zoneinfo import ZoneInfo
 
 _IST = ZoneInfo("Asia/Kolkata")
 OPENING_RANGE_MINUTES = 15
-NO_ENTRY_AFTER_OPEN_MIN = 10
+NO_ENTRY_AFTER_OPEN_MIN = 5
+CHOP_BLOCK_START = 12 * 60  # equity-hours lunch lull: no new entries 12:00-13:30 IST
+CHOP_BLOCK_END = 13 * 60 + 30
 NO_ENTRY_BEFORE_CLOSE_MIN = 25
 
 
@@ -133,6 +135,53 @@ def cpr(h: float, l: float, c: float) -> dict[str, float]:
             "widthPct": (hi - lo) / p * 100 if p else 0.0}
 
 
+def supertrend(bars: list[dict[str, Any]], n: int = 10, mult: float = 3.0) -> dict[str, Any] | None:
+    """Supertrend(n, mult) on completed bars. Returns {dir, line, flipIdx, barsSinceFlip} or None (too few bars)."""
+    if len(bars) < n + 2:
+        return None
+    trs = [bars[0]["h"] - bars[0]["l"]] + [
+        max(b["h"] - b["l"], abs(b["h"] - p["c"]), abs(b["l"] - p["c"])) for p, b in zip(bars, bars[1:])
+    ]
+    atrs: list[float] = []
+    for i in range(len(bars)):
+        w = trs[max(0, i - n + 1): i + 1]
+        atrs.append(sum(w) / len(w))
+    fu = fl = 0.0
+    direction = 1
+    flip_idx = 0
+    line = 0.0
+    for i, b in enumerate(bars):
+        mid = (b["h"] + b["l"]) / 2
+        bu, bl = mid + mult * atrs[i], mid - mult * atrs[i]
+        if i == 0:
+            fu, fl = bu, bl
+            line = fl
+            continue
+        pc = bars[i - 1]["c"]
+        fu = bu if (bu < fu or pc > fu) else fu
+        fl = bl if (bl > fl or pc < fl) else fl
+        prev_dir = direction
+        if direction == 1 and b["c"] < fl:
+            direction = -1
+        elif direction == -1 and b["c"] > fu:
+            direction = 1
+        if direction != prev_dir:
+            flip_idx = i
+        line = fl if direction == 1 else fu
+    return {"dir": "UP" if direction == 1 else "DOWN", "line": line, "flipIdx": flip_idx,
+            "barsSinceFlip": len(bars) - 1 - flip_idx}
+
+
+def oi_shift(prev: dict[str, float] | None, cur: dict[str, float] | None) -> dict[str, Any] | None:
+    """Option-chain OI change between two snapshots {pcr, ceOi, peOi}: PCR drift and which side is being written."""
+    if not prev or not cur or not prev.get("ceOi") or not prev.get("peOi"):
+        return None
+    ce = (cur["ceOi"] - prev["ceOi"]) / prev["ceOi"] * 100
+    pe = (cur["peOi"] - prev["peOi"]) / prev["peOi"] * 100
+    return {"pcrChg": round(cur["pcr"] - prev["pcr"], 3), "ceOiChgPct": round(ce, 2), "peOiChgPct": round(pe, 2),
+            "pcr": cur["pcr"]}
+
+
 # ───────────────────────── session ─────────────────────────
 def session_info(open_hhmm: str, close_hhmm: str, now: datetime | None = None) -> dict[str, Any]:
     now = (now or datetime.now(_IST)).astimezone(_IST)
@@ -151,6 +200,8 @@ def session_info(open_hhmm: str, close_hhmm: str, now: datetime | None = None) -
         blocked = f"no new entries in the first {NO_ENTRY_AFTER_OPEN_MIN} minutes (opening noise)"
     elif to_close < NO_ENTRY_BEFORE_CLOSE_MIN:
         blocked = f"no new entries in the last {NO_ENTRY_BEFORE_CLOSE_MIN} minutes"
+    elif CHOP_BLOCK_START <= m < CHOP_BLOCK_END and _mins(close_hhmm) <= 16 * 60:
+        blocked = "no new entries in the 12:00-13:30 midday chop"
     return {"nowMin": m, "minutesSinceOpen": since, "minutesToClose": to_close, "window": window, "blocked": blocked}
 
 
@@ -171,7 +222,9 @@ def analyze(cfg: Any, market: dict[str, Any], now: datetime | None = None) -> di
     p15d = [b for b in p15 if b["done"]]
     daily = market.get("daily") or []
 
-    out: dict[str, Any] = {"session": sess, "bars5": p5d, "futBars5": f5d}
+    # completed 1-minute bars (the minute still forming is excluded): the entry-timing timeframe
+    p1d = [b for b in p1 if _bar_min(b["t"]) < now_min]
+    out: dict[str, Any] = {"session": sess, "bars5": p5d, "futBars5": f5d, "bars1": p1d, "bars15": p15d}
 
     # levels
     lv: dict[str, Any] = {}
@@ -202,6 +255,10 @@ def analyze(cfg: Any, market: dict[str, Any], now: datetime | None = None) -> di
     if closes5:
         e9, e20, e21 = ema(closes5, 9)[-1], ema(closes5, 20)[-1], ema(closes5, 21)[-1]
         out["ema5"] = {"ema9": e9, "ema20": e20, "ema21": e21}
+    if len(closes5) >= 4:
+        e9s, e21s = ema(closes5, 9), ema(closes5, 21)
+        out["emaSeries5"] = {"e9": e9s[-14:], "e21": e21s[-14:]}
+    out["supertrend5"] = supertrend(p5d)
     out["atr5"] = atr(p5d, 14) if p5d else 0.0
     out["adx5"] = adx(p5d, 14)
     closes15 = [b["c"] for b in p15d]
@@ -209,6 +266,12 @@ def analyze(cfg: Any, market: dict[str, Any], now: datetime | None = None) -> di
         f9, f21 = ema(closes15, 9)[-1], ema(closes15, 21)[-1]
         last = closes15[-1]
         out["trend15"] = "UP" if last > f9 > f21 else "DOWN" if last < f9 < f21 else "FLAT"
+        out["trend15Source"] = "15m"
+    elif len(closes5) >= 9:
+        # first ~45 minutes: fewer than 3 closed 15-minute bars, so use the 5-minute 9/21 EMAs as the proxy
+        f9, f21, last = ema(closes5, 9)[-1], ema(closes5, 21)[-1], closes5[-1]
+        out["trend15"] = "UP" if last > f9 > f21 else "DOWN" if last < f9 < f21 else "FLAT"
+        out["trend15Source"] = "5m-proxy"
     else:
         out["trend15"] = "FLAT"
 
@@ -243,7 +306,8 @@ def analyze(cfg: Any, market: dict[str, Any], now: datetime | None = None) -> di
     chains = market.get("chains") or []
     if chains:
         ch = chains[0]
-        out["oi"] = {"resistance": ch.get("resistance"), "support": ch.get("support"), "pcr": ch.get("pcr")}
+        out["oi"] = {"resistance": ch.get("resistance"), "support": ch.get("support"), "pcr": ch.get("pcr"),
+                     "ceOi": ch.get("ceOi"), "peOi": ch.get("peOi")}
         if ch.get("atmStraddle") and spot:
             out["expectedMovePct"] = round(ch["atmStraddle"] / spot * 100, 2)
     vix = market.get("vix")

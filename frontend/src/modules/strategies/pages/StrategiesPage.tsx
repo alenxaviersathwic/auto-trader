@@ -19,12 +19,11 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  CalendarDays,
 } from "lucide-react";
-import { DayShiftModal } from "../components/DayShiftModal";
 import { NeedsAttentionBanner } from "../components/NeedsAttentionBanner";
 import { StrategyCard } from "../components/StrategyCard";
 import {
+  useBacktestAllStrategies,
   useCloneStrategy,
   useDeleteStrategy,
   useSeedDefaults,
@@ -57,13 +56,12 @@ export const StrategiesPage: React.FC = () => {
   });
 
   const [searchInput, setSearchInput] = useState<string>("");
-  const [showDayShift, setShowDayShift] = useState<boolean>(false);
-
   const { data, isLoading, refetch } = useStrategiesSearch(filter);
   const deleteMutation = useDeleteStrategy();
   const cloneMutation = useCloneStrategy();
   const toggleEnabledMutation = useUpdateStrategyEnabled();
   const seedDefaultsMutation = useSeedDefaults();
+  const backtestAllMutation = useBacktestAllStrategies();
 
   const strategies: Strategy[] = data?.list || [];
   const totalItems = data?.totalItems || 0;
@@ -159,6 +157,34 @@ export const StrategiesPage: React.FC = () => {
     }
   };
 
+  const handleBacktestAll = () => {
+    if (
+      window.confirm(
+        "Backtest every strategy against up to 20 years of daily bars and save the results " +
+          "as BACKTEST-source performance snapshots? Strategies with no rule tree, MCX-only " +
+          "markets, or no history available will be skipped. This can take a while."
+      )
+    ) {
+      backtestAllMutation.mutate(20, {
+        onSuccess: (res) => {
+          alert(
+            `Backtest run complete.\n\n` +
+              `Backtested: ${res.backtested} / ${res.total}\n` +
+              `Skipped (no rule tree / MCX / no data): ${res.skipped}\n` +
+              `Errors: ${res.errors}\n\n` +
+              `Results show up on each strategy's Performance tab under the BACKTEST source. ` +
+              `Note: the ₹ net P&L and drawdown there are notional figures (assumed capital × ` +
+              `the underlying's % move) -- not real option-premium P&L.`
+          );
+          refetch();
+        },
+        onError: (err: any) => {
+          alert(`Backtest run failed: ${err?.message || err}`);
+        },
+      });
+    }
+  };
+
   const startRecord = totalItems === 0 ? 0 : filter.page * filter.limit + 1;
   const endRecord = Math.min((filter.page + 1) * filter.limit, totalItems);
 
@@ -223,10 +249,10 @@ export const StrategiesPage: React.FC = () => {
           <button
             type="button"
             className="sp-btn"
-            onClick={() => setShowDayShift(true)}
-            title="Block a holiday and move strategies to another date"
+            onClick={handleBacktestAll}
+            disabled={backtestAllMutation.isPending}
           >
-            <CalendarDays size={13} /> Holiday Shift
+            {backtestAllMutation.isPending ? "Backtesting..." : "Backtest All"}
           </button>
 
           <button
@@ -928,8 +954,6 @@ export const StrategiesPage: React.FC = () => {
 
       {/* Tab 2: Rules View */}
       {activeTab === "rules" && <RulesPage showHeader={false} />}
-
-      {showDayShift && <DayShiftModal onClose={() => setShowDayShift(false)} />}
     </div>
   );
 };

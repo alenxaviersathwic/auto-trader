@@ -13,6 +13,9 @@ class UnderlyingState(TypedDict, total=False):
     setups: list[dict[str, Any]]
     strategies: list[str]
     strategyNames: list[str]
+    strategyTags: dict[str, list[str]]
+    strategyStopLoss: dict[str, float]
+    dayTags: list[str]
     memory: list[str]
     hitRate: str
     bias: str
@@ -25,4 +28,5 @@ class UnderlyingState(TypedDict, total=False):
     error: str | None
     candidates: list[dict[str, Any]]
     note: str
+    diag: dict[str, Any]
 

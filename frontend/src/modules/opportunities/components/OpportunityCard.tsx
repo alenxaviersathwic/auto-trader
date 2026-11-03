@@ -1,217 +1,395 @@
 import React from "react";
 import {
+  Activity,
   AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
   Calendar,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   Clock,
-  Cpu,
+  Loader2,
   Shield,
   Sparkles,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import { Opportunity } from "../types/opportunities.types";
-import { formatDateTime, formatExpiry, formatRupee, formatTime } from "./formatters";
+import { Opportunity, OpportunityCheckItem } from "../types/opportunities.types";
+import { OpportunityCheckChart } from "./OpportunityCheckChart";
+import {
+  formatCompactRupee,
+  formatDateTime,
+  formatExpiry,
+  formatRupee,
+  formatTime,
+  getMoneyness,
+} from "./formatters";
+import { LOT_SIZES } from "./underlyingNames";
 
-const OUTCOME_BADGE: Record<Opportunity["outcome"], { label: string; cls: string }> = {
-  PENDING: { label: "ACTIVE", cls: "badge--green" },
-  TARGET_HIT: { label: "TARGET HIT", cls: "badge--blue" },
-  STOP_HIT: { label: "STOP HIT", cls: "badge--red" },
-  EXPIRED: { label: "EXPIRED", cls: "badge--slate" },
+const OUTCOME_CONFIG: Record<
+  Opportunity["outcome"],
+  { label: string; cls: string; dot: string }
+> = {
+  PENDING: { label: "LIVE", cls: "oc-badge--active", dot: "var(--bullish-green)" },
+  TARGET_HIT: { label: "TARGET HIT", cls: "oc-badge--target", dot: "var(--kite-blue)" },
+  STOP_HIT: { label: "STOP HIT", cls: "oc-badge--stop", dot: "var(--bearish-red)" },
+  EXPIRED: { label: "CLOSED", cls: "oc-badge--expired", dot: "var(--text-muted)" },
 };
 
-const RISK_BADGE: Record<Opportunity["riskLevel"], string> = {
-  LOW: "badge--green",
-  MEDIUM: "badge--amber",
-  HIGH: "badge--red",
+const RISK_CONFIG: Record<Opportunity["riskLevel"], { label: string; cls: string }> = {
+  LOW: { label: "LOW RISK", cls: "oc-risk--low" },
+  MEDIUM: { label: "MED RISK", cls: "oc-risk--med" },
+  HIGH: { label: "HIGH RISK", cls: "oc-risk--high" },
 };
 
-export const OpportunityCard: React.FC<{ opportunity: Opportunity }> = ({ opportunity: s }) => {
-  const [collapsed, setCollapsed] = React.useState(false);
-  const outcome =
-    s.expired && s.outcome === "PENDING" ? OUTCOME_BADGE.EXPIRED : OUTCOME_BADGE[s.outcome];
-  const range = s.target - s.stop || 1;
-  const entryPct = Math.min(100, Math.max(0, ((s.entry - s.stop) / range) * 100));
-  const stopPct = ((s.stop - s.entry) / s.entry) * 100;
-  const targetPct = ((s.target - s.entry) / s.entry) * 100;
-  const gain = s.target - s.entry;
+export const OpportunityCard: React.FC<{
+  opportunity: Opportunity;
+  checkResult?: OpportunityCheckItem;
+  isChecking?: boolean;
+  onCheck?: (opportunityId: number) => void;
+  defaultExpanded?: boolean;
+}> = ({ opportunity: s, checkResult, isChecking = false, onCheck, defaultExpanded = true }) => {
+  const [collapsed, setCollapsed] = React.useState(!defaultExpanded);
+
   const isCall = s.optionType === "CE";
+  const outcomeKey = s.expired && s.outcome === "PENDING" ? "EXPIRED" : s.outcome;
+  const outcome = OUTCOME_CONFIG[outcomeKey];
+  const risk = RISK_CONFIG[s.riskLevel] ?? RISK_CONFIG.MEDIUM;
+
+  const lotSize = LOT_SIZES[s.underlyingCode] ?? 25;
+  const entryCapital = s.entry * lotSize;
+  const maxRiskPoints = Math.max(0, s.entry - s.stop);
+  const maxRiskPerLot = maxRiskPoints * lotSize;
+  const targetGainPoints = Math.max(0, s.target - s.entry);
+  const targetGainPerLot = targetGainPoints * lotSize;
+
+  const stopPct = s.entry > 0 ? ((s.stop - s.entry) / s.entry) * 100 : 0;
+  const targetPct = s.entry > 0 ? ((s.target - s.entry) / s.entry) * 100 : 0;
+
+  const moneyness = getMoneyness(s.spot, s.strike, s.optionType);
 
   return (
-    <div className={`sugg-card ${isCall ? "sugg-card--call" : "sugg-card--put"} ${s.expired ? "sugg-card--expired" : ""}`}>
-      {/* Card Header */}
-      <div className="sugg-head">
-        <div className="sugg-head-left">
-          <span className="sugg-rank mono">#{s.rank}</span>
-
-          <div className="sugg-contract-pill">
-            <span className="sugg-underlying">{s.underlyingCode}</span>
-            <span className="sugg-strike mono">
-              {s.strike} {s.optionType}
-            </span>
-            <span className="sugg-spot mono">Spot {formatRupee(s.spot)}</span>
+    <div
+      className={`oc-card ${isCall ? "oc-card--call" : "oc-card--put"} ${
+        s.expired ? "oc-card--expired" : ""
+      }`}
+    >
+      {/* ── 1. Compact Header Bar ── */}
+      <div className="oc-head">
+        <div className="oc-head-left">
+          <div className="oc-rank-badge" title={`Ranked #${s.rank}`}>
+            #{s.rank}
           </div>
 
-          <span className={`badge ${isCall ? "badge--green" : "badge--red"}`}>
-            {isCall ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-            {isCall ? "CALL" : "PUT"}
-          </span>
+          <div className={`oc-action-badge ${isCall ? "is-call" : "is-put"}`}>
+            {isCall ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+            <span>BUY {isCall ? "CE" : "PE"}</span>
+          </div>
 
-          <span className="badge badge--amber">
-            <Calendar size={11} /> EXP {formatExpiry(s.expiry)}
-          </span>
+          <div className="oc-contract-block">
+            <span className="oc-strike-val mono">
+              {s.underlyingCode} {s.strike.toLocaleString("en-IN")} {s.optionType}
+            </span>
+            <span
+              className={`oc-moneyness-tag ${
+                moneyness.label === "ATM"
+                  ? "is-atm"
+                  : moneyness.label === "ITM"
+                  ? "is-itm"
+                  : "is-otm"
+              }`}
+            >
+              {moneyness.diffFormatted}
+            </span>
+          </div>
+
+          <div className="oc-expiry-tag mono">
+            <Calendar size={11} />
+            <span>{formatExpiry(s.expiry)}</span>
+          </div>
+
+          {s.spot > 0 && (
+            <div className="oc-spot-ref mono">
+              <span>Spot</span>
+              <span className="oc-spot-val">{formatRupee(s.spot)}</span>
+            </div>
+          )}
         </div>
 
-        <div className="sugg-head-right">
-          <span className="sugg-score-pill mono">
-            <Sparkles size={12} />
-            <span>{s.confidence.toFixed(1)}</span>
-            <span className="sugg-score-max">/100</span>
-          </span>
+        <div className="oc-head-right">
+          {/* Edge Score */}
+          <div className="oc-edge-chip mono" title="Confidence Score">
+            <Sparkles size={11} />
+            <span className="oc-edge-val">{s.confidence.toFixed(0)}%</span>
+          </div>
 
-          <span className={`badge ${outcome.cls}`}>{outcome.label}</span>
+          {/* Risk Level */}
+          <div className={`oc-risk-pill ${risk.cls}`}>
+            <Shield size={11} />
+            <span>{risk.label}</span>
+          </div>
 
-          <span className={`badge ${RISK_BADGE[s.riskLevel]}`}>
-            <Shield size={11} /> {s.riskLevel}
-          </span>
+          {/* Outcome Status */}
+          <div className={`oc-status-pill ${outcome.cls}`}>
+            <span className="oc-status-dot" style={{ background: outcome.dot }} />
+            <span>{outcome.label}</span>
+          </div>
 
-          {s.risks[0]?.startsWith("Against") && (
-            <span className="badge badge--amber">AGAINST TREND</span>
+          {/* Tested Achieved % Pill (if checked) */}
+          {checkResult && (
+            <span
+              className={`badge mono ${
+                checkResult.achievedPct >= 100
+                  ? "badge--green"
+                  : checkResult.achievedPct >= 0
+                  ? "badge--blue"
+                  : "badge--red"
+              }`}
+              title={`Checked over ${formatTime(checkResult.createdAt)} → ${formatTime(checkResult.validUntil)} IST`}
+            >
+              {checkResult.achievedPct >= 100
+                ? "100% HIT"
+                : checkResult.achievedPct > 0
+                ? `+${checkResult.achievedPct.toFixed(1)}%`
+                : `${checkResult.achievedPct.toFixed(1)}%`}
+            </span>
           )}
 
+          {/* Dedicated Terminal Action Button: Check Outcome */}
+          {onCheck && (
+            <button
+              type="button"
+              className={`oc-check-btn ${checkResult ? "oc-check-btn--done" : ""}`}
+              onClick={() => {
+                setCollapsed(false);
+                onCheck(s.id);
+              }}
+              disabled={isChecking}
+              title="Verify actual option price path from entry time to validUntil window"
+            >
+              {isChecking ? (
+                <Loader2 size={11} className="sp-spin" />
+              ) : (
+                <Activity size={11} />
+              )}
+              <span>{checkResult ? "Re-check" : "Check Result"}</span>
+            </button>
+          )}
+
+          {/* Expand/Collapse Toggle */}
           <button
             type="button"
-            className="sugg-toggle-btn"
+            className="oc-collapse-btn"
             onClick={() => setCollapsed((c) => !c)}
-            title={collapsed ? "Expand contract details" : "Collapse contract details"}
+            title={collapsed ? "Expand details" : "Collapse details"}
+            aria-label={collapsed ? "Expand details" : "Collapse details"}
           >
-            {collapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+            {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
           </button>
         </div>
       </div>
 
       {!collapsed && (
-        <>
-          {/* Execution Price Levels & R:R Bar */}
-          <div className="sugg-levels-panel">
-            <div className="sugg-levels-grid">
-              <div className="sugg-level-box sugg-level-box--stop">
-                <div className="sugg-level-label">Stop Loss</div>
-                <div className="sugg-level-val sugg-down">{formatRupee(s.stop)}</div>
-                <div className="sugg-level-sub sugg-down mono">{stopPct.toFixed(1)}% risk</div>
+        <div className="oc-body">
+          {/* ── 2. Compact 4-Cell Trade Plan Strip (Entry / Target / Stop / R:R & Lot) ── */}
+          <div className="oc-compact-strip">
+            <div className="oc-compact-cell oc-compact-cell--entry">
+              <div className="oc-compact-top">
+                <span>ENTRY PREMIUM</span>
+                <span className="mono entry">1 Lot = {lotSize}</span>
               </div>
-
-              <div className="sugg-level-box sugg-level-box--entry">
-                <div className="sugg-level-label">Entry Premium</div>
-                <div className="sugg-level-val sugg-entry">{formatRupee(s.entry)}</div>
-                <div className="sugg-level-sub mono">
-                  {s.strike} {s.optionType} · INTRADAY
-                </div>
-              </div>
-
-              <div className="sugg-level-box sugg-level-box--target">
-                <div className="sugg-level-label">Profit Target</div>
-                <div className="sugg-level-val sugg-up">{formatRupee(s.target)}</div>
-                <div className="sugg-level-sub sugg-up mono">
-                  +{targetPct.toFixed(1)}% (+{formatRupee(gain)})
-                </div>
-              </div>
+              <div className="oc-compact-val entry">{formatRupee(s.entry)}</div>
+              <div className="oc-compact-sub">Cap: {formatCompactRupee(entryCapital)} / lot</div>
             </div>
 
-            <div className="sugg-bar-wrap">
-              <div className="sugg-bar">
-                <div className="sugg-bar-risk" style={{ width: `${entryPct}%` }} />
-                <div className="sugg-bar-target" style={{ width: `${100 - entryPct}%` }} />
+            <div className="oc-compact-cell oc-compact-cell--target">
+              <div className="oc-compact-top">
+                <span>TARGET</span>
+                <span className="mono pos">
+                  <ArrowUpRight size={11} />+{targetPct.toFixed(1)}%
+                </span>
               </div>
-              <div
-                className="sugg-bar-marker"
-                style={{ left: `${entryPct}%` }}
-                title={`Entry at ${formatRupee(s.entry)}`}
-              />
+              <div className="oc-compact-val pos">{formatRupee(s.target)}</div>
+              <div className="oc-compact-sub">Gain: +{formatCompactRupee(targetGainPerLot)} / lot</div>
             </div>
 
-            <div className="sugg-bar-legend">
-              <div className="sugg-legend-items">
-                <span className="sugg-down">● Risk Zone</span>
-                <span className="sugg-entry">● Entry Execution</span>
-                <span className="sugg-up">● Target Zone</span>
+            <div className="oc-compact-cell oc-compact-cell--stop">
+              <div className="oc-compact-top">
+                <span>STOP LOSS</span>
+                <span className="mono neg">
+                  <ArrowDownRight size={11} />
+                  {stopPct.toFixed(1)}%
+                </span>
               </div>
-              <div className="sugg-legend-right">
-                <span className="sugg-timestamp mono">{formatDateTime(s.createdAt)}</span>
-                <span className="badge badge--blue sugg-rr">1 : {s.rewardRisk.toFixed(2)} R:R</span>
+              <div className="oc-compact-val neg">{formatRupee(s.stop)}</div>
+              <div className="oc-compact-sub">Risk: -{formatCompactRupee(maxRiskPerLot)} / lot</div>
+            </div>
+
+            <div className="oc-compact-cell oc-compact-cell--rr">
+              <div className="oc-compact-top">
+                <span>REWARD : RISK</span>
+                <span className="mono" style={{ color: "var(--cyan)" }}>
+                  {s.source}
+                </span>
+              </div>
+              <div className="oc-compact-val">1 : {s.rewardRisk.toFixed(2)}</div>
+              <div className="oc-compact-sub">
+                {s.expired ? "Window Closed" : `Valid → ${formatTime(s.validUntil)}`}
               </div>
             </div>
           </div>
 
-          {/* 4-Column Contract Metadata Strip */}
-          <div className="sugg-specs-grid">
-            <div className="sugg-spec-cell">
-              <div className="sugg-spec-label">Potential Gain</div>
-              <div className="sugg-spec-value sugg-up mono">
-                +{s.profitMarginPct.toFixed(1)}%{" "}
-                <span className="sugg-gain-chip">+{formatRupee(gain)}</span>
+          {/* ── 3. Tested Result Graph + Sub-Table (Shown when Check Result is clicked) ── */}
+          {checkResult && (
+            <div className="oc-test-panel">
+              <div className="oc-test-head">
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Activity size={13} style={{ color: "var(--cyan)" }} />
+                  <span className="mono font-bold" style={{ color: "var(--text-heading)" }}>
+                    TESTED RESULT · {formatTime(checkResult.createdAt)} → {formatTime(checkResult.validUntil)} IST
+                  </span>
+                  <span
+                    className={`badge mono ${
+                      checkResult.targetAchieved
+                        ? "badge--green"
+                        : checkResult.outcome === "STOP_HIT" || checkResult.achievedPct < 0
+                        ? "badge--red"
+                        : "badge--blue"
+                    }`}
+                  >
+                    {checkResult.targetAchieved
+                      ? "TARGET ACHIEVED (100%)"
+                      : checkResult.outcome === "STOP_HIT"
+                      ? `STOP HIT (${checkResult.achievedPct.toFixed(1)}%)`
+                      : `${checkResult.achievedPct > 0 ? "+" : ""}${checkResult.achievedPct.toFixed(1)}% OF TARGET`}
+                  </span>
+                </div>
+                <span className="mono" style={{ color: "var(--text-muted)" }}>
+                  {checkResult.candlesChecked}×1m bars
+                  {checkResult.hitAt
+                    ? ` · Hit at ${formatTime(checkResult.hitAt)}`
+                    : checkResult.windowEnded
+                    ? " · Window Ended"
+                    : " · Live In-Market"}
+                </span>
               </div>
-            </div>
 
-            <div className="sugg-spec-cell">
-              <div className="sugg-spec-label">
-                <Clock size={11} /> Entry Window
-              </div>
-              <div className="sugg-spec-value mono">
-                {s.expired ? (
-                  <span className="sugg-down">Window closed</span>
-                ) : (
-                  `Until ${formatTime(s.validUntil)} IST`
-                )}
-              </div>
-            </div>
+              {/* Graph View with Entry / Target / Stop / Actual Trajectory */}
+              <OpportunityCheckChart checkResult={checkResult} />
 
-            <div className="sugg-spec-cell">
-              <div className="sugg-spec-label">Strategy Regime</div>
-              <div className="sugg-spec-value">{s.strategy ?? "Momentum Setup"}</div>
-            </div>
-
-            <div className="sugg-spec-cell">
-              <div className="sugg-spec-label">
-                <Cpu size={11} /> {s.source === "AI" ? "AI" : "Baseline"} Snapshot
+              {/* Compact 6-Column Tested Sub-Table Strip */}
+              <div className="oc-test-kpis">
+                <div className="oc-test-kpi">
+                  <span className="oc-test-kpi-lbl">Entry Mark</span>
+                  <span className="oc-test-kpi-val">{formatRupee(checkResult.entry)}</span>
+                </div>
+                <div className="oc-test-kpi">
+                  <span className="oc-test-kpi-lbl">Target / Stop</span>
+                  <span className="oc-test-kpi-val">
+                    <span className="pos">{formatRupee(checkResult.target)}</span>
+                    <span style={{ color: "var(--text-muted)" }}> / </span>
+                    <span className="neg">{formatRupee(checkResult.stop)}</span>
+                  </span>
+                </div>
+                <div className="oc-test-kpi">
+                  <span className="oc-test-kpi-lbl">Peak / Low</span>
+                  <span className="oc-test-kpi-val">
+                    <span className="pos">{formatRupee(checkResult.peakPrice)}</span>
+                    <span style={{ color: "var(--text-muted)" }}> / </span>
+                    <span className="neg">{formatRupee(checkResult.troughPrice)}</span>
+                  </span>
+                </div>
+                <div className="oc-test-kpi">
+                  <span className="oc-test-kpi-lbl">Actual Exit / Mark</span>
+                  <span className="oc-test-kpi-val">{formatRupee(checkResult.exitPrice)}</span>
+                </div>
+                <div className="oc-test-kpi">
+                  <span className="oc-test-kpi-lbl">Option P&amp;L %</span>
+                  <span
+                    className={`oc-test-kpi-val ${
+                      checkResult.pnlPct >= 0 ? "pos" : "neg"
+                    }`}
+                  >
+                    {checkResult.pnlPct > 0 ? `+${checkResult.pnlPct.toFixed(2)}%` : `${checkResult.pnlPct.toFixed(2)}%`}
+                  </span>
+                </div>
+                <div className="oc-test-kpi">
+                  <span className="oc-test-kpi-lbl">Target Achieved %</span>
+                  <span
+                    className={`oc-test-kpi-val ${
+                      checkResult.achievedPct >= 100
+                        ? "pos"
+                        : checkResult.achievedPct < 0
+                        ? "neg"
+                        : ""
+                    }`}
+                  >
+                    {checkResult.achievedPct >= 100
+                      ? "100%"
+                      : checkResult.achievedPct > 0
+                      ? `+${checkResult.achievedPct.toFixed(1)}%`
+                      : `${checkResult.achievedPct.toFixed(1)}%`}
+                  </span>
+                </div>
               </div>
-              <div className="sugg-spec-value mono sugg-muted">#{s.ref}</div>
             </div>
+          )}
+
+          {/* ── 4. Compact Single-Line Meta + Rationale & Watchouts ── */}
+          <div className="oc-meta-inline">
+            <div className="oc-meta-inline-group">
+              <span className="oc-meta-kv">
+                <span className="oc-meta-k">Setup:</span>
+                <strong className="mono" style={{ color: "var(--text-heading)" }}>
+                  {s.strategy || "Intraday Momentum"}
+                </strong>
+              </span>
+              <span className="oc-meta-kv mono">
+                <Clock size={11} />
+                <span>
+                  {formatDateTime(s.createdAt)} → {formatTime(s.validUntil)} IST
+                </span>
+              </span>
+            </div>
+            <span className="mono" style={{ color: "var(--text-muted)", fontSize: "0.66rem" }}>
+              Ref #{s.ref.slice(-11)}
+            </span>
           </div>
 
-          {/* Rationale & Risk Factors */}
           {(s.reasons.length > 0 || s.risks.length > 0) && (
-            <div className="sugg-rationale">
+            <div className="oc-insights-row">
               {s.reasons.length > 0 && (
-                <div className="sugg-reasons-block">
-                  <div className="sugg-rationale-title">
-                    <CheckCircle2 size={12} className="sugg-up" />
-                    <span>Setup Rationale &amp; Drivers</span>
+                <div className="oc-reasons-card">
+                  <div className="oc-insights-title pos">
+                    <CheckCircle2 size={11} />
+                    <span>Why This Setup</span>
                   </div>
-                  <ul className="sugg-reasons-list">
-                    {s.reasons.map((r) => (
-                      <li key={r}>{r}</li>
+                  <ul className="oc-reasons-list">
+                    {s.reasons.map((r, i) => (
+                      <li key={i}>{r}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
               {s.risks.length > 0 && (
-                <div className="sugg-risks-bar">
-                  <AlertTriangle size={13} className="sugg-risks-icon" />
-                  <div>
-                    <span className="sugg-risks-label">Risk Factors: </span>
-                    <span>{s.risks.join(" · ")}</span>
+                <div className="oc-risks-card">
+                  <div className="oc-insights-title warn">
+                    <AlertTriangle size={11} />
+                    <span>Watchouts</span>
                   </div>
+                  <ul className="oc-risks-list">
+                    {s.risks.map((rk, i) => (
+                      <li key={i}>{rk}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );
 };
-

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Code, Eye, FileText, Layers, Cpu } from "lucide-react";
+import { Copy, Check } from "lucide-react";
 
 interface DefinitionViewerProps {
   definition?: Record<string, any> | null;
@@ -12,41 +12,58 @@ export const DefinitionViewer: React.FC<DefinitionViewerProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<"structured" | "json">("structured");
   const [activeCaseIdx, setActiveCaseIdx] = useState<number>(0);
+  const [copied, setCopied] = useState(false);
 
   if (!definition) {
-    return <div className="text-muted p-4">No definition available.</div>;
+    return (
+      <div className="sd-card">
+        <div className="sd-empty-inline">No definition available for this version.</div>
+      </div>
+    );
   }
 
   const defFormat = definition.format || format;
 
-  // Helper to turn typed Operand into friendly readable string
+  const handleCopyJson = () => {
+    navigator.clipboard.writeText(JSON.stringify(definition, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  // Format operand into clean readable string
   const formatOperand = (op: any): string => {
     if (!op) return "—";
     if (op.const !== undefined) {
-      if (op.type === "TIME") return `time ${op.const}`;
+      if (op.type === "TIME") return String(op.const);
       if (Array.isArray(op.const)) return `[${op.const.join(", ")}]`;
       return String(op.const);
     }
     if (op.param !== undefined) {
-      return `parameter(${op.param})`;
+      return `$${op.param}`;
     }
     const source = op.source;
     if (source === "PRICE") {
       const tf = op.timeframe ? ` (${op.timeframe})` : "";
-      const bar = op.bar && op.bar !== "CURRENT" ? ` ${op.bar}` : "";
+      const bar = op.bar && op.bar !== "CURRENT" ? ` [${op.bar}]` : "";
       return `Price.${op.field}${tf}${bar}`;
     }
     if (source === "DAY") {
       return `${op.day}.${op.field}`;
     }
     if (source === "INDICATOR") {
-      const params = op.params ? `(${JSON.stringify(op.params)})` : "";
-      const inst = op.instance ? ` [${op.instance}]` : "";
+      const params =
+        op.params && Object.keys(op.params).length > 0
+          ? `(${Object.entries(op.params)
+              .map(([k, v]) => `${k}=${v}`)
+              .join(", ")})`
+          : "";
+      const inst = op.instance ? `[${op.instance}]` : "";
       const out = op.output && op.output !== "value" ? `.${op.output}` : "";
-      return `${op.code}${inst}${out}${params}`;
+      const tf = op.timeframe ? ` (${op.timeframe})` : "";
+      return `${op.code}${inst}${out}${params}${tf}`;
     }
     if (source === "TIME") {
-      return `TimeOfDay`;
+      return op.field || "TimeOfDay";
     }
     if (source === "CONTEXT") {
       return `Context.${op.field}`;
@@ -60,55 +77,60 @@ export const DefinitionViewer: React.FC<DefinitionViewerProps> = ({
     return JSON.stringify(op);
   };
 
-  // Helper to format operator
   const formatOperator = (op: string): string => {
     switch (op) {
       case "IS_ABOVE":
-        return "is above";
+        return ">";
       case "IS_ABOVE_OR_EQUAL":
-        return "is at or above";
+        return "≥";
       case "IS_BELOW":
-        return "is below";
+        return "<";
       case "IS_BELOW_OR_EQUAL":
-        return "is at or below";
+        return "≤";
       case "EQUALS":
-        return "equals";
+        return "=";
       case "NOT_EQUALS":
-        return "does not equal";
+        return "≠";
       case "CROSSES_ABOVE":
         return "crosses above";
       case "CROSSES_BELOW":
         return "crosses below";
       case "IN":
-        return "is in";
+        return "in";
       case "NOT_IN":
-        return "is not in";
+        return "not in";
       case "BETWEEN":
-        return "is between";
+        return "between";
       default:
         return op;
     }
   };
 
-  // Helper to render ConditionNode recursively
   const renderConditionNode = (node: any, depth: number = 0): React.ReactNode => {
-    if (!node) return <span className="text-muted">None (Always trigger)</span>;
+    if (!node) {
+      return <span className="text-muted mono">Unconditional (Always Trigger)</span>;
+    }
 
     if (node.op) {
       const items = node.items || [];
       const joinLabel = node.op === "ALL" ? "AND" : node.op === "ANY" ? "OR" : "NOT";
 
+      if (items.length === 0) {
+        return <span className="text-muted mono">None</span>;
+      }
+
       return (
-        <div className={`condition-group depth-${depth}`}>
-          <div className="condition-group-badge">{node.op}</div>
-          <div className="condition-group-items">
+        <div className={`dv-cond-group ${depth > 0 ? "is-nested" : ""}`}>
+          <div className="dv-cond-items">
             {items.map((sub: any, i: number) => (
               <React.Fragment key={i}>
-                <div className="condition-row">
-                  {renderConditionNode(sub, depth + 1)}
-                </div>
+                <div className="dv-cond-row">{renderConditionNode(sub, depth + 1)}</div>
                 {i < items.length - 1 && (
-                  <div className="condition-connector">{joinLabel}</div>
+                  <div className="dv-cond-join">
+                    <span className={`dv-join-tag mono ${node.op === "ANY" ? "is-or" : "is-and"}`}>
+                      {joinLabel}
+                    </span>
+                  </div>
                 )}
               </React.Fragment>
             ))}
@@ -119,348 +141,304 @@ export const DefinitionViewer: React.FC<DefinitionViewerProps> = ({
 
     if (node.left && node.operator) {
       return (
-        <div className="condition-sentence">
-          <span className="operand-left">{formatOperand(node.left)}</span>
-          <span className="operator-badge">{formatOperator(node.operator)}</span>
-          <span className="operand-right">{formatOperand(node.right)}</span>
+        <div className="dv-cond-line">
+          <span className="dv-expr-left mono">{formatOperand(node.left)}</span>
+          <span className="dv-expr-op mono">{formatOperator(node.operator)}</span>
+          <span className="dv-expr-right mono">{formatOperand(node.right)}</span>
         </div>
       );
     }
 
-    return <pre className="text-xs">{JSON.stringify(node, null, 2)}</pre>;
+    return <pre className="dv-raw-inline">{JSON.stringify(node, null, 2)}</pre>;
   };
 
   return (
-    <div className="definition-viewer">
-      <div className="definition-viewer-header">
-        <div className="viewer-title-group">
-          <Layers size={18} className="text-cyan" />
-          <h3 className="viewer-title">Definition ({defFormat})</h3>
-          <span className="badge-pill schema-version">v{definition.schemaVersion || 2}</span>
-        </div>
-        <div className="viewer-actions">
-          <button
-            type="button"
-            className={`btn-toggle-view ${viewMode === "structured" ? "active" : ""}`}
-            onClick={() => setViewMode("structured")}
-          >
-            <Eye size={14} />
-            <span>Structured View</span>
-          </button>
-          <button
-            type="button"
-            className={`btn-toggle-view ${viewMode === "json" ? "active" : ""}`}
-            onClick={() => setViewMode("json")}
-          >
-            <Code size={14} />
-            <span>Raw JSON</span>
-          </button>
+    <div className="sd-panel">
+      {/* Compact Header Toolbar */}
+      <div className="sd-card">
+        <div className="sd-card-header" style={{ marginBottom: 0, borderBottom: "none", paddingBottom: 0 }}>
+          <div className="sd-topbar-left">
+            <span className="sd-card-title">Rule Definition</span>
+            <span className="sd-tag sd-tag--cyan mono">{defFormat}</span>
+            <span className="sd-tag mono">Schema v{definition.schemaVersion || 2}</span>
+          </div>
+
+          <div className="sd-topbar-right">
+            <button type="button" className="sd-ctrl-btn" onClick={handleCopyJson}>
+              {copied ? <Check size={12} className="text-green" /> : <Copy size={12} />}
+              <span>{copied ? "Copied" : "Copy JSON"}</span>
+            </button>
+
+            <div className="sd-seg-group">
+              <button
+                type="button"
+                className={`sd-seg-btn ${viewMode === "structured" ? "active" : ""}`}
+                onClick={() => setViewMode("structured")}
+              >
+                Structured
+              </button>
+              <button
+                type="button"
+                className={`sd-seg-btn ${viewMode === "json" ? "active" : ""}`}
+                onClick={() => setViewMode("json")}
+              >
+                Raw JSON
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       {viewMode === "json" ? (
-        <div className="raw-json-container">
-          <pre className="raw-json-content">
-            {JSON.stringify(definition, null, 2)}
-          </pre>
+        <div className="sd-card">
+          <div className="dv-json-box">
+            <pre className="dv-json-pre">{JSON.stringify(definition, null, 2)}</pre>
+          </div>
         </div>
       ) : defFormat === "SUMMARY" ? (
-        <div className="summary-format-view">
-          <div className="card-sub-header">
-            <FileText size={16} />
-            <h4>Descriptive Summary Specification</h4>
+        <div className="sd-card">
+          <div className="sd-card-header">
+            <span className="sd-card-title">Descriptive Summary Specification</span>
           </div>
-          <p className="text-muted text-sm mb-4">
-            This strategy was imported as a legacy summary with no executable entry or exit rule trees.
-          </p>
-          <div className="summary-grid">
-            <div className="summary-item">
-              <label>Entry Label</label>
-              <span>{definition.summary?.entryLabel || "—"}</span>
+          <div className="sd-spec-list">
+            <div className="sd-spec-row">
+              <span className="sd-spec-key">Entry Label</span>
+              <span className="sd-spec-val">{definition.summary?.entryLabel || "—"}</span>
             </div>
-            <div className="summary-item">
-              <label>Target R:R</label>
-              <span>{definition.summary?.targetRr ? `${definition.summary.targetRr} : 1` : "—"}</span>
+            <div className="sd-spec-row">
+              <span className="sd-spec-key">Target R:R</span>
+              <span className="sd-spec-val mono text-green">
+                {definition.summary?.targetRr ? `${definition.summary.targetRr} : 1` : "—"}
+              </span>
             </div>
-            <div className="summary-item">
-              <label>Max Risk %</label>
-              <span>{definition.summary?.maxRiskPct ? `${definition.summary.maxRiskPct}%` : "—"}</span>
+            <div className="sd-spec-row">
+              <span className="sd-spec-key">Max Risk %</span>
+              <span className="sd-spec-val mono text-red">
+                {definition.summary?.maxRiskPct ? `${definition.summary.maxRiskPct}%` : "—"}
+              </span>
             </div>
-            <div className="summary-item">
-              <label>Exchange</label>
-              <span>{definition.summary?.exchange || "—"}</span>
-            </div>
-          </div>
-          <div className="indicators-tag-list mt-4">
-            <label className="text-xs text-muted block mb-2">Required Technical Indicators:</label>
-            <div className="tag-flex">
-              {(definition.summary?.indicators || []).map((ind: string, idx: number) => (
-                <span key={idx} className="badge-indicator">
-                  {ind}
-                </span>
-              ))}
+            <div className="sd-spec-row">
+              <span className="sd-spec-key">Required Indicators</span>
+              <span className="sd-spec-val mono text-cyan">
+                {(definition.summary?.indicators || []).join(", ") || "—"}
+              </span>
             </div>
           </div>
         </div>
       ) : defFormat === "EVALUATOR" ? (
-        <div className="evaluator-format-view">
-          <div className="card-sub-header">
-            <Cpu size={16} />
-            <h4>Code-Backed Evaluator Strategy</h4>
+        <div className="sd-card">
+          <div className="sd-card-header">
+            <span className="sd-card-title">Code-Backed Evaluator</span>
+            <span className="sd-tag sd-tag--cyan mono">{definition.evaluator}</span>
           </div>
-          <div className="evaluator-details-grid">
-            <div className="evaluator-meta-item">
-              <label>Registered Evaluator Code</label>
-              <span className="font-mono text-cyan">{definition.evaluator}</span>
-            </div>
-            <div className="evaluator-meta-item">
-              <label>Stop Mode</label>
-              <span className="badge-pill">{definition.riskPolicy?.stopMode || "EVALUATOR_OWNED"}</span>
-            </div>
-          </div>
-          <div className="evaluator-params-section mt-4">
-            <label className="text-xs text-muted block mb-2">Evaluator Parameters:</label>
-            <table className="data-table params-table">
-              <thead>
-                <tr>
-                  <th>Parameter Name</th>
-                  <th>Configured Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(definition.parameters || {}).map(([key, val]) => (
-                  <tr key={key}>
-                    <td className="font-mono text-sm">{key}</td>
-                    <td className="font-mono text-emerald">{String(val)}</td>
+          {Object.keys(definition.parameters || {}).length > 0 && (
+            <div className="table-scroll-container">
+              <table className="data-table sd-compact-table">
+                <thead>
+                  <tr>
+                    <th>Parameter Key</th>
+                    <th>Configured Value</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {Object.entries(definition.parameters || {}).map(([key, val]: [string, any]) => (
+                    <tr key={key}>
+                      <td className="mono text-cyan">{key}</td>
+                      <td className="mono text-green">
+                        {typeof val === "object" ? JSON.stringify(val) : String(val)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       ) : (
-        <div className="rule-tree-format-view">
-          {/* Parallel Cases or Single Case Tabs */}
+        <div className="sd-panel">
+          {/* Case Selector Strip */}
           {Array.isArray(definition.cases) && definition.cases.length > 1 && (
-            <div className="case-tabs">
-              {definition.cases.map((c: any, idx: number) => (
-                <button
-                  key={c.key || idx}
-                  type="button"
-                  className={`case-tab-btn ${activeCaseIdx === idx ? "active" : ""}`}
-                  onClick={() => setActiveCaseIdx(idx)}
-                >
-                  Case {c.key || idx} ({c.bias || "DYNAMIC"})
-                </button>
-              ))}
+            <div className="sd-tabs-nav" style={{ borderBottom: "none" }}>
+              {definition.cases.map((c: any, idx: number) => {
+                const isActive = activeCaseIdx === idx;
+                const bias = c.bias || "DYNAMIC";
+                return (
+                  <button
+                    key={c.key || idx}
+                    type="button"
+                    className={`sd-nav-tab ${isActive ? "active" : ""}`}
+                    onClick={() => setActiveCaseIdx(idx)}
+                  >
+                    <span>Case #{c.key ?? idx + 1}</span>
+                    <span
+                      className={`sd-tag ${
+                        bias === "BULLISH"
+                          ? "sd-tag--green"
+                          : bias === "BEARISH"
+                          ? "sd-tag--red"
+                          : "sd-tag--cyan"
+                      }`}
+                    >
+                      {bias}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
 
           {definition.cases && definition.cases[activeCaseIdx] && (
-            <div className="active-case-content">
-              {/* Entry Conditions */}
-              <div className="section-block">
-                <div className="block-title">
-                  <span className="step-badge entry">ENTRY</span>
-                  <h4>Entry Rule (When Condition)</h4>
+            <div className="sd-panel">
+              {/* Entry & Exit Side-by-Side */}
+              <div className="sd-overview-cols">
+                <div className="sd-card">
+                  <div className="sd-card-header">
+                    <span className="sd-card-title">Entry Condition</span>
+                    <span className="sd-tag sd-tag--green">ENTRY WHEN</span>
+                  </div>
+                  <div className="dv-tree-surface">
+                    {renderConditionNode(definition.cases[activeCaseIdx].entry?.when)}
+                  </div>
                 </div>
-                <div className="condition-tree-box">
-                  {renderConditionNode(definition.cases[activeCaseIdx].entry?.when)}
+
+                <div className="sd-card">
+                  <div className="sd-card-header">
+                    <span className="sd-card-title">Exit Condition</span>
+                    <span className="sd-tag sd-tag--red">EXIT WHEN</span>
+                  </div>
+                  <div className="dv-tree-surface">
+                    {renderConditionNode(definition.cases[activeCaseIdx].exit?.when)}
+                  </div>
                 </div>
               </div>
 
               {/* Legs Table */}
-              <div className="section-block">
-                <div className="block-title">
-                  <span className="step-badge legs">LEGS</span>
-                  <h4>Entry Orders & Execution Legs</h4>
+              <div className="sd-card">
+                <div className="sd-card-header">
+                  <span className="sd-card-title">
+                    Execution Legs ({(definition.cases[activeCaseIdx].entry?.legs || []).length})
+                  </span>
+                  <span className="sd-tag mono">
+                    CASE #{definition.cases[activeCaseIdx].key ?? activeCaseIdx + 1} ·{" "}
+                    {definition.cases[activeCaseIdx].bias || "DYNAMIC"}
+                  </span>
                 </div>
-                <div className="table-responsive">
-                  <table className="data-table legs-table">
-                    <thead>
-                      <tr>
-                        <th>Leg ID</th>
-                        <th>Action</th>
-                        <th>Option</th>
-                        <th>Expiry</th>
-                        <th>Strike Selector</th>
-                        <th>Quantity</th>
-                        <th>Stop Loss</th>
-                        <th>Target</th>
-                        <th>Trailing Stop</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(definition.cases[activeCaseIdx].entry?.legs || []).map(
-                        (leg: any) => (
-                          <tr key={leg.legId}>
-                            <td className="font-mono">{leg.legId}</td>
-                            <td>
-                              <span
-                                className={`badge-pill ${leg.side === "BUY" ? "bg-emerald" : "bg-rose"}`}
-                              >
-                                {leg.side}
-                              </span>
-                            </td>
-                            <td>
-                              <span className="badge-pill bg-elevated">
-                                {leg.instrument?.optionType || "CE/PE"}
-                              </span>
-                            </td>
-                            <td>
-                              {leg.instrument?.expiry?.cycle || "WEEKLY"} (
-                              {leg.instrument?.expiry?.index || 1})
-                            </td>
-                            <td className="font-mono">
-                              {leg.instrument?.strike?.selector === "ATM_OFFSET"
-                                ? `ATM ${leg.instrument.strike.steps >= 0 ? `+${leg.instrument.strike.steps}` : leg.instrument.strike.steps}`
-                                : leg.instrument?.strike?.selector === "DELTA"
-                                ? `Delta ${leg.instrument.strike.delta}`
-                                : leg.instrument?.strike?.selector === "PREMIUM"
-                                ? `₹${leg.instrument.strike.premium}`
-                                : JSON.stringify(leg.instrument?.strike)}
-                            </td>
-                            <td>
-                              {leg.quantity?.value} {leg.quantity?.unit || "LOT"}
-                            </td>
-                            <td>
-                              {leg.stopLoss ? (
-                                <span className="text-rose">
-                                  {leg.stopLoss.value}
-                                  {leg.stopLoss.type === "PERCENT" ? "%" : " pts"}
+                {(definition.cases[activeCaseIdx].entry?.legs || []).length === 0 ? (
+                  <div className="sd-empty-inline">No option legs configured for this case.</div>
+                ) : (
+                  <div className="table-scroll-container">
+                    <table className="data-table sd-compact-table">
+                      <thead>
+                        <tr>
+                          <th>Leg</th>
+                          <th>Side</th>
+                          <th>Option</th>
+                          <th>Expiry</th>
+                          <th>Strike Selector</th>
+                          <th>Qty</th>
+                          <th>Stop Loss</th>
+                          <th>Target</th>
+                          <th>Trailing Stop</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(definition.cases[activeCaseIdx].entry?.legs || []).map(
+                          (leg: any, idx: number) => (
+                            <tr key={leg.legId || idx}>
+                              <td className="mono text-heading">#{leg.legId || idx + 1}</td>
+                              <td>
+                                <span
+                                  className={`sd-tag ${
+                                    leg.side === "BUY" ? "sd-tag--green" : "sd-tag--red"
+                                  }`}
+                                >
+                                  {leg.side}
                                 </span>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                            <td>
-                              {leg.target ? (
-                                <span className="text-emerald">
-                                  {leg.target.value}
-                                  {leg.target.type === "PERCENT" ? "%" : " pts"}
-                                </span>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                            <td>
-                              {leg.stopLoss?.trail ? (
-                                <span className="text-cyan text-xs">
-                                  +{leg.stopLoss.trail.adjustValue} / +{leg.stopLoss.trail.trailingValue}
-                                </span>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Exit Conditions */}
-              <div className="section-block">
-                <div className="block-title">
-                  <span className="step-badge exit">EXIT</span>
-                  <h4>Exit Rule (When Condition)</h4>
-                </div>
-                <div className="condition-tree-box">
-                  {renderConditionNode(definition.cases[activeCaseIdx].exit?.when)}
-                </div>
+                              </td>
+                              <td className="mono">{leg.instrument?.optionType || "CE/PE"}</td>
+                              <td className="mono">
+                                {leg.instrument?.expiry?.cycle || "WEEKLY"} (
+                                {leg.instrument?.expiry?.index || 1})
+                              </td>
+                              <td className="mono text-cyan">
+                                {leg.instrument?.strike?.selector === "ATM_OFFSET"
+                                  ? `ATM ${
+                                      leg.instrument.strike.steps > 0
+                                        ? `+${leg.instrument.strike.steps}`
+                                        : leg.instrument.strike.steps === 0
+                                        ? "(0)"
+                                        : leg.instrument.strike.steps
+                                    }`
+                                  : leg.instrument?.strike?.selector === "DELTA"
+                                  ? `Delta ${leg.instrument.strike.delta}`
+                                  : leg.instrument?.strike?.selector === "PREMIUM"
+                                  ? `₹${leg.instrument.strike.premium}`
+                                  : JSON.stringify(leg.instrument?.strike || "ATM")}
+                              </td>
+                              <td className="mono">
+                                {leg.quantity?.value ?? 1} {leg.quantity?.unit || "LOT"}
+                              </td>
+                              <td className="mono text-red">
+                                {leg.stopLoss
+                                  ? `-${leg.stopLoss.value}${
+                                      leg.stopLoss.type === "PERCENT" ? "%" : "pt"
+                                    }`
+                                  : "—"}
+                              </td>
+                              <td className="mono text-green">
+                                {leg.target
+                                  ? `+${leg.target.value}${
+                                      leg.target.type === "PERCENT" ? "%" : "pt"
+                                    }`
+                                  : "—"}
+                              </td>
+                              <td className="mono text-cyan">
+                                {leg.stopLoss?.trail
+                                  ? `+${leg.stopLoss.trail.adjustValue} / +${leg.stopLoss.trail.trailingValue}`
+                                  : "—"}
+                              </td>
+                            </tr>
+                          )
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {/* Adjustments */}
               {Array.isArray(definition.cases[activeCaseIdx].adjustments) &&
                 definition.cases[activeCaseIdx].adjustments.length > 0 && (
-                  <div className="section-block">
-                    <div className="block-title">
-                      <span className="step-badge adjust">ADJUST</span>
-                      <h4>Dynamic Intra-Session Adjustments</h4>
+                  <div className="sd-card">
+                    <div className="sd-card-header">
+                      <span className="sd-card-title">Intra-Session Adjustments</span>
+                      <span className="sd-tag sd-tag--amber">
+                        {definition.cases[activeCaseIdx].adjustments.length} RULES
+                      </span>
                     </div>
-                    <div className="adjustments-list">
-                      {definition.cases[activeCaseIdx].adjustments.map((adj: any) => (
-                        <div key={adj.key} className="adjustment-card">
-                          <div className="adj-header">
-                            <span className="adj-key font-mono">{adj.key}</span>
-                            <span className="text-muted text-xs">Trigger Condition:</span>
+                    <div className="sd-panel">
+                      {definition.cases[activeCaseIdx].adjustments.map((adj: any, idx: number) => (
+                        <div key={adj.key || idx} className="dv-tree-surface">
+                          <div className="sd-topbar-left" style={{ marginBottom: 8 }}>
+                            <span className="sd-tag sd-tag--amber mono">
+                              #{adj.key || idx + 1}
+                            </span>
+                            {(adj.actions || []).map((act: any, i: number) => (
+                              <span key={i} className="sd-tag sd-tag--cyan mono">
+                                {act.type === "CLOSE_LEG"
+                                  ? `Close Leg #${act.legId}`
+                                  : act.type === "OPEN_LEG"
+                                  ? `Open Leg #${act.legId} (${act.side} ${act.instrument?.optionType})`
+                                  : act.type}
+                              </span>
+                            ))}
                           </div>
-                          <div className="adj-condition">
-                            {renderConditionNode(adj.when)}
-                          </div>
-                          <div className="adj-actions">
-                            <label className="text-xs text-muted">Triggered Actions:</label>
-                            <div className="action-tags">
-                              {(adj.actions || []).map((act: any, i: number) => (
-                                <span key={i} className="action-tag">
-                                  {act.type === "CLOSE_LEG"
-                                    ? `Close Leg #${act.legId}`
-                                    : act.type === "OPEN_LEG"
-                                    ? `Open Leg #${act.legId} (${act.side} ${act.instrument?.optionType})`
-                                    : act.type}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
+                          {renderConditionNode(adj.when)}
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-            </div>
-          )}
-
-          {/* Bounds & Guardrails */}
-          {definition.bounds && (
-            <div className="section-block bounds-block">
-              <div className="block-title">
-                <span className="step-badge bounds">BOUNDS</span>
-                <h4>Session Bounds & Risk Caps</h4>
-              </div>
-              <div className="bounds-grid">
-                <div className="bound-item">
-                  <label>Trading Window</label>
-                  <span>
-                    {definition.bounds.session?.entryTime || "09:15"} —{" "}
-                    {definition.bounds.session?.exitTime || "15:14"}
-                  </span>
-                </div>
-                <div className="bound-item">
-                  <label>Max Trades / Day</label>
-                  <span>{definition.bounds.maxTradesPerDay || "Unlimited"}</span>
-                </div>
-                <div className="bound-item">
-                  <label>Day Stop Gain</label>
-                  <span className="text-emerald">
-                    {definition.bounds.dayStopGain?.value
-                      ? `₹${definition.bounds.dayStopGain.value}`
-                      : "—"}
-                  </span>
-                </div>
-                <div className="bound-item">
-                  <label>Day Stop Loss</label>
-                  <span className="text-rose">
-                    {definition.bounds.dayStopLoss?.value
-                      ? `₹${definition.bounds.dayStopLoss.value}`
-                      : "—"}
-                  </span>
-                </div>
-                <div className="bound-item">
-                  <label>Strategy Stop Loss</label>
-                  <span className="text-rose">
-                    {definition.bounds.strategyStopLoss?.value
-                      ? `₹${definition.bounds.strategyStopLoss.value}`
-                      : "—"}
-                  </span>
-                </div>
-                <div className="bound-item">
-                  <label>Stop Mode</label>
-                  <span className="badge-pill">
-                    {definition.riskPolicy?.stopMode || "STRATEGY_FIXED"}
-                  </span>
-                </div>
-              </div>
             </div>
           )}
         </div>

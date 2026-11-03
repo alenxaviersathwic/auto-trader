@@ -1,7 +1,7 @@
-from datetime import date, datetime
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
-from sqlalchemy import BigInteger, Boolean, DateTime, Index, String, Text, text
+from sqlalchemy import BigInteger, Boolean, DateTime, Index, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.db.base_entity import BaseEntity
@@ -13,7 +13,6 @@ if TYPE_CHECKING:
 
 
 IST = ZoneInfo("Asia/Kolkata")
-WEEKDAY_CODES = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 
 
 class Strategy(BaseEntity):
@@ -45,6 +44,7 @@ class Strategy(BaseEntity):
     healthOverrideUntil: Mapped[Optional[datetime]] = mapped_column("health_override_until", DateTime(timezone=True), nullable=True)
     validationStatus: Mapped[str] = mapped_column("validation_status", String(15), nullable=False, default="UNTESTED")
     enabled: Mapped[bool] = mapped_column("enabled", Boolean, nullable=False, default=True)
+    stopLossPct: Mapped[Optional[float]] = mapped_column("stop_loss_pct", Numeric(5, 2), nullable=True)
     riskProfile: Mapped[Optional[Dict[str, Any]]] = mapped_column("risk_profile", JSONB, nullable=True)
     references: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column("references", JSONB, nullable=True)
     riskNotes: Mapped[Optional[List[str]]] = mapped_column("risk_notes", JSONB, nullable=True)
@@ -53,11 +53,6 @@ class Strategy(BaseEntity):
     attributes: Mapped[Optional[Dict[str, Any]]] = mapped_column("attributes", JSONB, nullable=True)
     provenance: Mapped[Optional[Dict[str, Any]]] = mapped_column("provenance", JSONB, nullable=True)
     reviewFlags: Mapped[Optional[List[str]]] = mapped_column("review_flags", JSONB, nullable=True)
-    # Weekday codes the strategy runs on (MON..SUN). Empty = every trading day.
-    activeDays: Mapped[List[str]] = mapped_column("active_days", JSONB, nullable=False, default=list)
-    # Date-specific exceptions: [{"date": "YYYY-MM-DD", "active": bool, "reason": str|None}].
-    # Used for holiday shifts (e.g. expiry moved Tue -> Mon). Always wins over activeDays.
-    dayOverrides: Mapped[List[Dict[str, Any]]] = mapped_column("day_overrides", JSONB, nullable=False, default=list)
     currentVersionId: Mapped[Optional[int]] = mapped_column("current_version_id", BigInteger, nullable=True)
 
     # Relationships
@@ -109,15 +104,3 @@ class Strategy(BaseEntity):
             and self.validationStatus != "REJECTED"
         )
 
-    def isActiveOn(self, day: date) -> bool:
-        """Date override first, then weekday list (empty list = every day)."""
-        iso = day.isoformat()
-        for o in self.dayOverrides or []:
-            if o.get("date") == iso:
-                return bool(o.get("active"))
-        days = self.activeDays or []
-        return not days or WEEKDAY_CODES[day.weekday()] in days
-
-    @property
-    def activeToday(self) -> bool:
-        return self.isActiveOn(datetime.now(IST).date())

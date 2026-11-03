@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertCircle, Plus, Info, ShieldCheck, TrendingUp, TrendingDown } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { PerformanceSnapshot } from "../types/strategies.types";
 import { useAddPerformanceSnapshot, useStrategyPerformance } from "../hooks/useStrategies";
 
@@ -52,176 +52,135 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
 
   const snapshots: PerformanceSnapshot[] = snapshotsData?.list || [];
 
-  const getBadgeDescription = (flag: string) => {
-    switch (flag) {
-      case "LOW_SAMPLE":
-        return "Sample size < 30 trades. Statistically unreliable.";
-      case "PF_PNL_INCONSISTENT":
-        return "Profit factor contradicts net P&L figure. Numbers require verification.";
-      case "DRAWDOWN_PLACEHOLDER":
-        return "Max drawdown is exactly 450.00 (placeholder value from legacy system).";
-      case "PERFECT_RECORD_TINY_SAMPLE":
-        return "100% win rate from fewer than 5 trades. Not statistically meaningful.";
-      default:
-        return flag;
-    }
-  };
-
   return (
-    <div className="performance-section">
-      <div className="section-toolbar mb-4 flex justify-between items-center">
-        <div>
-          <h3 className="section-heading text-lg font-semibold text-primary">
-            Performance Snapshots & Reliability
-          </h3>
-          <p className="text-xs text-muted">
-            Tracked trade samples across Backtest, Paper, Live, and Legacy imports. Flagged snapshots are automatically excluded from health policies.
-          </p>
+    <div className="sd-panel">
+      <div className="sd-card">
+        <div className="sd-card-header">
+          <div>
+            <span className="sd-card-title">
+              Performance Snapshots ({snapshots.length})
+            </span>
+            <p className="sd-card-sub">
+              Trade samples across Backtest, Paper, Live, and Legacy imports.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="sd-ctrl-btn sd-ctrl-btn--primary"
+            onClick={() => setShowAddModal(true)}
+          >
+            <Plus size={13} />
+            <span>Add Snapshot</span>
+          </button>
         </div>
-        <button
-          type="button"
-          className="btn-kite-primary flex items-center gap-1.5 text-xs"
-          onClick={() => setShowAddModal(true)}
-        >
-          <Plus size={14} />
-          <span>Add Snapshot</span>
-        </button>
-      </div>
 
-      {isLoading ? (
-        <div className="p-4 text-center text-muted text-sm">Loading performance history...</div>
-      ) : snapshots.length === 0 ? (
-        <div className="card-surface p-6 text-center text-muted">
-          <Info size={24} className="mx-auto mb-2 text-cyan opacity-80" />
-          <p>No performance snapshots recorded for this strategy yet.</p>
-        </div>
-      ) : (
-        <div className="table-responsive">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Source</th>
-                <th>Domain</th>
-                <th>Recorded At</th>
-                <th>Total Trades</th>
-                <th>Win Rate</th>
-                <th>Net P&L</th>
-                <th>Profit Factor</th>
-                <th>Max DD</th>
-                <th>Reliability Flags</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshots.map((snap) => {
-                const hasFlags = snap.reliabilityFlags && snap.reliabilityFlags.length > 0;
-                return (
-                  <tr key={snap.id} className={hasFlags ? "flagged-row" : ""}>
-                    <td>
-                      <span className="badge-pill bg-elevated font-mono">
-                        {snap.source}
-                      </span>
-                    </td>
-                    <td>
-                      <span
-                        className={`badge-pill ${
-                          snap.domain === "LIVE"
-                            ? "bg-rose"
-                            : snap.domain === "PAPER"
-                            ? "bg-cyan"
-                            : "bg-surface"
-                        }`}
-                      >
-                        {snap.domain}
-                      </span>
-                    </td>
-                    <td className="text-xs text-muted">
-                      {snap.createdAt ? new Date(snap.createdAt).toLocaleDateString() : "—"}
-                    </td>
-                    <td className="font-mono">
-                      {snap.totalTrades} ({snap.winningTrades}W / {snap.losingTrades}L)
-                    </td>
-                    <td className="font-mono">
-                      <span
-                        className={snap.winRatePct >= 50 ? "text-emerald" : "text-rose"}
-                      >
-                        {Number(snap.winRatePct).toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="font-mono font-semibold">
-                      <span
-                        className={`flex items-center gap-1 ${
-                          snap.netPnl > 0
-                            ? "text-emerald"
-                            : snap.netPnl < 0
-                            ? "text-rose"
-                            : "text-muted"
-                        }`}
-                      >
-                        {snap.netPnl > 0 ? (
-                          <TrendingUp size={12} />
-                        ) : snap.netPnl < 0 ? (
-                          <TrendingDown size={12} />
-                        ) : null}
-                        ₹{Number(snap.netPnl).toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="font-mono">
-                      {Number(snap.profitFactor).toFixed(2)}
-                    </td>
-                    <td className="font-mono text-rose">
-                      ₹{Number(snap.maxDrawdown).toLocaleString()}
-                    </td>
-                    <td>
-                      {hasFlags ? (
-                        <div className="flex flex-wrap gap-1">
-                          {snap.reliabilityFlags!.map((fl, idx) => (
-                            <span
-                              key={idx}
-                              className="badge-reliability-flag"
-                              title={getBadgeDescription(fl)}
-                            >
-                              <AlertCircle size={10} />
-                              {fl}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="flex items-center gap-1 text-emerald text-xs font-medium">
-                          <ShieldCheck size={13} />
-                          Verified
+        {isLoading ? (
+          <div className="sd-empty-inline">Loading performance snapshots…</div>
+        ) : snapshots.length === 0 ? (
+          <div className="sd-empty-inline">
+            No performance snapshots recorded for this strategy yet.
+          </div>
+        ) : (
+          <div className="table-scroll-container">
+            <table className="data-table sd-compact-table">
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>Domain</th>
+                  <th>Recorded Date</th>
+                  <th>Trades</th>
+                  <th>Win Rate</th>
+                  <th>Net P&amp;L</th>
+                  <th>Profit Factor</th>
+                  <th>Max DD</th>
+                  <th>Audit Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {snapshots.map((snap) => {
+                  const hasFlags = snap.reliabilityFlags && snap.reliabilityFlags.length > 0;
+                  return (
+                    <tr key={snap.id}>
+                      <td>
+                        <span className="sd-tag mono">{snap.source}</span>
+                      </td>
+                      <td>
+                        <span
+                          className={`sd-tag mono ${
+                            snap.domain === "LIVE"
+                              ? "sd-tag--green"
+                              : snap.domain === "PAPER"
+                              ? "sd-tag--cyan"
+                              : ""
+                          }`}
+                        >
+                          {snap.domain}
                         </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                      </td>
+                      <td className="mono text-muted">
+                        {snap.createdAt ? new Date(snap.createdAt).toLocaleDateString("en-IN") : "—"}
+                      </td>
+                      <td className="mono">
+                        {snap.totalTrades} ({snap.winningTrades}W / {snap.losingTrades}L)
+                      </td>
+                      <td className={`mono ${snap.winRatePct >= 50 ? "text-green" : "text-red"}`}>
+                        {Number(snap.winRatePct).toFixed(1)}%
+                      </td>
+                      <td
+                        className={`mono ${
+                          snap.netPnl > 0 ? "text-green" : snap.netPnl < 0 ? "text-red" : ""
+                        }`}
+                      >
+                        {snap.netPnl > 0 ? "+" : ""}₹{Number(snap.netPnl).toLocaleString("en-IN")}
+                      </td>
+                      <td className="mono text-amber">
+                        {Number(snap.profitFactor).toFixed(2)}
+                      </td>
+                      <td className="mono text-red">
+                        -₹{Number(snap.maxDrawdown).toLocaleString("en-IN")}
+                      </td>
+                      <td>
+                        {hasFlags ? (
+                          <div className="sd-summary-badges">
+                            {snap.reliabilityFlags!.map((fl, idx) => (
+                              <span key={idx} className="sd-tag sd-tag--amber mono">
+                                {fl}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="sd-tag sd-tag--green">VERIFIED</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Add Snapshot Modal */}
       {showAddModal && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <div className="modal-header">
-              <h3 className="modal-title font-semibold text-primary">
-                Record Performance Snapshot
-              </h3>
+        <div className="modal-backdrop" onClick={() => setShowAddModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="sd-card-header">
+              <span className="sd-card-title">Record Performance Snapshot</span>
               <button
                 type="button"
-                className="btn-modal-close"
+                className="sd-ctrl-btn"
                 onClick={() => setShowAddModal(false)}
               >
-                ✕
+                <X size={13} />
               </button>
             </div>
             <form onSubmit={handleAddSubmit}>
-              <div className="modal-body grid grid-cols-2 gap-4">
+              <div className="sd-param-grid">
                 <div className="form-group">
-                  <label>Data Source</label>
+                  <label className="form-label">Data Source</label>
                   <select
-                    className="select w-full"
+                    className="select"
                     value={newSnapshot.source}
                     onChange={(e) =>
                       setNewSnapshot({ ...newSnapshot, source: e.target.value })
@@ -233,9 +192,9 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Execution Domain</label>
+                  <label className="form-label">Execution Domain</label>
                   <select
-                    className="select w-full"
+                    className="select"
                     value={newSnapshot.domain}
                     onChange={(e) =>
                       setNewSnapshot({ ...newSnapshot, domain: e.target.value as any })
@@ -247,10 +206,10 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Total Trades</label>
+                  <label className="form-label">Total Trades</label>
                   <input
                     type="number"
-                    className="input w-full"
+                    className="input mono"
                     value={newSnapshot.totalTrades}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -263,10 +222,10 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   />
                 </div>
                 <div className="form-group">
-                  <label>Winning Trades</label>
+                  <label className="form-label">Winning Trades</label>
                   <input
                     type="number"
-                    className="input w-full"
+                    className="input mono"
                     value={newSnapshot.winningTrades}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -279,10 +238,10 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   />
                 </div>
                 <div className="form-group">
-                  <label>Losing Trades</label>
+                  <label className="form-label">Losing Trades</label>
                   <input
                     type="number"
-                    className="input w-full"
+                    className="input mono"
                     value={newSnapshot.losingTrades}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -295,11 +254,11 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   />
                 </div>
                 <div className="form-group">
-                  <label>Win Rate %</label>
+                  <label className="form-label">Win Rate (%)</label>
                   <input
                     type="number"
                     step="0.1"
-                    className="input w-full"
+                    className="input mono"
                     value={newSnapshot.winRatePct}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -311,11 +270,11 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   />
                 </div>
                 <div className="form-group">
-                  <label>Net P&L (₹)</label>
+                  <label className="form-label">Net P&amp;L (₹)</label>
                   <input
                     type="number"
                     step="0.01"
-                    className="input w-full"
+                    className="input mono"
                     value={newSnapshot.netPnl}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -327,11 +286,11 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                   />
                 </div>
                 <div className="form-group">
-                  <label>Profit Factor</label>
+                  <label className="form-label">Profit Factor</label>
                   <input
                     type="number"
                     step="0.01"
-                    className="input w-full"
+                    className="input mono"
                     value={newSnapshot.profitFactor}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -342,12 +301,12 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
                     required
                   />
                 </div>
-                <div className="form-group col-span-2">
-                  <label>Max Drawdown (₹)</label>
+                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                  <label className="form-label">Max Drawdown (₹)</label>
                   <input
                     type="number"
                     step="0.01"
-                    className="input w-full"
+                    className="input mono"
                     value={newSnapshot.maxDrawdown}
                     onChange={(e) =>
                       setNewSnapshot({
@@ -362,17 +321,17 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({
               <div className="modal-actions">
                 <button
                   type="button"
-                  className="btn-outline text-xs"
+                  className="sd-ctrl-btn"
                   onClick={() => setShowAddModal(false)}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="btn-kite-primary text-xs"
+                  className="sd-ctrl-btn sd-ctrl-btn--primary"
                   disabled={addSnapshotMutation.isPending}
                 >
-                  {addSnapshotMutation.isPending ? "Saving..." : "Save Snapshot"}
+                  {addSnapshotMutation.isPending ? "Saving…" : "Save Snapshot"}
                 </button>
               </div>
             </form>

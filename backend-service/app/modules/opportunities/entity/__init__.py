@@ -1,4 +1,5 @@
 from app.modules.opportunities.entity.opportunity_entity import (
+    OpportunityIteration,
     OpportunityMaster,
     OpportunityMemory,
     OpportunityRun,
@@ -6,6 +7,7 @@ from app.modules.opportunities.entity.opportunity_entity import (
 )
 
 __all__ = [
+    "OpportunityIteration",
     "OpportunityMaster",
     "OpportunityMemory",
     "OpportunityRun",

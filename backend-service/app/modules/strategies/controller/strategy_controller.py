@@ -2,9 +2,11 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db.session import get_db
+from app.core.exception.app_exceptions import ValidationException
 from app.core.pagination.page_result import PageResult
 from app.core.response.api_response import ApiResponse
 from app.core.response.response_helper import created, success
+from app.modules.strategies.service.backtest_service import BacktestService, BacktestUnsupported
 from app.modules.strategies.schema.import_schema import ExportRequest, ExportResponse, ImportBatchResponse, ImportRequest
 from app.modules.strategies.schema.performance_schema import (
     HealthOverrideRequest,
@@ -15,8 +17,8 @@ from app.modules.strategies.schema.performance_schema import (
     RecomputeHealthResponse,
 )
 from app.modules.strategies.schema.strategy_schema import (
-    DayShiftRequest,
-    DayShiftResponse,
+    BacktestRequest,
+    BacktestResponse,
     EvaluateStrategyRequest,
     EvaluateStrategyResponse,
     RequirementsResponse,
@@ -114,20 +116,6 @@ async def evaluate_strategy(
 
 
 @strategy_router.post(
-    "/day-shift",
-    response_model=ApiResponse[DayShiftResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Holiday shift: block a date and optionally move strategies to another date",
-)
-async def apply_day_shift(
-    payload: DayShiftRequest,
-    session: AsyncSession = Depends(get_db),
-):
-    res = await _strategy_service.apply_day_shift(session, payload)
-    return success(data=res, message=f"Day shift applied to {res.affectedCount} strategies")
-
-
-@strategy_router.post(
     "/seed-defaults",
     response_model=ApiResponse[Dict[str, Any]],
     status_code=status.HTTP_200_OK,
@@ -222,6 +210,53 @@ async def delete_strategy(
 ):
     await _strategy_service.delete(session, id)
     return success(data={"id": id, "deleted": True}, message="Strategy deleted successfully")
+
+
+_backtest_service = BacktestService()
+
+
+@strategy_router.post(
+    "/{id}/backtest",
+    response_model=ApiResponse[BacktestResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Backtest this strategy's own rule tree against daily bars of its underlying",
+)
+async def backtest_strategy(
+    id: int,
+    payload: BacktestRequest,
+):
+    try:
+        result = await _backtest_service.run(id, payload.underlyingCode, payload.years)
+    except BacktestUnsupported as e:
+        raise ValidationException(message=str(e))
+    return success(
+        data=BacktestResponse(
+            underlyingCode=result.underlyingCode, fromDate=result.fromDate, toDate=result.toDate,
+            barsUsed=result.barsUsed, totalTrades=result.totalTrades, winRatePct=result.winRatePct,
+            avgWinPct=result.avgWinPct, avgLossPct=result.avgLossPct, profitFactor=result.profitFactor,
+            expectancyPct=result.expectancyPct, totalReturnPct=result.totalReturnPct,
+            maxDrawdownPct=result.maxDrawdownPct, note=result.note,
+            trades=[t.__dict__ for t in result.trades],
+        ),
+        message="Backtest complete",
+    )
+
+
+@strategy_router.post(
+    "/backtest-all",
+    response_model=ApiResponse[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="Backtest every eligible strategy and record the results as BACKTEST performance snapshots",
+)
+async def backtest_all_strategies(
+    years: int = 20,
+):
+    summary = await _backtest_service.run_all(years)
+    return success(
+        data=summary,
+        message=f"Backtested {summary['backtested']}/{summary['total']} strategies "
+                f"({summary['skipped']} skipped, {summary['errors']} errored)",
+    )
 
 
 @strategy_router.post(

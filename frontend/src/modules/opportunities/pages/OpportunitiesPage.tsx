@@ -16,7 +16,8 @@ import {
 } from "lucide-react";
 import {
   resumeOpportunityLoop,
-  useLatestOpportunities,
+  useMasterIterations,
+  useMasterOpportunityHistory,
   useOpportunityCards,
   useOpportunityLoop,
   useStartOpportunity,
@@ -47,7 +48,10 @@ const SheetLoader: React.FC<{
   onClose: () => void;
 }> = ({ card, isIterating, onStart, onStop, isStarting, isStopping, onClose }) => {
   const loop = useOpportunityLoop();
-  const { data, isLoading } = useLatestOpportunities(loop.running, card.code);
+  // Per-master history, not useLatestOpportunities: the side sheet shows every past loop as its
+  // own batch, and /opportunities/latest only ever has the single newest (isLatest=True) one.
+  const { data, isLoading } = useMasterOpportunityHistory(card.master?.id ?? null, loop.running);
+  const iterations = useMasterIterations(card.master?.id ?? null, loop.running);
   return (
     <OpportunitySideSheet
       code={card.code}
@@ -55,6 +59,7 @@ const SheetLoader: React.FC<{
       card={card}
       iterationsCompleted={card.master?.iterationsCompleted ?? 0}
       opportunities={data?.list ?? []}
+      iterations={iterations.data?.list ?? []}
       isLoading={isLoading}
       isIterating={isIterating}
       onStart={onStart}
@@ -393,7 +398,7 @@ export const OpportunitiesPage: React.FC = () => {
                   </div>
 
                   <div className="sp-metric-cell">
-                    <div className="sp-metric-label">Loops</div>
+                    <div className="sp-metric-label">Batches</div>
                     <div className="sp-metric-value mono">
                       <span>{m?.iterationsCompleted ?? 0}</span>
                       {m && m.iterationsFailed > 0 && (

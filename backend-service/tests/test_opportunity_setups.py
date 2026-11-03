@@ -161,7 +161,10 @@ def test_costs_and_net_edge():
 
 
 def test_session_blocks_and_mcx_dst_close():
-    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 9, 20, tzinfo=IST))["blocked"]
+    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 9, 18, tzinfo=IST))["blocked"]  # first 5 minutes
+    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 9, 21, tzinfo=IST))["blocked"] is None
+    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 12, 30, tzinfo=IST))["blocked"]  # 12:00-13:30 chop
+    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 13, 31, tzinfo=IST))["blocked"] is None
     assert session_info("09:15", "15:40", datetime(2026, 11, 2, 15, 20, tzinfo=IST))["blocked"]
     assert session_info("09:15", "15:40", datetime(2026, 11, 2, 10, 0, tzinfo=IST))["blocked"] is None
     gold = get_config("GOLD")
@@ -173,6 +176,87 @@ def test_resample_marks_open_bucket():
     bars = five(555, 1, 2) + [bar(560, 2, 3, 1, 2)]
     r = resample(bars, 5, "09:15", now_min=561)
     assert r[0]["done"] and not r[1]["done"]
+
+
+def _a(**kw):
+    base = {"trend15": "UP", "bars1": [bar(600, 100, 101, 99, 100), bar(601, 100, 102, 100, 101.5)]}
+    base.update(kw)
+    return base
+
+
+def test_timeframes_must_agree():
+    ce = {"name": "ORB", "side": "CE", "strength": 3}
+    pe = {"name": "ORB", "side": "PE", "strength": 3}
+    ok, rej = setup_detector.confirm_timeframes(_a(), [ce, pe])
+    assert [s["side"] for s in ok] == ["CE"] and "15-min trend" in rej[0]["reason"]
+    # 1-minute bar red -> a CE has no entry confirmation
+    red = [bar(600, 100, 101, 99, 100), bar(601, 101, 101, 99, 99.5)]
+    ok, rej = setup_detector.confirm_timeframes(_a(bars1=red), [ce])
+    assert not ok and "1-min" in rej[0]["reason"]
+    ok, rej = setup_detector.confirm_timeframes(_a(bars1=[]), [ce])
+    assert not ok
+
+
+def _bars5(specs, start=555):
+    """specs: list of (o, h, l, c) -> completed 5-minute bars as the setups see them."""
+    return [{"t": "", "o": o, "h": h, "l": l, "c": c, "v": 1000, "oi": 0, "start": start + 5 * i, "done": True}
+            for i, (o, h, l, c) in enumerate(specs)]
+
+
+def _setup_input(bars, **extra):
+    a = {"bars5": bars, "atr5": 10.0, "regime": "MIXED", "trend15": "UP", "levels": {}, "keyLevels": [],
+         "session": {"minutesSinceOpen": 40}}
+    a.update(extra)
+    return a
+
+
+def test_inside_bar_breakout():
+    cfg = get_config("NIFTY")
+    bars = _bars5([(100, 101, 99, 100)] * 4 + [(100, 120, 98, 118), (110, 115, 105, 112), (112, 128, 111, 126)])
+    names = {(s["name"], s["side"]) for s in setup_detector.detect(_setup_input(bars), cfg)}
+    assert ("INSIDE_BAR", "CE") in names
+
+
+def test_range_breakout():
+    cfg = get_config("NIFTY")
+    box = [(100, 104, 98, 101), (101, 105, 99, 102)] * 4
+    bars = _bars5(box + [(102, 122, 101, 121)])
+    names = {(s["name"], s["side"]) for s in setup_detector.detect(_setup_input(bars), cfg)}
+    assert ("RANGE_BREAKOUT", "CE") in names
+
+
+def test_gap_go_and_short_covering_and_pcr():
+    cfg = get_config("NIFTY")
+    bars = _bars5([(100, 102, 99, 101)] * 4 + [(101, 105, 100, 104), (104, 109, 103, 108)])
+    lv = {"gapPct": 0.6, "pdc": 96.0, "dayOpen": 99.0, "dayLow": 98.5, "dayHigh": 109}
+    found = setup_detector.detect(_setup_input(bars, levels=lv), cfg)
+    assert any(s["name"] == "GAP_GO" and s["side"] == "CE" for s in found)
+
+    vol = {"spike": True, "ratio5m": 2.0, "dry": False, "lastBarUp": True}
+    bu = {"state": "SHORT_COVERING", "priceChgPct": 0.4, "oiChgPct": -0.6}
+    found = setup_detector.detect(_setup_input(bars, volume=vol, buildup=bu), cfg)
+    assert any(s["name"] == "SHORT_COVERING_SPIKE" and s["side"] == "CE" for s in found)
+
+    shift = {"pcrChg": 0.12, "peOiChgPct": 3.0, "ceOiChgPct": 0.5, "pcr": 1.1}
+    found = setup_detector.detect(_setup_input(bars, oiShift=shift), cfg)
+    assert any(s["name"] == "PCR_SHIFT" and s["side"] == "CE" for s in found)
+
+
+def test_ema_cross_retest_and_supertrend():
+    cfg = get_config("NIFTY")
+    down = [(130 - i, 131 - i, 129 - i, 129.5 - i) for i in range(12)]  # downtrend
+    up = [(118 + 3 * i, 120 + 3 * i, 117 + 3 * i, 119.5 + 3 * i) for i in range(8)]  # sharp reversal up
+    bars = _bars5(down + up)
+    pull = (bars[-1]["c"], bars[-1]["c"] + 1, bars[-1]["c"] - 9, bars[-1]["c"] - 6)
+    resume = (pull[3], pull[3] + 14, pull[3] - 1, pull[3] + 12)
+    bars = _bars5(down + up + [pull, resume])
+    from app.modules.opportunities.service.market_analysis import ema, supertrend
+    closes = [b["c"] for b in bars]
+    a = _setup_input(bars, emaSeries5={"e9": ema(closes, 9)[-14:], "e21": ema(closes, 21)[-14:]},
+                     supertrend5=supertrend(bars))
+    assert a["supertrend5"] is not None and a["supertrend5"]["dir"] == "UP"
+    found = setup_detector.detect(a, cfg)
+    assert {s["name"] for s in found} & {"EMA_CROSS_RETEST", "SUPERTREND_RETEST", "SUPERTREND_FLIP"}
 
 
 if __name__ == "__main__":

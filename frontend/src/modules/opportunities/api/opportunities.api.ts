@@ -1,8 +1,13 @@
 import { httpClient } from "../../../core/api/httpClient";
 import {
+  BatchCheckResult,
   IterateResult,
+  IterationSearchResult,
   LatestOpportunities,
+  OpportunityCheckItem,
   OpportunityMaster,
+  OpportunitySearchFilter,
+  OpportunitySearchResult,
   ResearchTop,
   StartOpportunityParams,
   StartOpportunityResult,
@@ -42,6 +47,34 @@ export const opportunitiesApi = {
 
   async getLatest(underlying?: string): Promise<LatestOpportunities> {
     return httpClient.get("/opportunities/latest", { params: underlying ? { underlying } : undefined });
+  },
+
+  /** Full per-master history across every loop (latestOnly=false) -- used by the batch side sheet. */
+  async search(filter: OpportunitySearchFilter): Promise<OpportunitySearchResult> {
+    return httpClient.post("/opportunities/search", filter);
+  },
+
+  /** Per-batch diagnostics for one session: why a batch was empty, what it dropped. */
+  async searchIterations(masterId: number): Promise<IterationSearchResult> {
+    return httpClient.post("/opportunities/iterations/search", {
+      page: 0,
+      limit: 100,
+      masterId,
+      sortBy: "createdAt",
+      sortDir: "desc",
+    });
+  },
+
+  /** Evaluates target achievement % for one batch (or all batches) over entry -> validUntil. */
+  async checkBatch(masterId: number, iterationNo?: number): Promise<BatchCheckResult> {
+    return httpClient.post(`/opportunities/masters/${masterId}/check`, {
+      iterationNo: iterationNo ?? null,
+    });
+  },
+
+  /** Evaluates target achievement % for ONE opportunity inside a batch over entry -> validUntil. */
+  async checkOpportunity(opportunityId: number): Promise<OpportunityCheckItem> {
+    return httpClient.post(`/opportunities/${opportunityId}/check`, {});
   },
 };
 

@@ -10,9 +10,11 @@ from app.core.filter.filter_builder import FilterBuilder
 from app.core.pagination.page_result import PageResult
 from app.core.response.api_response import ApiResponse
 from app.core.response.response_helper import success
-from app.modules.opportunities.entity.opportunity_entity import OpportunityMaster, TradeOpportunity
+from app.modules.opportunities.entity.opportunity_entity import OpportunityIteration, OpportunityMaster, TradeOpportunity
 from app.modules.opportunities.schema.opportunity_schema import (
+    CheckBatchRequest,
     OpportunityFilter,
+    OpportunityIterationFilter,
     OpportunityMasterFilter,
     StartOpportunityRequest,
 )
@@ -57,6 +59,30 @@ async def iterate_master(master_id: int) -> ApiResponse[dict[str, Any]]:
                          status_code=OK)
 async def stop_master(master_id: int, session: AsyncSession = Depends(get_db)) -> ApiResponse[dict[str, Any]]:
     return success(data=await svc.stop(session, master_id), message="Card session stopped")
+
+
+@opportunity_router.post("/opportunities/masters/{master_id}/check", response_model=ApiResponse[dict[str, Any]],
+                         status_code=OK)
+async def check_master_batches(
+    master_id: int,
+    body: CheckBatchRequest | None = None,
+    session: AsyncSession = Depends(get_db),
+) -> ApiResponse[dict[str, Any]]:
+    """Checks target achievement % for a batch (or all batches) of a master session over entry -> validUntil."""
+    req = body or CheckBatchRequest()
+    res = await svc.check_batch(session, master_id, req.iterationNo)
+    return success(data=res, message="Batch target achievement checked")
+
+
+@opportunity_router.post("/opportunities/{opportunity_id}/check", response_model=ApiResponse[dict[str, Any]],
+                         status_code=OK)
+async def check_single_opportunity(
+    opportunity_id: int,
+    session: AsyncSession = Depends(get_db),
+) -> ApiResponse[dict[str, Any]]:
+    """Checks target achievement % for ONE opportunity inside a batch over its entry -> validUntil window."""
+    res = await svc.check_opportunity(session, opportunity_id)
+    return success(data=res, message="Opportunity target achievement checked")
 
 
 @opportunity_router.post("/opportunities/masters/stop-all", response_model=ApiResponse[dict[str, Any]], status_code=OK)
@@ -121,3 +147,26 @@ async def search_opportunities(
                       totalPages=-(-total // f.limit), totalItems=total)
     return success(data=page, message="Opportunities retrieved")
 
+
+
+@opportunity_router.post("/opportunities/iterations/search", response_model=ApiResponse[PageResult[dict[str, Any]]],
+                         status_code=OK)
+async def search_iterations(
+    filter_body: OpportunityIterationFilter | None = None, session: AsyncSession = Depends(get_db)
+) -> ApiResponse[PageResult[dict[str, Any]]]:
+    """Per-batch diagnostics (why a batch was empty / what it dropped), filterable by masterId / result."""
+    f = filter_body or OpportunityIterationFilter()
+    q = select(OpportunityIteration)
+    if f.masterId:
+        q = q.where(OpportunityIteration.masterId == f.masterId)
+    if f.underlyingCode:
+        q = q.where(OpportunityIteration.underlyingCode == f.underlyingCode.upper())
+    if f.result:
+        q = q.where(OpportunityIteration.result == f.result.upper())
+    items, total = await FilterBuilder.execute_paged_query(
+        session=session, entity_class=OpportunityIteration, filter_obj=f, search_fields=["summary"],
+        allowed_sort_fields=["createdAt", "iterationNo"], base_query=q,
+    )
+    page = PageResult(list=[svc.iteration_dict(i) for i in items], page=f.page, limit=f.limit,
+                      totalPages=-(-total // f.limit), totalItems=total)
+    return success(data=page, message="Iteration diagnostics retrieved")

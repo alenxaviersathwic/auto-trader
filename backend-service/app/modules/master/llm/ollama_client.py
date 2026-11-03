@@ -99,7 +99,8 @@ class OllamaClient(LlmClient):
         keep_alive: Optional[str] = None,
     ) -> T:
         prompt_msgs = []
-        schema_json = json.dumps(schema.model_json_schema(), indent=2)
+        json_schema = schema.model_json_schema()
+        schema_json = json.dumps(json_schema, indent=2)
         augmented_sys = (
             (system_prompt + "\n\n" if system_prompt else "")
             + f"You must output valid JSON strictly matching this JSON schema:\n{schema_json}\nOutput ONLY valid JSON."
@@ -111,7 +112,12 @@ class OllamaClient(LlmClient):
         payload = {
             "model": use_model,
             "messages": prompt_msgs,
-            "format": "json",
+            # Pass the actual JSON schema (not the bare string "json") so Ollama constrains
+            # token sampling to only ever emit a valid instance of this schema -- the model
+            # can no longer invent its own top-level keys/field names (e.g. {"data":[{"side":..}]}
+            # instead of {"picks":[{"id":..,"confidence":..}]}), which was silently falling back
+            # to a parse failure -> default-schema() -> baseline picker on every such miss.
+            "format": json_schema,
             "stream": False,
             "options": {"temperature": temperature},
         }

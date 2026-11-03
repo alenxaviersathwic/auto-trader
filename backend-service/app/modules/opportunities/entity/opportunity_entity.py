@@ -112,3 +112,19 @@ class OpportunityMemory(BaseEntity):
     briefHash: Mapped[str | None] = mapped_column("brief_hash", String(64), nullable=True)
     lastAiAnswer: Mapped[dict[str, Any] | None] = mapped_column("last_ai_answer", JSONB, nullable=True)
 
+
+
+class OpportunityIteration(BaseEntity):
+    """Diagnostics of ONE iteration (batch) of a card session -- written even when the batch found nothing."""
+
+    __tablename__ = "opportunity_iterations"
+
+    masterId: Mapped[int] = mapped_column("master_id", BigInteger, nullable=False, index=True)
+    iterationNo: Mapped[int] = mapped_column("iteration_no", Integer, nullable=False)
+    underlyingCode: Mapped[str] = mapped_column("underlying_code", String(30), nullable=False)
+    # SAVED | DROPPED | NO_SETUP | SETUP_REJECTED | NO_CONTRACT | BLOCKED_WINDOW | MARKET_CLOSED | NOT_IN_RESEARCH | DATA_ERROR | ERROR
+    result: Mapped[str] = mapped_column("result", String(20), nullable=False)
+    summary: Mapped[str | None] = mapped_column("summary", Text, nullable=True)
+    savedCount: Mapped[int] = mapped_column("saved_count", SmallInteger, nullable=False, default=0)
+    details: Mapped[dict[str, Any]] = mapped_column("details", JSONB, nullable=False, default=dict)
+    durationMs: Mapped[int | None] = mapped_column("duration_ms", Integer, nullable=True)

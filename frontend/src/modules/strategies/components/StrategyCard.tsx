@@ -354,15 +354,6 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
             </span>
           )}
 
-          {strategy.activeToday === false && (
-            <span
-              className="badge badge--slate"
-              title={strategy.activeDays?.length ? `Runs on ${strategy.activeDays.join(", ")}` : "Blocked today"}
-            >
-              NOT TODAY
-            </span>
-          )}
-
           {strategy.suggestable && (
             <span
               style={{
@@ -386,7 +377,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
 
       {/* Performance & Action Footer Area */}
       <div>
-        {/* Dedicated Enclosed 4-Column Metrics Strip (matching trading-engine) */}
+        {/* Dedicated Enclosed 5-Column Metrics Strip (matching trading-engine) */}
         <div
           style={{
             background: "#0e121b",
@@ -394,7 +385,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
             borderRadius: "7px",
             padding: "10px 12px",
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(5, 1fr)",
             gap: "8px",
             marginBottom: "12px",
           }}
@@ -418,6 +409,15 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
               }}
             >
               {snapshot ? `${Number(snapshot.winRatePct).toFixed(0)}%` : "—"}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: "10px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>
+              Stop Loss
+            </div>
+            <div style={{ color: "#ff5252", fontWeight: 700, fontSize: "13px", fontFamily: "var(--font-mono)", marginTop: "2px" }}>
+              {strategy.stopLossPct != null ? `${Number(strategy.stopLossPct).toFixed(1)}%` : "3.5%"}
             </div>
           </div>
 

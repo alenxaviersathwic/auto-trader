@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from app.modules.opportunities.service.day_context import is_mcx_evening_only, is_trading_holiday
+
 
 @dataclass(frozen=True)
 class UnderlyingConfig:
@@ -58,9 +60,15 @@ def get_config(code: str) -> UnderlyingConfig | None:
 
 
 def is_market_open(cfg: UnderlyingConfig, now: datetime | None = None) -> bool:
-    """Weekday and inside the exchange's trading hours (IST)."""
+    """Weekday, not a trading holiday, and inside the exchange's trading hours (IST)."""
     now = now or datetime.now(ZoneInfo("Asia/Kolkata"))
     if now.weekday() >= 5:
         return False
-    return cfg.open <= now.strftime("%H:%M") <= cfg.close_today(now)
+    hhmm = now.strftime("%H:%M")
+    if cfg.exchange == "MCX" and is_mcx_evening_only(now.date()):
+        # Morning segment is shut on these dates; only the evening session (~17:00 onward) trades.
+        return "17:00" <= hhmm <= cfg.close_today(now)
+    if is_trading_holiday(now.date(), cfg.exchange):
+        return False
+    return cfg.open <= hhmm <= cfg.close_today(now)
 

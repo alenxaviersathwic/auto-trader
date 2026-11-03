@@ -77,13 +77,54 @@ def buildup_adjustment(analysis: dict[str, Any], side: str) -> int:
     return 0
 
 
+TAG_BONUS = 5
+
+
+def tag_adjustment(day_tags: list[str], strategy_tags: dict[str, list[str]], cited_strategy: str | None) -> tuple[int, list[str]]:
+    """Small confidence nudge when the pick's cited strategy is tagged for today's conditions
+    (e.g. a strategy tagged AFTER_HOLIDAY gets a bonus the morning after a trading holiday).
+    Matching is case-insensitive substring, same as the against-trend strategy-citation check
+    in validate() -- the AI doesn't always echo a strategy name byte-for-byte."""
+    if not cited_strategy or not day_tags or not strategy_tags:
+        return 0, []
+    cited = cited_strategy.lower()
+    for name, tags in strategy_tags.items():
+        if not tags:
+            continue
+        if name.lower() in cited or cited in name.lower():
+            matched = [t for t in tags if t in day_tags]
+            if matched:
+                return TAG_BONUS, matched
+    return 0, []
+
+
+def strategy_stop_loss_for_pick(
+    strategy_stop_loss: dict[str, float] | None,
+    cited_strategy: str | None,
+) -> tuple[float | None, str | None]:
+    """Resolve the stop-loss % configured/calibrated on Strategy Master for the cited strategy."""
+    if not strategy_stop_loss:
+        return None, None
+    if cited_strategy:
+        cited = cited_strategy.lower()
+        for name, sl_pct in strategy_stop_loss.items():
+            if name.lower() in cited or cited in name.lower():
+                return float(sl_pct), name
+    # Fallback to mean stopLossPct across active suggestable strategies for this underlying
+    vals = [float(v) for v in strategy_stop_loss.values() if v and v > 0]
+    if vals:
+        return round(sum(vals) / len(vals), 2), "Strategy Master Win-Rate Profile"
+    return None, None
+
+
 def brief_hash(brief: dict[str, Any]) -> str:
     """Stable hash of the rounded brief; unchanged hash => reuse the last AI answer."""
     return hashlib.sha256(json.dumps(brief, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def build_brief(cfg: UnderlyingConfig, research: dict[str, Any], market: dict[str, Any], bias: str,
-                analysis: dict[str, Any], setups: list[dict[str, Any]]) -> dict[str, Any]:
+                analysis: dict[str, Any], setups: list[dict[str, Any]], day_tags: list[str] | None = None,
+                strategy_tags: dict[str, list[str]] | None = None) -> dict[str, Any]:
     q = cfg.strikeStep / 10
 
     def r(x: Any) -> Any:
@@ -122,6 +163,14 @@ def build_brief(cfg: UnderlyingConfig, research: dict[str, Any], market: dict[st
             {"expiry": c["expiry"], "pcr": round(c["pcr"], 1), "support": c.get("support"), "resistance": c.get("resistance")}
             for c in market.get("chains", [])
         ],
+        "dayTags": day_tags or [],
+        # Only strategies that are themselves tagged for today's conditions -- a hint to the AI,
+        # not a hard filter. There is no separate day-of-week eligibility gate: every suggestable
+        # strategy is a candidate every day, and tag matches here just nudge confidence (see
+        # tag_adjustment() below).
+        "tagMatchedStrategies": [
+            name for name, tags in (strategy_tags or {}).items() if any(t in (day_tags or []) for t in tags)
+        ],
     }
 
 
@@ -135,8 +184,16 @@ def build_menu(
     max_stop: float = 5.0,
     reasons: dict[str, int] | None = None,
     setups: list[dict[str, Any]] | None = None,
+    require_setup: bool = False,
+    atm_itm_only: bool = False,
+    min_delta: float = 0.0,
 ) -> list[dict[str, Any]]:
-    """Code builds executable contracts. The AI may only choose from this list.
+    """Code builds executable contracts.
+
+    require_setup  only contracts on the side of a validated setup are listed (the AI just ranks them).
+    atm_itm_only   only the ATM strike and the one strike in-the-money (lower for CE, higher for PE).
+    min_delta      contracts with |delta| below this are dropped (a quoted delta of 0 is treated as missing).
+ The AI may only choose from this list.
 
     With a coded setup on a side, the contract's premium target/stop come from the setup's chart levels
     (next key level / invalidation) through the contract delta. Without one, the OI walls give the room.
@@ -160,8 +217,19 @@ def build_menu(
         res: float | None = chain.get("resistance")
         sup: float | None = chain.get("support")
         atm_rows = sorted(chain["strikes"], key=lambda s: abs(s["strike"] - spot))[:9]
+        by_strike = sorted(chain["strikes"], key=lambda s: s["strike"])
+        atm_strike = min(by_strike, key=lambda s: abs(s["strike"] - spot))["strike"] if by_strike else None
+        allowed: dict[str, set[float]] = {"CE": set(), "PE": set()}
+        if atm_strike is not None:
+            i = next(k for k, r in enumerate(by_strike) if r["strike"] == atm_strike)
+            allowed["CE"] = {atm_strike} | ({by_strike[i - 1]["strike"]} if i > 0 else set())
+            allowed["PE"] = {atm_strike} | ({by_strike[i + 1]["strike"]} if i + 1 < len(by_strike) else set())
         for row in atm_rows:
             for side in sides:
+                if require_setup and not best_setup[side]:
+                    continue  # no validated setup on this side: nothing to rank
+                if atm_itm_only and row["strike"] not in allowed[side]:
+                    continue
                 leg = row[side]
                 ltp, bid, ask = leg["ltp"], leg["bid"], leg["ask"]
                 if ltp <= 0:
@@ -177,6 +245,9 @@ def build_menu(
                 if spread > max_spread_pct:
                     _d(f"spread>{max_spread_pct}%")
                     continue
+                if min_delta and leg["delta"] and abs(leg["delta"]) < min_delta:
+                    _d(f"delta<{min_delta}")
+                    continue
                 delta = abs(leg["delta"]) or 0.5
                 setup = best_setup[side]
                 if setup:
@@ -184,12 +255,16 @@ def build_menu(
                     down = (spot - setup["stop"]) if side == "CE" else (setup["stop"] - spot)
                     if up <= 0 or down <= 0:
                         setup = None  # price already ran past the plan: treat as no setup
+                        if require_setup:
+                            _d("price ran past setup plan")
+                            continue
+                min_stop_floor = min(MIN_STOP_PCT, max_stop)
                 if setup:
                     target_pct = min(max_margin, delta * up * 0.9 / ltp * 100)
                     # The chart invalidation is usually much wider than a 2.5-5% premium stop (5% of a Rs 120
-                    # NIFTY option is ~12 index points). The user's premium stop wins; the chart level is reported.
+                    # NIFTY option is ~12 index points). Strategy stop-loss % caps the premium risk; the chart level is reported.
                     chart_stop_pct = delta * down / ltp * 100
-                    stop_pct = max(MIN_STOP_PCT, min(max_stop, chart_stop_pct))
+                    stop_pct = max(min_stop_floor, min(max_stop, chart_stop_pct))
                 else:
                     if side == "CE":
                         up = (res - spot) if res and res > spot else spot * 0.004
@@ -199,7 +274,7 @@ def build_menu(
                         down = (res - spot) if res and res > spot else spot * 0.003
                     target_pct = min(max_margin, delta * up * 0.8 / ltp * 100)
                     structural = delta * down * 0.5 / ltp * 100
-                    stop_pct = max(MIN_STOP_PCT, min(max_stop, target_pct / 2, structural or max_stop))
+                    stop_pct = max(min_stop_floor, min(max_stop, target_pct / 2, structural or max_stop))
                 if target_pct < min_margin:
                     _d("no room for min target")
                     continue

@@ -7,7 +7,8 @@ import {
 import {
   activateStrategyVersion,
   addPerformanceSnapshot,
-  applyDayShift,
+  backtestAllStrategies,
+  backtestStrategy,
   checkGuardrails,
   cloneStrategy,
   createRule,
@@ -41,7 +42,6 @@ import {
   strategiesQueryKeys,
 } from "../queryKeys/strategiesQueryKeys";
 import {
-  DayShiftPayload,
   RuleCreatePayload,
   RuleFilter,
   RuleUpdatePayload,
@@ -134,16 +134,6 @@ export function useCloneStrategy() {
   });
 }
 
-export function useApplyDayShift() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: DayShiftPayload) => applyDayShift(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: strategiesQueryKeys.all });
-    },
-  });
-}
-
 export function useUpdateStrategyEnabled() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -192,6 +182,23 @@ export function useEvaluateStrategy() {
   return useMutation({
     mutationFn: ({ versionId, context }: { versionId: number; context: Record<string, any> }) =>
       evaluateStrategy(versionId, context),
+  });
+}
+
+export function useBacktestStrategy() {
+  return useMutation({
+    mutationFn: ({ id, underlyingCode, years }: { id: number; underlyingCode?: string | null; years?: number }) =>
+      backtestStrategy(id, { underlyingCode, years }),
+  });
+}
+
+export function useBacktestAllStrategies() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (years: number = 20) => backtestAllStrategies(years),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: strategiesQueryKeys.lists() });
+    },
   });
 }
 
