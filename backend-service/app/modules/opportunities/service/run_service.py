@@ -1,7 +1,8 @@
 import asyncio
+import json
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, AsyncGenerator
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,10 @@ from app.modules.research.service.run_service import run_service as research_run
 
 _IST = ZoneInfo("Asia/Kolkata")
 ALL_IN_RESEARCH = 12  # select_underlyings count large enough to return every researched underlying
+
+# SSE: queues keyed by underlying code -- a session subscribes by registering one shared queue
+# under several codes, so events from any of its underlyings land in the same stream.
+_EVENT_QUEUES: dict[str, list[asyncio.Queue]] = {}
 
 
 def _today() -> str:
@@ -114,6 +119,32 @@ class OpportunityRunService:
         return {"stopped": len(rows), "masters": [self.master_dict(m) for m in rows]}
 
     # ───────────────────────── one iteration ─────────────────────────
+    async def _publish_event(self, underlying_code: str, event_data: dict[str, Any]) -> None:
+        for q in _EVENT_QUEUES.get(underlying_code, []):
+            await q.put(event_data)
+
+    async def stream_events(self, underlying_codes: list[str]) -> AsyncGenerator[str, None]:
+        """SSE generator: one shared queue registered under every requested underlying code,
+        so a single connection receives batches for all of a session's underlyings, merged."""
+        q: asyncio.Queue = asyncio.Queue()
+        for code in underlying_codes:
+            _EVENT_QUEUES.setdefault(code, []).append(q)
+        try:
+            yield f"event: connected\ndata: {json.dumps({'underlyings': underlying_codes})}\n\n"
+            while True:
+                try:
+                    event_data = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield f"event: {event_data['event']}\ndata: {json.dumps(event_data)}\n\n"
+                except asyncio.TimeoutError:
+                    yield f"event: heartbeat\ndata: {json.dumps({'time': datetime.now(UTC).isoformat()})}\n\n"
+        finally:
+            for code in underlying_codes:
+                queues = _EVENT_QUEUES.get(code)
+                if queues and q in queues:
+                    queues.remove(q)
+                    if not queues:
+                        _EVENT_QUEUES.pop(code, None)
+
     async def iterate(self, master_id: int) -> dict[str, Any]:
         lock = self._locks.setdefault(master_id, asyncio.Lock())
         if lock.locked():
@@ -174,8 +205,10 @@ class OpportunityRunService:
             m = await master_repo.get(s, master_id)
             assert m is not None
             saved = 0
+            event_opportunities: list[dict[str, Any]] = []
             if error is None:
-                saved = await self._save(s, m, iteration, picks, params)
+                saved, saved_rows = await self._save(s, m, iteration, picks, params)
+                event_opportunities = [self.to_dict(r, datetime.now(UTC)) for r in saved_rows]
                 await memory_service.resolve_outcomes(s, prices)
                 m.iterationsCompleted = iteration
                 m.lastCompletedAt = datetime.now(UTC)
@@ -194,6 +227,17 @@ class OpportunityRunService:
             m.lastDurationMs = int((time.monotonic() - t0) * 1000)
             await self._record_iteration(s, m, iteration, diag, note or error, saved)
             await s.commit()
+            if error is None:
+                await self._publish_event(code, {
+                    "event": "opportunities.batch", "masterId": m.id, "underlyingCode": code,
+                    "iterationNo": iteration, "count": saved, "opportunities": event_opportunities,
+                    "note": note or None,
+                })
+            else:
+                await self._publish_event(code, {
+                    "event": "opportunities.error", "masterId": m.id, "underlyingCode": code,
+                    "iterationNo": iteration, "error": error,
+                })
             return {"master": self.master_dict(m), "ran": True, "saved": saved}
 
     @staticmethod
@@ -219,7 +263,7 @@ class OpportunityRunService:
         ))
 
     async def _save(self, s: AsyncSession, m: OpportunityMaster, iteration: int,
-                    picks: list[dict[str, Any]], params: dict[str, Any]) -> int:
+                    picks: list[dict[str, Any]], params: dict[str, Any]) -> tuple[int, list[TradeOpportunity]]:
         """This iteration's picks become the card's 'latest' set (an empty set clears the old one)."""
         now = datetime.now(UTC)
         valid_until = now + timedelta(minutes=params.get("validMinutes", 15))
@@ -239,7 +283,7 @@ class OpportunityRunService:
         await opportunity_repository.replace_latest(s, m.underlyingCode, rows)
         for row, c in zip(rows, picks, strict=True):
             await memory_service.remember_pending(s, row, c.get("bias", "NEUTRAL"), "UNKNOWN")
-        return len(rows)
+        return len(rows), rows
 
     # ───────────────────────── reads ─────────────────────────
     async def research_top(self, session: AsyncSession) -> dict[str, Any]:

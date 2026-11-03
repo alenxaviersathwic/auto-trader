@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { Plus, CheckCircle2, AlertCircle, X } from "lucide-react";
 import { useSessionSearch, useCreateSession, useUpdateSession, useDeleteSession } from "../hooks/useSessions";
 import { TradingSession, TradingSessionSearchFilter } from "../types/sessions.types";
@@ -11,6 +12,7 @@ function statusBadgeClass(status: TradingSession["sessionStatus"]): string {
 }
 
 export const SessionsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [filter] = useState<TradingSessionSearchFilter>({
     page: 0,
     limit: 20,
@@ -113,7 +115,11 @@ export const SessionsPage: React.FC = () => {
                 </tr>
               )}
               {sessions.map((s) => (
-                <tr key={s.id}>
+                <tr
+                  key={s.id}
+                  onClick={() => navigate({ to: "/sessions/$id", params: { id: String(s.id) } })}
+                  style={{ cursor: "pointer" }}
+                >
                   <td className="text-primary">{s.name}</td>
                   <td className="mono">{s.tradeDate}</td>
                   <td>{s.scope}</td>
@@ -122,7 +128,7 @@ export const SessionsPage: React.FC = () => {
                   <td>{s.sessionType}</td>
                   <td>{s.routeThroughUpstox ? "LIVE" : "Simulated"}</td>
                   <td><span className={statusBadgeClass(s.sessionStatus)}>{s.sessionStatus}</span></td>
-                  <td>
+                  <td onClick={(e) => e.stopPropagation()}>
                     <div className="page-actions">
                       {s.sessionStatus === "ACTIVE" && (
                         <button type="button" className="btn btn--ghost" onClick={() => handleClose(s)}>

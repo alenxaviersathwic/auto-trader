@@ -17,6 +17,7 @@ import { ResearchEnginePage } from "../../modules/research/pages/ResearchEngineP
 import { OpportunityDetailPage } from "../../modules/opportunities/pages/OpportunityDetailPage";
 import { OpportunitiesPage } from "../../modules/opportunities/pages/OpportunitiesPage";
 import { SessionsPage } from "../../modules/sessions/pages/SessionsPage";
+import { SessionDetailPage } from "../../modules/sessions/pages/SessionDetailPage";
 
 // Root Route housing AppLayout
 const rootRoute = createRootRoute({
@@ -116,6 +117,12 @@ const sessionsRoute = createRoute({
   component: SessionsPage,
 });
 
+const sessionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sessions/$id",
+  component: SessionDetailPage,
+});
+
 const legacySuggestionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/suggestion",
@@ -144,6 +151,7 @@ const routeTree = rootRoute.addChildren([
   opportunitiesRoute,
   opportunityDetailRoute,
   sessionsRoute,
+  sessionDetailRoute,
   legacySuggestionRoute,
 ]);
 
