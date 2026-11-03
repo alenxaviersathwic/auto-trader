@@ -235,3 +235,4 @@ All endpoints are registered under `/api/v1/strategies` and `/api/v1/rules`:
 | `GET` | `/api/v1/rules/{id}` | Get rule details and condition AST |
 | `PUT` | `/api/v1/rules/{id}` | Update rule definition |
 | `DELETE` | `/api/v1/rules/{id}` | Soft-delete rule |
+

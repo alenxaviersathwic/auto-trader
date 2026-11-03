@@ -116,3 +116,4 @@ graph TB
 - **Quantitative & Strategy Developers**: Read [03. Strategies & Rules Module](03-strategies-rules-module.md) and [05. Opportunities Module](05-opportunities-module.md) to learn how rules are defined, evaluated, and converted into live trade opportunities.
 - **AI & Agent Developers**: Read [02. Master AI Module](02-master-ai-module.md) and [04. Research Engine Module](04-research-engine-module.md) to explore LangGraph state machines, MCP server implementations, and vector search pipelines.
 - **Frontend Engineers**: Read [08. Frontend Architecture](08-frontend-architecture.md) to understand the component hierarchies, TanStack Query patterns, and Kite dark theme styling.
+

@@ -217,3 +217,4 @@ Registered in `main.py` to translate all exceptions into unified `ApiResponse` f
 - Logs HTTP Method, URL Path, Status Code, and Execution Duration (in ms).
 - Inspects and colorizes response codes (Green for 2xx, Yellow for 3xx, Red for 4xx/5xx).
 - Formats payloads and headers in development mode for instantaneous debugging.
+

@@ -293,3 +293,4 @@ Every backend REST endpoint wraps its payload in the universal `ApiResponse[T]` 
 }
 ```
 The frontend Axios wrapper unwraps `data` automatically, throwing structured `ApiError` instances on failures.
+

@@ -228,3 +228,4 @@ All endpoints are registered under `/api/v1/master`:
 | `GET` | `/api/v1/master/tools` | List registered FastMCP tools, servers, and policy permissions |
 | `GET` | `/api/v1/master/preferences` | Retrieve user preferences (underlyings, risk tolerances) |
 | `PUT` | `/api/v1/master/preferences` | Update or upsert user preferences |
+
