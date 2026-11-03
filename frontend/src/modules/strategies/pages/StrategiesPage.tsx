@@ -290,14 +290,14 @@ export const StrategiesPage: React.FC = () => {
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              gap: "14px",
-              marginBottom: "16px",
+              gap: "12px",
+              marginBottom: "14px",
               flexWrap: "wrap",
-              background: "linear-gradient(180deg, #161c28 0%, #121620 100%)",
-              padding: "12px 18px",
-              borderRadius: "10px",
-              border: "1px solid #232d3f",
-              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)",
+              background: "var(--bg-card)",
+              padding: "10px 14px",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--border-subtle)",
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.2)",
             }}
           >
             {/* Search Box */}
@@ -307,10 +307,10 @@ export const StrategiesPage: React.FC = () => {
             >
               <Search
                 size={14}
-                color="#64748b"
+                color="var(--text-muted)"
                 style={{
                   position: "absolute",
-                  left: "12px",
+                  left: "10px",
                   top: "50%",
                   transform: "translateY(-50%)",
                 }}
@@ -322,11 +322,11 @@ export const StrategiesPage: React.FC = () => {
                 placeholder="Search code, name, tags..."
                 style={{
                   width: "100%",
-                  background: "#0e121a",
-                  border: "1px solid #253147",
-                  borderRadius: "6px",
-                  padding: "7px 30px 7px 32px",
-                  color: "#f8fafc",
+                  background: "var(--bg-input)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "6px 28px 6px 30px",
+                  color: "var(--text-heading)",
                   fontSize: "12px",
                   outline: "none",
                 }}
@@ -366,15 +366,15 @@ export const StrategiesPage: React.FC = () => {
                     type="button"
                     onClick={() => handleStatusFilter(st)}
                     style={{
-                      background: isActive ? "#1c2638" : "#10141d",
-                      border: `1px solid ${isActive ? "#00e676" : "#232b3b"}`,
-                      borderRadius: "5px",
-                      color: isActive ? "#00e676" : "#94a3b8",
-                      padding: "4px 10px",
+                      background: isActive ? "var(--bg-card-hover)" : "var(--bg-input)",
+                      border: `1px solid ${isActive ? "var(--kite-blue)" : "var(--border-subtle)"}`,
+                      borderRadius: "var(--radius-sm)",
+                      color: isActive ? "var(--text-heading)" : "var(--text-secondary)",
+                      padding: "3px 9px",
                       fontSize: "11px",
                       fontWeight: isActive ? 700 : 500,
                       cursor: "pointer",
-                      transition: "all 0.15s ease",
+                      transition: "all 0.12s ease",
                     }}
                   >
                     {st === "IN_REVIEW" ? "Review" : st.charAt(0) + st.slice(1).toLowerCase()}
@@ -385,7 +385,7 @@ export const StrategiesPage: React.FC = () => {
 
             {/* Market Filter Chips */}
             <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>
+              <span style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>
                 Market:
               </span>
               {["ALL", "NIFTY", "BANKNIFTY", "SENSEX", "CRUDEOIL"].map((mkt) => {
@@ -396,15 +396,15 @@ export const StrategiesPage: React.FC = () => {
                     type="button"
                     onClick={() => handleMarketFilter(mkt)}
                     style={{
-                      background: isActive ? "#162232" : "#10141d",
-                      border: `1px solid ${isActive ? "#38bdf8" : "#232b3b"}`,
-                      borderRadius: "5px",
-                      color: isActive ? "#38bdf8" : "#94a3b8",
-                      padding: "4px 9px",
+                      background: isActive ? "var(--bg-card-hover)" : "var(--bg-input)",
+                      border: `1px solid ${isActive ? "var(--kite-blue)" : "var(--border-subtle)"}`,
+                      borderRadius: "var(--radius-sm)",
+                      color: isActive ? "var(--text-heading)" : "var(--text-secondary)",
+                      padding: "3px 8px",
                       fontSize: "11px",
                       fontWeight: isActive ? 700 : 500,
                       cursor: "pointer",
-                      transition: "all 0.15s ease",
+                      transition: "all 0.12s ease",
                     }}
                   >
                     {mkt}
@@ -417,9 +417,9 @@ export const StrategiesPage: React.FC = () => {
             <div
               style={{
                 display: "flex",
-                background: "#0e121a",
-                border: "1px solid #232b3b",
-                borderRadius: "6px",
+                background: "var(--bg-input)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-sm)",
                 padding: "2px",
                 gap: "2px",
               }}
@@ -429,11 +429,11 @@ export const StrategiesPage: React.FC = () => {
                 onClick={() => setViewMode("grid")}
                 title="Grid Card View"
                 style={{
-                  background: viewMode === "grid" ? "#1c2638" : "transparent",
-                  color: viewMode === "grid" ? "#00e676" : "#64748b",
+                  background: viewMode === "grid" ? "var(--bg-card-hover)" : "transparent",
+                  color: viewMode === "grid" ? "var(--kite-blue)" : "var(--text-muted)",
                   border: "none",
-                  padding: "4px 8px",
-                  borderRadius: "4px",
+                  padding: "4px 7px",
+                  borderRadius: "var(--radius-xs)",
                   display: "flex",
                   alignItems: "center",
                 }}
@@ -445,11 +445,11 @@ export const StrategiesPage: React.FC = () => {
                 onClick={() => setViewMode("table")}
                 title="Table View"
                 style={{
-                  background: viewMode === "table" ? "#1c2638" : "transparent",
-                  color: viewMode === "table" ? "#00e676" : "#64748b",
+                  background: viewMode === "table" ? "var(--bg-card-hover)" : "transparent",
+                  color: viewMode === "table" ? "var(--kite-blue)" : "var(--text-muted)",
                   border: "none",
-                  padding: "4px 8px",
-                  borderRadius: "4px",
+                  padding: "4px 7px",
+                  borderRadius: "var(--radius-xs)",
                   display: "flex",
                   alignItems: "center",
                 }}
@@ -477,11 +477,11 @@ export const StrategiesPage: React.FC = () => {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <SlidersHorizontal size={13} color="#00e676" />
+              <SlidersHorizontal size={13} color="var(--kite-blue)" />
               <span>
-                Showing <strong style={{ color: "#fff" }}>{startRecord}</strong>–
-                <strong style={{ color: "#fff" }}>{endRecord}</strong> of{" "}
-                <strong style={{ color: "#00e676" }}>{totalItems}</strong> strategies
+                Showing <strong style={{ color: "var(--text-heading)" }}>{startRecord}</strong>–
+                <strong style={{ color: "var(--text-heading)" }}>{endRecord}</strong> of{" "}
+                <strong style={{ color: "var(--bullish-green)" }}>{totalItems}</strong> strategies
                 {totalPages > 1 && (
                   <span style={{ color: "#666", marginLeft: "6px" }}>
                     (Page {filter.page + 1} of {totalPages})
@@ -604,23 +604,23 @@ export const StrategiesPage: React.FC = () => {
                 textAlign: "center",
               }}
             >
-              <TrendingUp size={36} color="#00e676" style={{ margin: "0 auto 12px", opacity: 0.7 }} />
-              <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#fff", marginBottom: "6px" }}>
+              <TrendingUp size={36} color="var(--kite-blue)" style={{ margin: "0 auto 12px", opacity: 0.7 }} />
+              <h3 style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-heading)", marginBottom: "6px" }}>
                 No Strategies Found
               </h3>
-              <p style={{ fontSize: "12px", color: "#888", marginBottom: "16px" }}>
+              <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "16px" }}>
                 No strategies match the filter criteria. Click below to load textbook defaults.
               </p>
               <button
                 type="button"
                 onClick={handleSeedDefaults}
                 style={{
-                  background: "#00e676",
-                  color: "#000",
+                  background: "var(--kite-blue)",
+                  color: "#fff",
                   fontWeight: 700,
                   fontSize: "12px",
-                  padding: "8px 16px",
-                  borderRadius: "6px",
+                  padding: "7px 16px",
+                  borderRadius: "var(--radius-sm)",
                   border: "none",
                   cursor: "pointer",
                 }}
@@ -867,9 +867,9 @@ export const StrategiesPage: React.FC = () => {
               }}
             >
               <div>
-                Showing <strong style={{ color: "#fff" }}>{startRecord}</strong>–
-                <strong style={{ color: "#fff" }}>{endRecord}</strong> of{" "}
-                <strong style={{ color: "#00e676" }}>{totalItems}</strong> strategies (Page{" "}
+                Showing <strong style={{ color: "var(--text-heading)" }}>{startRecord}</strong>–
+                <strong style={{ color: "var(--text-heading)" }}>{endRecord}</strong> of{" "}
+                <strong style={{ color: "var(--bullish-green)" }}>{totalItems}</strong> strategies (Page{" "}
                 {filter.page + 1} of {totalPages})
               </div>
 

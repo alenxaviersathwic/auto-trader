@@ -4,66 +4,67 @@
    ========================================================================== */
 
 :root {
-  /* Eye-Comfort Pro Trading Dark Slate Palette */
-  --bg-app: #0a0e16;
-  --bg-sidebar: #0d121c;
-  --bg-header: #0d121c;
-  --bg-card: #121824;
-  --bg-card-hover: #171f2f;
-  --bg-card-active: #1d273b;
-  --bg-panel: #0e131e;
-  --bg-input: #0b0f17;
-  --bg-modal: #131927;
-  --bg-table-header: #0f1420;
-  --bg-stat: #161d2b;
-  --bg-tile: #141b29;
+  /* Eye-Comfort Matte Charcoal Trading Palette (Authentic Zerodha Kite) */
+  --bg-app: #121212;
+  --bg-sidebar: #181818;
+  --bg-header: #181818;
+  --bg-card: #1e1e1e;
+  --bg-card-hover: #242424;
+  --bg-card-active: #2a2a2a;
+  --bg-panel: #161616;
+  --bg-input: #151515;
+  --bg-modal: #1e1e1e;
+  --bg-table-header: #151515;
+  --bg-stat: #181818;
+  --bg-tile: #1a1a1a;
 
-  --border-subtle: #1c2536;
-  --border-medium: #263248;
-  --border-focus: #3b82f6;
+  --border-subtle: #262626;
+  --border-medium: #323232;
+  --border-focus: #387ed1;
 
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-dim: #475569;
-  --text-heading: #f8fafc;
+  --text-primary: #dedede;
+  --text-secondary: #9a9a9a;
+  --text-muted: #666666;
+  --text-dim: #4d4d4d;
+  --text-heading: #f0f0f0;
 
-  /* Trading Colors */
-  --bullish-green: #00e676;
-  --bullish-green-tint: rgba(0, 230, 118, 0.12);
-  --bearish-red: #ff5252;
-  --bearish-red-tint: rgba(255, 82, 82, 0.12);
+  /* Trading Colors - Eye-Comfort Calibrated (Zero Strain) */
+  --bullish-green: #4caf50;
+  --bullish-green-tint: rgba(76, 175, 80, 0.12);
+  --bearish-red: #ef5350;
+  --bearish-red-tint: rgba(239, 83, 80, 0.12);
   --warning-amber: #ff9800;
   --warning-amber-tint: rgba(255, 152, 0, 0.12);
 
   /* Layout & Kite Aliases */
   --sidebar-width: 220px;
-  --topbar-height: 46px;
-  --transition-fast: 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+  --topbar-height: 44px;
+  --transition-fast: 0.12s cubic-bezier(0.2, 0, 0, 1);
 
-  --bg-base: #0a0e16;
-  --bg-surface: #121824;
-  --bg-elevated: #171f2f;
-  --border-light: #263248;
-  --emerald: #00e676;
-  --rose: #ff5252;
+  --bg-base: #121212;
+  --bg-surface: #1e1e1e;
+  --bg-elevated: #242424;
+  --border-light: #2c2c2c;
+  --emerald: #4caf50;
+  --rose: #ef5350;
   --amber: #ff9800;
   --cyan: #38bdf8;
-  --kite-blue: #3b82f6;
-  --kite-blue-hover: #2563eb;
+  --kite-blue: #387ed1;
+  --kite-blue-hover: #2e6db9;
   --kite-orange: #ff5722;
-  --kite-green: #00e676;
-  --kite-green-bg: rgba(0, 230, 118, 0.12);
-  --kite-red: #ff5252;
-  --kite-red-bg: rgba(255, 82, 82, 0.12);
+  --kite-green: #4caf50;
+  --kite-green-bg: rgba(76, 175, 80, 0.12);
+  --kite-red: #ef5350;
+  --kite-red-bg: rgba(239, 83, 80, 0.12);
   --kite-amber: #ff9800;
 
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-display: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, Menlo, Monaco, monospace;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -192,7 +193,7 @@ input:-webkit-autofill:active {
 }
 
 .toggle-switch input:checked + .slider {
-  background-color: #00e676;
+  background-color: var(--bullish-green);
 }
 
 .toggle-switch input:checked + .slider:before {
@@ -3637,13 +3638,13 @@ button {
 
 .runner-pill input {
   cursor: pointer;
-  accent-color: #00e676;
+  accent-color: var(--bullish-green);
 }
 
 .runner-pill.is-selected {
-  background: rgba(0, 230, 118, 0.08);
-  border-color: rgba(0, 230, 118, 0.3);
-  color: #00e676;
+  background: var(--bullish-green-tint);
+  border-color: rgba(76, 175, 80, 0.3);
+  color: var(--bullish-green);
 }
 
 .runner-pill.is-disabled {
@@ -3658,9 +3659,9 @@ button {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
-  background: #161b26;
+  background: var(--bg-stat);
   padding: 5px 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
 }
 
@@ -3682,7 +3683,7 @@ button {
 }
 
 .runner-rationale strong {
-  color: #f8fafc;
+  color: var(--text-heading);
 }
 
 .runner-btn-group {
@@ -3695,22 +3696,22 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 24px;
-  border-radius: 4px;
-  font-size: 13px;
+  padding: 8px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  background: #00e676;
-  color: #042410;
+  background: var(--kite-blue);
+  color: #ffffff;
   border: none;
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0, 230, 118, 0.25);
-  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: all 0.12s ease;
 }
 
 .runner-btn-primary:hover:not(:disabled) {
-  background: #00ff84;
-  box-shadow: 0 4px 16px rgba(0, 230, 118, 0.4);
+  background: var(--kite-blue-hover);
+  box-shadow: 0 2px 6px rgba(56, 126, 209, 0.35);
   transform: translateY(-1px);
 }
 
@@ -3723,15 +3724,15 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 9px 16px;
-  border-radius: 4px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 700;
-  background: rgba(255, 82, 82, 0.12);
-  color: #ff5252;
-  border: 1px solid rgba(255, 82, 82, 0.3);
+  background: var(--bearish-red-tint);
+  color: var(--bearish-red);
+  border: 1px solid rgba(239, 83, 80, 0.3);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.12s ease;
 }
 
 .runner-btn-danger:hover {
@@ -4532,13 +4533,15 @@ button {
 }
 
 /* --------------------------------------------------------------------------
-   Cards (canonical)
+   Cards (canonical - Zerodha Kite Compact Aesthetic)
    -------------------------------------------------------------------------- */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  padding: var(--space-4);
+  padding: 12px 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 
 .card--flat {
@@ -4547,16 +4550,38 @@ button {
 
 .card--clickable {
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 
 .card--clickable:hover {
   background: var(--bg-card-hover);
+  border-color: var(--border-medium);
 }
 
 .card--active {
   background: var(--bg-card-active);
+  border-color: var(--kite-blue);
+}
+
+.card-kite {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: all 0.12s ease-in-out;
+}
+
+.card-kite:hover {
+  background: var(--bg-card-hover);
   border-color: var(--border-medium);
+}
+
+.card-stat-strip {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
 }
 
 /* --------------------------------------------------------------------------
@@ -4814,6 +4839,16 @@ button {
   padding: var(--space-5);
 }
 
+.drawer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
 /* --------------------------------------------------------------------------
    Modals (canonical)
    -------------------------------------------------------------------------- */
@@ -4987,6 +5022,55 @@ button {
 .text-secondary { color: var(--text-secondary) !important; }
 .text-heading   { color: var(--text-heading) !important; }
 .font-mono   { font-family: var(--font-mono) !important; }
+
+/* --------------------------------------------------------------------------
+   Form grid (canonical)
+   -------------------------------------------------------------------------- */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+}
+
+.form-grid__full {
+  grid-column: 1 / -1;
+}
+
+/* --------------------------------------------------------------------------
+   Toggle chips (canonical) — selectable multi-choice pills
+   -------------------------------------------------------------------------- */
+.toggle-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.toggle-chip:hover {
+  border-color: var(--border-medium);
+  color: var(--text-primary);
+}
+
+.toggle-chip--active {
+  background: var(--bullish-green-tint);
+  border-color: rgba(0, 230, 118, 0.35);
+  color: var(--bullish-green);
+}
 
 /* ==========================================================================
    END STANDARDS LAYER

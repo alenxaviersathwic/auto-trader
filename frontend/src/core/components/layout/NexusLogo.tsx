@@ -16,12 +16,12 @@ export const NexusLogo: React.FC<NexusLogoProps> = ({ size = 32 }) => (
   >
     <defs>
       <linearGradient id="nexus-bar-grad" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0%" stopColor="#3b82f6" />
-        <stop offset="100%" stopColor="#00e676" />
+        <stop offset="0%" stopColor="#387ed1" />
+        <stop offset="100%" stopColor="#4caf50" />
       </linearGradient>
       <linearGradient id="nexus-line-grad" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0%" stopColor="#3b82f6" />
-        <stop offset="100%" stopColor="#00e676" />
+        <stop offset="0%" stopColor="#387ed1" />
+        <stop offset="100%" stopColor="#4caf50" />
       </linearGradient>
     </defs>
 
@@ -39,12 +39,12 @@ export const NexusLogo: React.FC<NexusLogoProps> = ({ size = 32 }) => (
       stroke="url(#nexus-line-grad)" strokeWidth="1.5" strokeLinecap="round" />
 
     {/* Node dots on bar tops */}
-    <circle cx="5.5" cy="19.5" r="2" fill="#3b82f6" />
-    <circle cx="13.5" cy="13.5" r="2" fill="#1ca8ff" />
-    <circle cx="21.5" cy="5.5" r="2.2" fill="#00e676" />
+    <circle cx="5.5" cy="19.5" r="2" fill="#387ed1" />
+    <circle cx="13.5" cy="13.5" r="2" fill="#38bdf8" />
+    <circle cx="21.5" cy="5.5" r="2.2" fill="#4caf50" />
 
     {/* Pulse ring on top node */}
-    <circle cx="21.5" cy="5.5" r="4" stroke="#00e676" strokeWidth="1"
+    <circle cx="21.5" cy="5.5" r="4" stroke="#4caf50" strokeWidth="1"
       strokeOpacity="0.35" fill="none" />
   </svg>
 );

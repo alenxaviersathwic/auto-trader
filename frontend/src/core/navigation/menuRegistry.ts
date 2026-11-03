@@ -42,7 +42,7 @@ class MenuRegistry {
   }
 }
 
-import { Users, TrendingUp, BotMessageSquare, Sparkles, Lightbulb } from "lucide-react";
+import { Users, TrendingUp, BotMessageSquare, Sparkles, Lightbulb, CalendarClock } from "lucide-react";
 
 export const menuRegistry = new MenuRegistry();
 
@@ -71,6 +71,15 @@ menuRegistry.register({
   path: "/opportunities",
   icon: Lightbulb,
   order: 4,
+});
+
+// Register Trading Sessions navigation item
+menuRegistry.register({
+  id: "trading-sessions",
+  label: "Sessions",
+  path: "/sessions",
+  icon: CalendarClock,
+  order: 2,
 });
 
 // Register AI Master chat navigation item

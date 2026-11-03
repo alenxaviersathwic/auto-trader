@@ -28,40 +28,40 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
     switch (status?.toUpperCase()) {
       case "ACTIVE":
         return {
-          bg: "rgba(0, 230, 118, 0.12)",
-          text: "#00e676",
-          border: "rgba(0, 230, 118, 0.28)",
-          dotColor: "#00e676",
+          bg: "rgba(76, 175, 80, 0.12)",
+          text: "var(--bullish-green)",
+          border: "rgba(76, 175, 80, 0.28)",
+          dotColor: "var(--bullish-green)",
         };
       case "DEGRADED":
       case "IN_REVIEW":
         return {
           bg: "rgba(255, 152, 0, 0.12)",
-          text: "#ff9800",
+          text: "var(--warning-amber)",
           border: "rgba(255, 152, 0, 0.3)",
-          dotColor: "#ff9800",
+          dotColor: "var(--warning-amber)",
         };
       case "SUSPENDED":
         return {
-          bg: "rgba(255, 82, 82, 0.12)",
-          text: "#ff5252",
-          border: "rgba(255, 82, 82, 0.3)",
-          dotColor: "#ff5252",
+          bg: "rgba(239, 83, 80, 0.12)",
+          text: "var(--bearish-red)",
+          border: "rgba(239, 83, 80, 0.3)",
+          dotColor: "var(--bearish-red)",
         };
       case "DRAFT":
         return {
           bg: "rgba(56, 189, 248, 0.12)",
-          text: "#38bdf8",
+          text: "var(--cyan)",
           border: "rgba(56, 189, 248, 0.3)",
-          dotColor: "#38bdf8",
+          dotColor: "var(--cyan)",
         };
       case "ARCHIVED":
       default:
         return {
-          bg: "rgba(148, 163, 184, 0.12)",
-          text: "#94a3b8",
-          border: "rgba(148, 163, 184, 0.25)",
-          dotColor: "#64748b",
+          bg: "rgba(154, 154, 154, 0.12)",
+          text: "var(--text-secondary)",
+          border: "rgba(154, 154, 154, 0.25)",
+          dotColor: "var(--text-muted)",
         };
     }
   };
@@ -93,10 +93,10 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
   const optimalLabel = formatOptimalTag();
 
   const formatPnl = (val: number | null | undefined) => {
-    if (val === null || val === undefined) return <span style={{ color: "#64748b" }}>—</span>;
+    if (val === null || val === undefined) return <span style={{ color: "var(--text-muted)" }}>—</span>;
     const num = Number(val);
     const sign = num > 0 ? "+" : "";
-    const color = num > 0 ? "#00e676" : num < 0 ? "#ff5252" : "#888";
+    const color = num > 0 ? "var(--bullish-green)" : num < 0 ? "var(--bearish-red)" : "var(--text-muted)";
     return (
       <span style={{ color, fontWeight: 700, fontFamily: "var(--font-mono)" }}>
         {sign}₹{num.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -111,29 +111,27 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
       tabIndex={0}
       data-testid={`strategy-card-${strategy.code}`}
       style={{
-        background: "linear-gradient(150deg, #161c28 0%, #121620 100%)",
-        border: "1px solid #232d3f",
-        borderRadius: "10px",
-        padding: "18px 20px",
+        background: "var(--bg-card)",
+        border: "1px solid var(--border-subtle)",
+        borderRadius: "var(--radius-md)",
+        padding: "12px 14px",
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
         height: "100%",
-        gap: "12px",
+        gap: "10px",
         cursor: "pointer",
-        transition: "all 0.18s ease-in-out",
+        transition: "all 0.12s ease-in-out",
         position: "relative",
-        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.25)",
+        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.25)",
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = "var(--border-medium, #2e3a52)";
-        e.currentTarget.style.transform = "translateY(-2px)";
-        e.currentTarget.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.45)";
+        e.currentTarget.style.borderColor = "var(--border-medium)";
+        e.currentTarget.style.backgroundColor = "var(--bg-card-hover)";
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = "#232d3f";
-        e.currentTarget.style.transform = "none";
-        e.currentTarget.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.25)";
+        e.currentTarget.style.borderColor = "var(--border-subtle)";
+        e.currentTarget.style.backgroundColor = "var(--bg-card)";
       }}
     >
       <div>
@@ -144,7 +142,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
             justifyContent: "space-between",
             alignItems: "flex-start",
             gap: "8px",
-            marginBottom: "12px",
+            marginBottom: "10px",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", minWidth: 0, flex: 1 }}>
@@ -152,14 +150,14 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
               title={strategy.code}
               style={{
                 fontSize: "11px",
-                color: "#ffb74d",
+                color: "var(--warning-amber)",
                 fontFamily: "var(--font-mono)",
                 fontWeight: 700,
-                background: "rgba(255, 183, 77, 0.08)",
-                border: "1px solid rgba(255, 183, 77, 0.22)",
-                padding: "2px 7px",
-                borderRadius: "4px",
-                letterSpacing: "0.4px",
+                background: "var(--warning-amber-tint)",
+                border: "1px solid rgba(255, 152, 0, 0.22)",
+                padding: "2px 6px",
+                borderRadius: "var(--radius-sm)",
+                letterSpacing: "0.3px",
                 maxWidth: "180px",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -172,11 +170,11 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
             <span
               style={{
                 fontSize: "10px",
-                color: "#94a3b8",
-                background: "#18202e",
-                border: "1px solid #253147",
-                padding: "2px 6px",
-                borderRadius: "4px",
+                color: "var(--text-secondary)",
+                background: "var(--bg-input)",
+                border: "1px solid var(--border-subtle)",
+                padding: "2px 5px",
+                borderRadius: "var(--radius-sm)",
                 fontFamily: "var(--font-mono)",
                 fontWeight: 600,
                 flexShrink: 0,
@@ -187,11 +185,11 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
             <span
               style={{
                 fontSize: "10px",
-                color: "#38bdf8",
+                color: "var(--cyan)",
                 background: "rgba(56, 189, 248, 0.1)",
                 border: "1px solid rgba(56, 189, 248, 0.22)",
-                padding: "2px 6px",
-                borderRadius: "4px",
+                padding: "2px 5px",
+                borderRadius: "var(--radius-sm)",
                 fontWeight: 600,
                 flexShrink: 0,
               }}
@@ -207,10 +205,10 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
                 style={{
                   fontSize: "9px",
                   fontWeight: 800,
-                  padding: "2px 6px",
-                  borderRadius: "4px",
-                  background: "rgba(255, 152, 0, 0.15)",
-                  color: "#ff9800",
+                  padding: "2px 5px",
+                  borderRadius: "var(--radius-sm)",
+                  background: "var(--warning-amber-tint)",
+                  color: "var(--warning-amber)",
                   border: "1px solid rgba(255, 152, 0, 0.35)",
                   display: "inline-flex",
                   alignItems: "center",
@@ -225,8 +223,8 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
               style={{
                 fontSize: "10px",
                 fontWeight: 800,
-                padding: "3px 8px",
-                borderRadius: "4px",
+                padding: "2px 7px",
+                borderRadius: "var(--radius-sm)",
                 background: statusStyle.bg,
                 color: statusStyle.text,
                 border: `1px solid ${statusStyle.border}`,
@@ -250,13 +248,13 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
         </div>
 
         {/* Title & Description */}
-        <div style={{ marginBottom: "10px" }}>
+        <div style={{ marginBottom: "8px" }}>
           <h3
             style={{
-              margin: "0 0 5px 0",
-              fontSize: "15px",
+              margin: "0 0 4px 0",
+              fontSize: "14px",
               fontWeight: 700,
-              color: "#f8fafc",
+              color: "var(--text-heading)",
               lineHeight: 1.3,
               letterSpacing: "-0.2px",
             }}
@@ -265,38 +263,38 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           </h3>
           <p
             style={{
-              fontSize: "12px",
-              color: "#94a3b8",
-              lineHeight: "1.45",
+              fontSize: "11px",
+              color: "var(--text-secondary)",
+              lineHeight: "1.4",
               margin: 0,
               display: "-webkit-box",
               WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
-              minHeight: "34px",
+              minHeight: "31px",
             }}
           >
             {strategy.description || "Multi-leg algorithmic option strategy."}
           </p>
         </div>
 
-        {/* Optimal Regimes / Strategy Focus (matching trading-engine) */}
+        {/* Optimal Regimes / Strategy Focus */}
         {optimalLabel && (
           <div
             style={{
-              background: "rgba(255, 152, 0, 0.06)",
+              background: "var(--warning-amber-tint)",
               border: "1px solid rgba(255, 152, 0, 0.18)",
-              padding: "5px 9px",
-              borderRadius: "5px",
+              padding: "4px 8px",
+              borderRadius: "var(--radius-sm)",
               fontSize: "11px",
-              color: "#ffb74d",
-              marginBottom: "12px",
+              color: "var(--warning-amber)",
+              marginBottom: "10px",
               display: "flex",
               alignItems: "center",
-              gap: "6px",
+              gap: "5px",
             }}
           >
-            <Activity size={12} color="#ff9800" />
+            <Activity size={11} color="var(--warning-amber)" />
             <span>
               Optimal: <strong>{optimalLabel}</strong>
             </span>
@@ -304,17 +302,17 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
         )}
 
         {/* Markets, Bias & Suggestable Tags */}
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "14px" }}>
+        <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", marginBottom: "10px" }}>
           {strategy.markets?.map((m) => (
             <span
               key={m}
               style={{
                 fontSize: "10px",
-                background: "#192130",
-                border: "1px solid #26334a",
-                color: "#cbd5e1",
-                padding: "2px 7px",
-                borderRadius: "4px",
+                background: "var(--bg-input)",
+                border: "1px solid var(--border-subtle)",
+                color: "var(--text-secondary)",
+                padding: "1px 6px",
+                borderRadius: "var(--radius-sm)",
                 fontWeight: 600,
               }}
             >
@@ -326,26 +324,26 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
             <span
               style={{
                 fontSize: "10px",
-                padding: "2px 7px",
-                borderRadius: "4px",
+                padding: "1px 6px",
+                borderRadius: "var(--radius-sm)",
                 fontWeight: 700,
                 color:
                   strategy.bias === "BULLISH"
-                    ? "#00e676"
+                    ? "var(--bullish-green)"
                     : strategy.bias === "BEARISH"
-                    ? "#ff5252"
-                    : "#ffb74d",
+                    ? "var(--bearish-red)"
+                    : "var(--warning-amber)",
                 background:
                   strategy.bias === "BULLISH"
-                    ? "rgba(0, 230, 118, 0.1)"
+                    ? "var(--bullish-green-tint)"
                     : strategy.bias === "BEARISH"
-                    ? "rgba(255, 82, 82, 0.1)"
-                    : "rgba(255, 152, 0, 0.1)",
+                    ? "var(--bearish-red-tint)"
+                    : "var(--warning-amber-tint)",
                 border: `1px solid ${
                   strategy.bias === "BULLISH"
-                    ? "rgba(0, 230, 118, 0.25)"
+                    ? "rgba(76, 175, 80, 0.25)"
                     : strategy.bias === "BEARISH"
-                    ? "rgba(255, 82, 82, 0.25)"
+                    ? "rgba(239, 83, 80, 0.25)"
                     : "rgba(255, 152, 0, 0.25)"
                 }`,
               }}
@@ -358,11 +356,11 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
             <span
               style={{
                 fontSize: "10px",
-                background: "rgba(0, 230, 118, 0.1)",
-                border: "1px solid rgba(0, 230, 118, 0.25)",
-                color: "#00e676",
-                padding: "2px 7px",
-                borderRadius: "4px",
+                background: "var(--bullish-green-tint)",
+                border: "1px solid rgba(76, 175, 80, 0.25)",
+                color: "var(--bullish-green)",
+                padding: "1px 6px",
+                borderRadius: "var(--radius-sm)",
                 fontWeight: 600,
                 display: "inline-flex",
                 alignItems: "center",
@@ -377,35 +375,35 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
 
       {/* Performance & Action Footer Area */}
       <div>
-        {/* Dedicated Enclosed 5-Column Metrics Strip (matching trading-engine) */}
+        {/* Dedicated Enclosed 5-Column Metrics Strip */}
         <div
           style={{
-            background: "#0e121b",
-            border: "1px solid #1c2538",
-            borderRadius: "7px",
-            padding: "10px 12px",
+            background: "var(--bg-input)",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: "var(--radius-sm)",
+            padding: "8px 10px",
             display: "grid",
             gridTemplateColumns: "repeat(5, 1fr)",
-            gap: "8px",
-            marginBottom: "12px",
+            gap: "6px",
+            marginBottom: "10px",
           }}
         >
           <div>
-            <div style={{ fontSize: "10px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>
+            <div style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>
               Win Rate
             </div>
             <div
               style={{
                 color:
                   snapshot && snapshot.winRatePct >= 50
-                    ? "#00e676"
+                    ? "var(--bullish-green)"
                     : snapshot
-                    ? "#ff5252"
-                    : "#64748b",
+                    ? "var(--bearish-red)"
+                    : "var(--text-muted)",
                 fontWeight: 700,
-                fontSize: "13px",
+                fontSize: "12px",
                 fontFamily: "var(--font-mono)",
-                marginTop: "2px",
+                marginTop: "1px",
               }}
             >
               {snapshot ? `${Number(snapshot.winRatePct).toFixed(0)}%` : "—"}
@@ -413,37 +411,37 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           </div>
 
           <div>
-            <div style={{ fontSize: "10px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>
+            <div style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>
               Stop Loss
             </div>
-            <div style={{ color: "#ff5252", fontWeight: 700, fontSize: "13px", fontFamily: "var(--font-mono)", marginTop: "2px" }}>
+            <div style={{ color: "var(--bearish-red)", fontWeight: 700, fontSize: "12px", fontFamily: "var(--font-mono)", marginTop: "1px" }}>
               {strategy.stopLossPct != null ? `${Number(strategy.stopLossPct).toFixed(1)}%` : "3.5%"}
             </div>
           </div>
 
           <div>
-            <div style={{ fontSize: "10px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>
+            <div style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>
               Profit Fac.
             </div>
-            <div style={{ color: "#ffb74d", fontWeight: 700, fontSize: "13px", fontFamily: "var(--font-mono)", marginTop: "2px" }}>
+            <div style={{ color: "var(--warning-amber)", fontWeight: 700, fontSize: "12px", fontFamily: "var(--font-mono)", marginTop: "1px" }}>
               {snapshot && snapshot.profitFactor ? Number(snapshot.profitFactor).toFixed(2) : "1.85"}
             </div>
           </div>
 
           <div>
-            <div style={{ fontSize: "10px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>
+            <div style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>
               Trades
             </div>
-            <div style={{ color: "#f8fafc", fontWeight: 700, fontSize: "13px", fontFamily: "var(--font-mono)", marginTop: "2px" }}>
+            <div style={{ color: "var(--text-heading)", fontWeight: 700, fontSize: "12px", fontFamily: "var(--font-mono)", marginTop: "1px" }}>
               {snapshot ? snapshot.totalTrades : "0"}
             </div>
           </div>
 
           <div>
-            <div style={{ fontSize: "10px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>
+            <div style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.3px", fontWeight: 600 }}>
               Net P&amp;L
             </div>
-            <div style={{ fontSize: "13px", marginTop: "2px" }}>
+            <div style={{ fontSize: "12px", marginTop: "1px" }}>
               {formatPnl(snapshot?.netPnl)}
             </div>
           </div>
@@ -452,8 +450,8 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
         {/* Card Actions Bottom Strip */}
         <div
           style={{
-            borderTop: "1px solid #1e283b",
-            paddingTop: "10px",
+            borderTop: "1px solid var(--border-subtle)",
+            paddingTop: "8px",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
@@ -461,7 +459,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           {/* Enabled Switch */}
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <label className="toggle-switch">
               <input
                 type="checkbox"
@@ -473,7 +471,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
             <span
               style={{
                 fontSize: "11px",
-                color: strategy.enabled ? "#00e676" : "#64748b",
+                color: strategy.enabled ? "var(--bullish-green)" : "var(--text-muted)",
                 fontWeight: 600,
               }}
             >
@@ -482,7 +480,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           </div>
 
           {/* Action Icon Buttons */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
             <button
               type="button"
               className="btn-icon"

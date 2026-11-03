@@ -195,6 +195,7 @@ def create_application() -> FastAPI:
     from app.modules.research.engine import research_engine  # auto-registers research engine
     from app.modules.opportunities.controller import opportunity_router
     from app.modules.opportunities.engine import opportunity_engine  # auto-registers opportunities engine
+    from app.modules.sessions.controller import session_router
 
     app.include_router(user_router, prefix=settings.API_V1_PREFIX)
     app.include_router(oauth_router, prefix=settings.API_V1_PREFIX)
@@ -204,6 +205,7 @@ def create_application() -> FastAPI:
     app.include_router(master_router, prefix=settings.API_V1_PREFIX)
     app.include_router(research_router, prefix=settings.API_V1_PREFIX)
     app.include_router(opportunity_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(session_router, prefix=settings.API_V1_PREFIX)
 
     app.include_router(strategy_mcp_router)
     app.include_router(research_mcp_router)
