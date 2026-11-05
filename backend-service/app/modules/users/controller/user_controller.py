@@ -203,7 +203,10 @@ async def upstox_callback(
     Public OAuth callback handling redirect from Upstox login dialog.
     Exchanges code for access token and updates account auth status.
     """
-    res = await _user_service.handle_oauth_callback(session, userId, code)
+    try:
+        res = await _user_service.handle_oauth_callback(session, userId, code)
+    except Exception as exc:
+        res = {"success": False, "message": str(exc)}
     is_success = res.get("success", False)
     msg = res.get("message", "Authentication processed")
 
@@ -215,7 +218,7 @@ async def upstox_callback(
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Upstox Authorization — auto-trader</title>
+  <title>Upstox Authorization — OrderGrid</title>
   <style>
     body {{
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -259,10 +262,10 @@ async def upstox_callback(
 <body>
   <div class="card">
     <div class="badge">{status_title}</div>
-    <h1>auto-trader &bull; Upstox Connect</h1>
+    <h1>OrderGrid &bull; Upstox Connect</h1>
     <p>{msg}</p>
     <div class="close-hint">
-      You may now close this browser tab and return to the auto-trader dashboard.
+      You may now close this browser tab and return to the OrderGrid dashboard.
     </div>
   </div>
 </body>

@@ -5,6 +5,9 @@ import { useSessionSearch, useCreateSession, useUpdateSession, useDeleteSession 
 import { TradingSession, TradingSessionSearchFilter } from "../types/sessions.types";
 import { SessionDialog } from "../components/SessionDialog";
 
+const hhmm = (iso: string): string =>
+  new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+
 function statusBadgeClass(status: TradingSession["sessionStatus"]): string {
   if (status === "ACTIVE") return "badge badge--green";
   if (status === "CLOSED") return "badge badge--slate";
@@ -94,6 +97,7 @@ export const SessionsPage: React.FC = () => {
               <tr>
                 <th>Name</th>
                 <th>Trade Date</th>
+                <th>Hours (IST)</th>
                 <th>Scope</th>
                 <th>Underlyings</th>
                 <th>Capital</th>
@@ -106,12 +110,12 @@ export const SessionsPage: React.FC = () => {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={9} className="text-muted">Loading sessions...</td>
+                  <td colSpan={10} className="text-muted">Loading sessions...</td>
                 </tr>
               )}
               {!isLoading && sessions.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-muted">No trading sessions yet. Create one to get started.</td>
+                  <td colSpan={10} className="text-muted">No trading sessions yet. Create one to get started.</td>
                 </tr>
               )}
               {sessions.map((s) => (
@@ -122,6 +126,7 @@ export const SessionsPage: React.FC = () => {
                 >
                   <td className="text-primary">{s.name}</td>
                   <td className="mono">{s.tradeDate}</td>
+                  <td className="mono">{hhmm(s.startAt)}–{hhmm(s.closeAt)}</td>
                   <td>{s.scope}</td>
                   <td className="micro">{(s.scope === "INDEX" ? s.underlyings : s.commodityItems).join(", ")}</td>
                   <td className="mono">₹{Number(s.capital).toLocaleString("en-IN")}</td>

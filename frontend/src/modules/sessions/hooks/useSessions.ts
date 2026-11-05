@@ -3,11 +3,14 @@ import {
   createSession,
   deleteSession,
   getSession,
+  lockSessionPick,
+  searchSessionPicks,
   searchSessions,
   updateSession,
 } from "../api/sessions.api";
 import { sessionsQueryKeys } from "../queryKeys/sessionsQueryKeys";
 import {
+  SessionPickSearchFilter,
   TradingSessionCreatePayload,
   TradingSessionSearchFilter,
   TradingSessionUpdatePayload,
@@ -56,6 +59,25 @@ export function useDeleteSession() {
     mutationFn: (id: number) => deleteSession(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.lists() });
+    },
+  });
+}
+
+export function useSessionPicks(sessionId: number, filter: SessionPickSearchFilter) {
+  return useQuery({
+    queryKey: sessionsQueryKeys.pickList(sessionId, filter),
+    queryFn: () => searchSessionPicks(sessionId, filter),
+    enabled: sessionId > 0,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useLockSessionPick(sessionId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (pickId: number) => lockSessionPick(sessionId, pickId),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.picks(sessionId) });
     },
   });
 }

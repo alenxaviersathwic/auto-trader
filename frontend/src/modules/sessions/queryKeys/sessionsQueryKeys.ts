@@ -1,4 +1,4 @@
-import { TradingSessionSearchFilter } from "../types/sessions.types";
+import { SessionPickSearchFilter, TradingSessionSearchFilter } from "../types/sessions.types";
 
 /**
  * Query Key Factory for the Sessions module.
@@ -9,4 +9,6 @@ export const sessionsQueryKeys = {
   list: (filter: TradingSessionSearchFilter) => [...sessionsQueryKeys.lists(), filter] as const,
   details: () => [...sessionsQueryKeys.all, "detail"] as const,
   detail: (id: number) => [...sessionsQueryKeys.details(), id] as const,
+  picks: (id: number) => [...sessionsQueryKeys.all, "picks", id] as const,
+  pickList: (id: number, filter: SessionPickSearchFilter) => [...sessionsQueryKeys.picks(id), filter] as const,
 };

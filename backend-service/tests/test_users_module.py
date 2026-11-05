@@ -327,7 +327,7 @@ async def test_full_controller_api_endpoints(async_session: AsyncSession):
         # 10. GET /api/v1/upstox/callback/{userId} (Public OAuth callback)
         callback_res = await client.get(f"/api/v1/upstox/callback/{user_id}?code=test_code_123")
         assert callback_res.status_code in [200, 400]
-        assert "auto-trader" in callback_res.text
+        assert "OrderGrid" in callback_res.text
 
         # 11. DELETE /api/v1/users/{id}
         del_res = await client.delete(f"/api/v1/users/{user_id}")

@@ -38,12 +38,13 @@ from app.modules.strategies.service.seed_service import SeedService
 
 BANNER = rf"""
 {BRIGHT_CYAN}{BOLD}
-   ___         __           __                  __          
-  / _ | __ __ / /_ ___  ___ / /_ ____ ___ _ ___/ /___  ____
- / __ |/ // // __// _ \/ -_) __// __// _ `// _  // -_)/ __/
-/_/ |_|\_,_/ \__/ \___/\__/\__//_/   \_,_/ \_,_/ \__//_/   
+   ____           __           ______     _     __
+  / __ \_________ / /__  _____ / ____/____(_)___/ /
+ / / / / ___/ __  / _ \/ ___/ / / __/ ___/ / __  / 
+/ /_/ / /  / /_/ /  __/ /    / /_/ / /  / / /_/ /  
+\____/_/   \__,_/\___/_/     \____/_/  /_/\__,_/   
 {RESET}{BRIGHT_BLACK}────────────────────────────────────────────────────────────────────────{RESET}
- {BRIGHT_WHITE}Auto-Trader Unified High-Frequency Trading Core{RESET}
+ {BRIGHT_WHITE}OrderGrid Unified High-Frequency Trading Core{RESET}
  • {DIM}Environment:{RESET}  {BRIGHT_GREEN}{settings.APP_ENV}{RESET}
  • {DIM}Worker Mode:{RESET}  {BRIGHT_CYAN}Single Uvicorn Worker (PID bound){RESET}
  • {DIM}Scheduler:{RESET}    {BRIGHT_YELLOW}APScheduler (Timezone: {settings.SCHEDULER_TIMEZONE}){RESET}
@@ -99,7 +100,28 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Strategy/rule registry seeding failed on startup: {e}")
 
-    # 3. Start scheduler
+    # 3. Resume the loop of every ACTIVE MANUAL session dated today (their loops died with the last process)
+    try:
+        from app.modules.sessions.engine import session_loop_runner
+
+        resumed = await session_loop_runner.resume_today()
+        logger.info(f"{BRIGHT_GREEN}Session loops resumed: {resumed}{RESET}")
+    except Exception as e:
+        logger.error(f"Session loop resume failed on startup: {e}")
+
+    # 3b. Daily 16:00 IST: finished sessions' picks move to session_picks_archive (also run now to catch up)
+    try:
+        from app.modules.sessions.job.session_picks_archive_job import (
+            archive_finished_session_picks,
+            register_archive_job,
+        )
+
+        await archive_finished_session_picks()
+        register_archive_job()
+    except Exception as e:
+        logger.error(f"Session picks archive setup failed: {e}")
+
+    # 4. Start scheduler
     start_scheduler()
     logger.info(f"{BRIGHT_YELLOW}APScheduler started with timezone {settings.SCHEDULER_TIMEZONE}.{RESET}")
 
@@ -108,6 +130,12 @@ async def lifespan(app: FastAPI):
     # Shutdown sequence
     logger.info("Initiating graceful shutdown sequence...")
     shutdown_scheduler()
+    try:
+        from app.modules.sessions.engine import session_loop_runner
+
+        await session_loop_runner.stop_all()
+    except Exception as e:
+        logger.error(f"Session loop shutdown failed: {e}")
     await async_engine.dispose()
     logger.info("Database connection pools disposed. Shutdown clean.")
 
@@ -195,7 +223,7 @@ def create_application() -> FastAPI:
     from app.modules.research.engine import research_engine  # auto-registers research engine
     from app.modules.opportunities.controller import opportunity_router
     from app.modules.opportunities.engine import opportunity_engine  # auto-registers opportunities engine
-    from app.modules.sessions.controller import session_router
+    from app.modules.sessions.controller import session_pick_router, session_router
 
     app.include_router(user_router, prefix=settings.API_V1_PREFIX)
     app.include_router(oauth_router, prefix=settings.API_V1_PREFIX)
@@ -206,6 +234,7 @@ def create_application() -> FastAPI:
     app.include_router(research_router, prefix=settings.API_V1_PREFIX)
     app.include_router(opportunity_router, prefix=settings.API_V1_PREFIX)
     app.include_router(session_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(session_pick_router, prefix=settings.API_V1_PREFIX)
 
     app.include_router(strategy_mcp_router)
     app.include_router(research_mcp_router)

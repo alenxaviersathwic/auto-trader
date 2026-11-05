@@ -2,7 +2,7 @@ import React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useMenuItems } from "../../navigation/menuRegistry";
 import { Cpu } from "lucide-react";
-import { NexusLogo } from "./NexusLogo";
+import { OrderGridLogo } from "./OrderGridLogo";
 
 export const SideMenu: React.FC = () => {
   const menuItems = useMenuItems();
@@ -13,10 +13,10 @@ export const SideMenu: React.FC = () => {
     <aside className="app-sidebar">
       <div className="sidebar-brand">
         <div className="brand-logo-container">
-          <NexusLogo size={28} />
+          <OrderGridLogo size={28} />
         </div>
         <div className="brand-text">
-          <span className="brand-title">NEXUS</span>
+          <span className="brand-title">ORDERGRID</span>
           <span className="brand-subtitle">ALGO TERMINAL</span>
         </div>
       </div>

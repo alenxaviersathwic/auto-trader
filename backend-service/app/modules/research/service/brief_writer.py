@@ -185,7 +185,7 @@ class BriefWriter:
             lines.append("")
 
         lines.append(
-            "> *Disclaimer: Auto-Trader Research Engine provides automated news sentiment screening and deterministic narrative intelligence. "
+            "> *Disclaimer: OrderGrid Research Engine provides automated news sentiment screening and deterministic narrative intelligence. "
             "This information does not constitute financial advice.*"
         )
 
@@ -215,7 +215,7 @@ class BriefWriter:
         ]
 
         sys_prompt = (
-            "You are a quantitative research brief writer for Auto-Trader.\n"
+            "You are a quantitative research brief writer for OrderGrid.\n"
             f"Write an objective, news-clearance brief for underlying {underlying_code} (status: {news_status}).\n"
             "CRITICAL RULES:\n"
             "1. USE ONLY the supplied claims below. Do not assume or add external facts or history.\n"

@@ -66,7 +66,7 @@ export const AppLayout: React.FC = () => {
           <div className="topbar-left">
             <div className="terminal-badge">
               <Layers size={14} />
-              <span>AUTO-TRADER CORE</span>
+              <span>ORDERGRID CORE</span>
             </div>
             <span className="topbar-divider">/</span>
             <span className="topbar-context">Algorithmic Trading Platform</span>

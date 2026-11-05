@@ -1,3 +1,9 @@
+from app.modules.sessions.schema.session_pick_schema import (
+    SessionCapitalResponse,
+    SessionLoopResponse,
+    SessionPickResponse,
+    SessionPickSearchFilter,
+)
 from app.modules.sessions.schema.trading_session_schema import (
     TradingSessionCreateRequest,
     TradingSessionResponse,
@@ -6,6 +12,10 @@ from app.modules.sessions.schema.trading_session_schema import (
 )
 
 __all__ = [
+    "SessionCapitalResponse",
+    "SessionLoopResponse",
+    "SessionPickResponse",
+    "SessionPickSearchFilter",
     "TradingSessionCreateRequest",
     "TradingSessionUpdateRequest",
     "TradingSessionResponse",

@@ -16,6 +16,7 @@ The module operates on a **card session loop architecture**:
 2. The frontend continuously iterates running cards one by one via `POST /api/v1/opportunities/masters/{id}/iterate`.
 3. Each iteration executes an asynchronous LangGraph decision workflow (`underlying_graph`), gathering live quotes, constructing an option strike menu, evaluating quantitative strategy rules, deducting realistic Indian transaction charges, and storing winning trade setups in `trade_opportunities`.
 4. Detailed diagnostic events are recorded in `opportunity_iterations` for every batch—even when zero trades are found.
+5. Saved opportunities are later read (never driven) by the **Trading Sessions** loop; see [10. Trading Sessions Module](10-sessions-module.md).
 
 ---
 
@@ -224,6 +225,23 @@ erDiagram
 
 ---
 
+## 7b. Outcome Resolution, Duplicates & the Check
+
+**One evaluator.** Outcomes (`TARGET_HIT`, `STOP_HIT`, `EXPIRED`) are decided **only** from Upstox **1-minute candles** (`_evaluate_opportunities` in `run_service.py`). There is no second path from LTP snapshots. Rules, chosen so a backtest never flatters the engine:
+
+- Only bars that **open after the signal was created** count (`first_full_bar`): the bar holding `created_at` also holds prices from before the signal existed.
+- A bar that touches **both** stop and target counts as a **STOP** (`first_touch`): the order inside a minute is unknown, so assume the worst.
+- Bars at or after `valid_until` are ignored.
+- The automatic pass after every iteration (`_resolve_pending`) resolves only rows that are still `PENDING`. The manual check endpoints use `rewrite=True`, which also corrects a stored outcome (or reverts it to `PENDING` if the candles do not support it).
+
+**Duplicates.** A contract re-signalled within `DEDUPE_MINUTES = 30` of an earlier signal on the same contract is skipped. A live duplicate stays `is_latest` through `replace_latest(keep_ids)`, so it is not wiped by the next batch.
+
+**Expiry day.** The engine drops the expiring contract after 13:30 IST on expiry day (`EXPIRY_GAMMA_CUTOFF`), so only the next expiry is offered; the menu lists the CURRENT and NEXT expiry chains.
+
+**Check (is the strategy working?).** `POST /opportunities/{id}/check` replays one saved opportunity on the candles; `POST /opportunities/masters/{id}/check` does the same for a batch. Each result returns `outcome`, `achievedPct` (progress toward the target, 100 = hit), `pnlPct`, `pnlPoints`, `exitPrice`, `peakPrice`, `troughPrice`, `maxGainPct`, `hitAt`, `candlesChecked` and `windowEnded`. The UI shows it as a **Check** button with an inline verdict (no chart view). `scripts/opportunity_pnl_report.py` uses the same evaluator with `rewrite=True` to produce day P&L reports.
+
+---
+
 ## 8. REST API Endpoints (`opportunity_router`)
 
 All endpoints are registered under `/api/v1/opportunities`:
@@ -235,7 +253,8 @@ All endpoints are registered under `/api/v1/opportunities`:
 | `POST` | `/api/v1/opportunities/masters/{id}/iterate` | Execute one LangGraph iteration cycle on a specific card session |
 | `POST` | `/api/v1/opportunities/masters/{id}/stop` | Stop scanning on an individual card session |
 | `POST` | `/api/v1/opportunities/masters/stop-all` | Emergency stop all active card sessions across all underlyings |
-| `POST` | `/api/v1/opportunities/masters/{id}/check` | Check live price and SL/target status of a card's latest opportunity |
+| `POST` | `/api/v1/opportunities/masters/{id}/check` | Replay a batch (or all batches) of a card on 1-minute candles: outcome, achieved %, P&L |
+| `POST` | `/api/v1/opportunities/{id}/check` | Replay one opportunity on 1-minute candles (same result fields) |
 | `POST` | `/api/v1/opportunities/search` | Search and paginate historical trade opportunities (`BaseFilter`) |
 | `POST` | `/api/v1/opportunities/iterations/search` | Query diagnostic execution logs for underlying iterations |
 | `GET` | `/api/v1/opportunities/latest` | Retrieve the latest active trade opportunity per underlying |

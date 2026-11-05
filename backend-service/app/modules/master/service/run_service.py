@@ -236,7 +236,7 @@ class RunService:
                     try:
                         reply = await self.llm.generate(
                             [{"role": "user", "content": user_content}],
-                            system_prompt="You are AI Master for Auto-Trader. The user sent a request. Answer conversationally and helpfully.",
+                            system_prompt="You are AI Master for OrderGrid. The user sent a request. Answer conversationally and helpfully.",
                             temperature=0.3,
                         )
                         if reply and reply.strip():

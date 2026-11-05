@@ -1,11 +1,11 @@
 import React from "react";
 import {
-  Activity,
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   Calendar,
   CheckCircle2,
+  ClipboardCheck,
   ChevronDown,
   ChevronUp,
   Clock,
@@ -16,7 +16,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { Opportunity, OpportunityCheckItem } from "../types/opportunities.types";
-import { OpportunityCheckChart } from "./OpportunityCheckChart";
+import { CheckVerdict } from "./CheckVerdict";
 import {
   formatCompactRupee,
   formatDateTime,
@@ -49,7 +49,13 @@ export const OpportunityCard: React.FC<{
   isChecking?: boolean;
   onCheck?: (opportunityId: number) => void;
   defaultExpanded?: boolean;
-}> = ({ opportunity: s, checkResult, isChecking = false, onCheck, defaultExpanded = true }) => {
+}> = ({
+  opportunity: s,
+  checkResult,
+  isChecking = false,
+  onCheck,
+  defaultExpanded = true,
+}) => {
   const [collapsed, setCollapsed] = React.useState(!defaultExpanded);
 
   const isCall = s.optionType === "CE";
@@ -156,27 +162,6 @@ export const OpportunityCard: React.FC<{
             </span>
           )}
 
-          {/* Dedicated Terminal Action Button: Check Outcome */}
-          {onCheck && (
-            <button
-              type="button"
-              className={`oc-check-btn ${checkResult ? "oc-check-btn--done" : ""}`}
-              onClick={() => {
-                setCollapsed(false);
-                onCheck(s.id);
-              }}
-              disabled={isChecking}
-              title="Verify actual option price path from entry time to validUntil window"
-            >
-              {isChecking ? (
-                <Loader2 size={11} className="sp-spin" />
-              ) : (
-                <Activity size={11} />
-              )}
-              <span>{checkResult ? "Re-check" : "Check Result"}</span>
-            </button>
-          )}
-
           {/* Expand/Collapse Toggle */}
           <button
             type="button"
@@ -240,101 +225,26 @@ export const OpportunityCard: React.FC<{
             </div>
           </div>
 
-          {/* ── 3. Tested Result Graph + Sub-Table (Shown when Check Result is clicked) ── */}
-          {checkResult && (
-            <div className="oc-test-panel">
-              <div className="oc-test-head">
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Activity size={13} style={{ color: "var(--cyan)" }} />
-                  <span className="mono font-bold" style={{ color: "var(--text-heading)" }}>
-                    TESTED RESULT · {formatTime(checkResult.createdAt)} → {formatTime(checkResult.validUntil)} IST
-                  </span>
-                  <span
-                    className={`badge mono ${
-                      checkResult.targetAchieved
-                        ? "badge--green"
-                        : checkResult.outcome === "STOP_HIT" || checkResult.achievedPct < 0
-                        ? "badge--red"
-                        : "badge--blue"
-                    }`}
-                  >
-                    {checkResult.targetAchieved
-                      ? "TARGET ACHIEVED (100%)"
-                      : checkResult.outcome === "STOP_HIT"
-                      ? `STOP HIT (${checkResult.achievedPct.toFixed(1)}%)`
-                      : `${checkResult.achievedPct > 0 ? "+" : ""}${checkResult.achievedPct.toFixed(1)}% OF TARGET`}
-                  </span>
-                </div>
-                <span className="mono" style={{ color: "var(--text-muted)" }}>
-                  {checkResult.candlesChecked}×1m bars
-                  {checkResult.hitAt
-                    ? ` · Hit at ${formatTime(checkResult.hitAt)}`
-                    : checkResult.windowEnded
-                    ? " · Window Ended"
-                    : " · Live In-Market"}
-                </span>
-              </div>
-
-              {/* Graph View with Entry / Target / Stop / Actual Trajectory */}
-              <OpportunityCheckChart checkResult={checkResult} />
-
-              {/* Compact 6-Column Tested Sub-Table Strip */}
-              <div className="oc-test-kpis">
-                <div className="oc-test-kpi">
-                  <span className="oc-test-kpi-lbl">Entry Mark</span>
-                  <span className="oc-test-kpi-val">{formatRupee(checkResult.entry)}</span>
-                </div>
-                <div className="oc-test-kpi">
-                  <span className="oc-test-kpi-lbl">Target / Stop</span>
-                  <span className="oc-test-kpi-val">
-                    <span className="pos">{formatRupee(checkResult.target)}</span>
-                    <span style={{ color: "var(--text-muted)" }}> / </span>
-                    <span className="neg">{formatRupee(checkResult.stop)}</span>
-                  </span>
-                </div>
-                <div className="oc-test-kpi">
-                  <span className="oc-test-kpi-lbl">Peak / Low</span>
-                  <span className="oc-test-kpi-val">
-                    <span className="pos">{formatRupee(checkResult.peakPrice)}</span>
-                    <span style={{ color: "var(--text-muted)" }}> / </span>
-                    <span className="neg">{formatRupee(checkResult.troughPrice)}</span>
-                  </span>
-                </div>
-                <div className="oc-test-kpi">
-                  <span className="oc-test-kpi-lbl">Actual Exit / Mark</span>
-                  <span className="oc-test-kpi-val">{formatRupee(checkResult.exitPrice)}</span>
-                </div>
-                <div className="oc-test-kpi">
-                  <span className="oc-test-kpi-lbl">Option P&amp;L %</span>
-                  <span
-                    className={`oc-test-kpi-val ${
-                      checkResult.pnlPct >= 0 ? "pos" : "neg"
-                    }`}
-                  >
-                    {checkResult.pnlPct > 0 ? `+${checkResult.pnlPct.toFixed(2)}%` : `${checkResult.pnlPct.toFixed(2)}%`}
-                  </span>
-                </div>
-                <div className="oc-test-kpi">
-                  <span className="oc-test-kpi-lbl">Target Achieved %</span>
-                  <span
-                    className={`oc-test-kpi-val ${
-                      checkResult.achievedPct >= 100
-                        ? "pos"
-                        : checkResult.achievedPct < 0
-                        ? "neg"
-                        : ""
-                    }`}
-                  >
-                    {checkResult.achievedPct >= 100
-                      ? "100%"
-                      : checkResult.achievedPct > 0
-                      ? `+${checkResult.achievedPct.toFixed(1)}%`
-                      : `${checkResult.achievedPct.toFixed(1)}%`}
-                  </span>
-                </div>
-              </div>
+          {/* ── Check: replay the signal on the candles to see if the strategy worked ── */}
+          {onCheck && (
+            <div className="oc-check-strip">
+              <span className="oc-check-strip-text">
+                <ClipboardCheck size={14} />
+                {checkResult ? "Checked on the 1-minute candles." : "Did this signal reach its target or stop?"}
+              </span>
+              <button
+                type="button"
+                className={`oc-check-btn ${checkResult ? "oc-check-btn--done" : ""}`}
+                onClick={() => onCheck(s.id)}
+                disabled={isChecking}
+              >
+                {isChecking ? <Loader2 size={11} className="sp-spin" /> : <ClipboardCheck size={11} />}
+                <span>{isChecking ? "Checking…" : checkResult ? "Re-check" : "Check"}</span>
+              </button>
             </div>
           )}
+
+          {checkResult && <CheckVerdict result={checkResult} />}
 
           {/* ── 4. Compact Single-Line Meta + Rationale & Watchouts ── */}
           <div className="oc-meta-inline">

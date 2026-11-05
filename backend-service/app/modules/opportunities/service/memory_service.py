@@ -61,29 +61,14 @@ async def _prune(session: AsyncSession, code: str) -> None:
         await session.execute(update(OpportunityMemory).where(OpportunityMemory.id.in_(old)).values(status=0))
 
 
-async def resolve_outcomes(session: AsyncSession, prices: dict[str, float]) -> int:
-    """Marks TARGET_HIT / STOP_HIT / EXPIRED from latest prices and updates the memory."""
-    now = datetime.now(UTC)
-    pending = await opportunity_repository.pending(session)
-    changed = 0
-    for s in pending:
-        ltp = prices.get(s.instrumentKey or "")
-        outcome = None
-        if ltp is not None and ltp >= float(s.target):
-            outcome = "TARGET_HIT"
-        elif ltp is not None and ltp <= float(s.stop):
-            outcome = "STOP_HIT"
-        elif s.validUntil < now:
-            outcome = "EXPIRED"
-        if outcome:
-            s.outcome, s.resolvedAt = outcome, now
-            await session.execute(
-                update(OpportunityMemory)
-                .where(OpportunityMemory.opportunityId == s.id)
-                .where(OpportunityMemory.underlyingCode == s.underlyingCode).values(outcome=outcome)
-            )
-            changed += 1
-    return changed
+async def sync_outcome(session: AsyncSession, opp) -> None:
+    """Mirrors a trade_opportunities outcome onto its memory row. The outcome itself is decided ONLY by the
+    candle checker (run_service._evaluate_opportunities); a price snapshot must never decide it."""
+    await session.execute(
+        update(OpportunityMemory)
+        .where(OpportunityMemory.opportunityId == opp.id)
+        .where(OpportunityMemory.underlyingCode == opp.underlyingCode).values(outcome=opp.outcome)
+    )
 
 
 async def hit_rate(session: AsyncSession, code: str, last_n: int = 100) -> str:

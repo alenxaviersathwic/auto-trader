@@ -29,7 +29,7 @@ const NotFoundPage: React.FC = () => {
   return (
     <div className="not-found-page p-12 text-center text-muted">
       <h2 className="text-xl font-bold text-primary mb-2">404 — Route Not Found</h2>
-      <p className="text-sm">The requested route does not exist in the auto-trader route tree.</p>
+      <p className="text-sm">The requested route does not exist in the OrderGrid route tree.</p>
     </div>
   );
 };

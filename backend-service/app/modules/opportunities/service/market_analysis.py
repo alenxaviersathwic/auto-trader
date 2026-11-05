@@ -126,6 +126,20 @@ def vwap(bars: list[dict[str, Any]]) -> float | None:
     return pv / vol if vol > 0 else None
 
 
+def vwap_series(bars: list[dict[str, Any]]) -> list[float | None]:
+    """Running (session-cumulative) VWAP as of each bar's close -- not the single current value `vwap()`
+    returns, but what VWAP stood at, at that point in time. Needed to test how many of the bars so far
+    closed on one side of VWAP as it actually was then, not against today's final VWAP."""
+    out: list[float | None] = []
+    cum_pv = cum_vol = 0.0
+    for b in bars:
+        if b["v"] > 0:
+            cum_pv += (b["h"] + b["l"] + b["c"]) / 3 * b["v"]
+            cum_vol += b["v"]
+        out.append(cum_pv / cum_vol if cum_vol > 0 else None)
+    return out
+
+
 def cpr(h: float, l: float, c: float) -> dict[str, float]:
     p = (h + l + c) / 3
     bc = (h + l) / 2
@@ -280,6 +294,8 @@ def analyze(cfg: Any, market: dict[str, Any], now: datetime | None = None) -> di
     if fv and f1:
         fl = f1[-1]["c"]
         out["vwap"] = {"value": fv, "futLast": fl, "above": fl > fv, "distPct": round((fl - fv) / fv * 100, 3)}
+    if f5d:
+        out["vwapSeries5"] = vwap_series(f5d)
 
     # volume (futures, completed 5-minute bars)
     if len(f5d) >= 4 and any(b["v"] for b in f5d):

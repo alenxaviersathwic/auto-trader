@@ -1,9 +1,14 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { UNDERLYING_NAMES } from "../components/underlyingNames";
 import { OpportunityCard } from "../components/OpportunityCard";
-import { useLatestOpportunities, useOpportunityLoop } from "../hooks/useOpportunities";
+import { OpportunityCheckItem } from "../types/opportunities.types";
+import {
+  useCheckOpportunity,
+  useLatestOpportunities,
+  useOpportunityLoop,
+} from "../hooks/useOpportunities";
 
 export const OpportunityDetailPage: React.FC = () => {
   const { underlying } = useParams({ strict: false }) as { underlying?: string };
@@ -12,6 +17,18 @@ export const OpportunityDetailPage: React.FC = () => {
   const code = (underlying ?? "").toUpperCase();
   const { data: latest } = useLatestOpportunities(loop.running, code);
   const items = latest?.list ?? [];
+
+  const [checked, setChecked] = useState<Record<number, OpportunityCheckItem>>({});
+  const [checkingId, setCheckingId] = useState<number | null>(null);
+  const checkOpportunity = useCheckOpportunity();
+
+  const handleCheck = (opportunityId: number) => {
+    setCheckingId(opportunityId);
+    checkOpportunity.mutate(opportunityId, {
+      onSuccess: (res) => setChecked((prev) => ({ ...prev, [opportunityId]: res })),
+      onSettled: () => setCheckingId(null),
+    });
+  };
 
   return (
     <div className="page-container sp-page">
@@ -38,11 +55,17 @@ export const OpportunityDetailPage: React.FC = () => {
       ) : (
         <div className="sp-stack">
           {items.map((s) => (
-            <OpportunityCard key={s.id} opportunity={s} />
+            <OpportunityCard
+              key={s.id}
+              opportunity={s}
+              checkResult={checked[s.id]}
+              isChecking={checkingId === s.id}
+              onCheck={handleCheck}
+              defaultExpanded
+            />
           ))}
         </div>
       )}
     </div>
   );
 };
-

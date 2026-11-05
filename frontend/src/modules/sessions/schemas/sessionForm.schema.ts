@@ -12,6 +12,12 @@ export const sessionCreateSchema = z
     commodityItems: z.array(z.string()).default([]),
     sessionType: z.enum(["FULL_AUTO", "SEMI_AUTO", "MANUAL"]).default("MANUAL"),
     routeThroughUpstox: z.boolean().default(false),
+    startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM"),
+    closeTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM"),
+  })
+  .refine((v) => v.closeTime > v.startTime, {
+    message: "Close time must be after start time",
+    path: ["closeTime"],
   })
   .refine((v) => v.scope !== "INDEX" || v.underlyings.length > 0, {
     message: "Select at least one index underlying",

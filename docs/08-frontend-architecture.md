@@ -116,6 +116,8 @@ The client route tree is configured using `@tanstack/react-router`:
 /research                 ──► ResearchEnginePage (Market Intelligence & News)
 /opportunities            ──► OpportunitiesPage (Live Session Cards & Iterations)
 /opportunities/:id/detail ──► OpportunityDetailPage (Deep Iteration Logs)
+/sessions                 ──► SessionsPage (Trading sessions, hours, create drawer)
+/sessions/:id             ──► SessionDetailPage (SSE trades-to-take table, Trade Lock, pick history)
 /settings/users           ──► UsersPage (Broker OAuth & Funds)
 ```
 
@@ -223,4 +225,9 @@ The centralized Axios client transparently unwraps backend envelopes:
   - Estimated round-trip statutory costs percentage.
   - Valid-until timer countdown.
 - **Diagnostics Log**: Step-by-step audit log of every iteration cycle showing why setups were accepted or rejected (`SAVED`, `NO_SETUP`, `SETUP_REJECTED`, `COST_PROHIBITIVE`).
+- **Check**: each opportunity (card, table row and the detail page) has a **Check** button that replays the signal on 1-minute candles and shows the verdict inline (`CheckVerdict`: TARGET HIT / STOP HIT / % of target, entry, target/stop, peak/low, exit, option P&L). There are no chart views.
+- **Loop**: the Opportunities loop (`opportunityLoopRunner`) runs in the browser; it calls `/iterate` on each RUNNING card, then waits `loopGapSeconds` (default 20 s).
+
+### 7.5 Trading Sessions UI (`modules/sessions`)
+See [10. Trading Sessions Module](10-sessions-module.md), section 9. The session page subscribes to `GET /sessions/{id}/stream` with an `EventSource` (`useSessionLoop`); the server pushes the ranked table, capital and scan result, and the browser only renders them and sends Trade Lock.
 

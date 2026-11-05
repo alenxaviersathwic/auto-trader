@@ -24,6 +24,16 @@ function todayIST(): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Default start: now when it is 09:25 IST or later, otherwise the 09:15 open. Close defaults to 15:45. */
+function defaultStartTime(): string {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
+  const hh = parts.find((p) => p.type === "hour")!.value;
+  const mm = parts.find((p) => p.type === "minute")!.value;
+  const now = `${hh === "24" ? "00" : hh}:${mm}`;
+  return now >= "09:25" ? now : "09:15";
+}
+const DEFAULT_CLOSE_TIME = "15:45";
+
 const SESSION_TYPE_OPTIONS: Array<{ value: "FULL_AUTO" | "SEMI_AUTO" | "MANUAL"; label: string }> = [
   { value: "MANUAL", label: "Manual" },
   { value: "SEMI_AUTO", label: "Semi-Auto" },
@@ -41,6 +51,8 @@ const DEFAULT_VALUES: SessionCreateFormValues = {
   commodityItems: [],
   sessionType: "MANUAL",
   routeThroughUpstox: false,
+  startTime: defaultStartTime(),
+  closeTime: DEFAULT_CLOSE_TIME,
 };
 
 export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, onCreate }) => {
@@ -62,7 +74,7 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
   useEffect(() => {
     if (isOpen) {
       setServerError(null);
-      reset({ ...DEFAULT_VALUES, tradeDate: todayIST() });
+      reset({ ...DEFAULT_VALUES, tradeDate: todayIST(), startTime: defaultStartTime(), closeTime: DEFAULT_CLOSE_TIME });
     }
   }, [isOpen, reset]);
 
@@ -206,6 +218,28 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
                   {...register("maxLossPercentage")}
                 />
                 {errors.maxLossPercentage && <span className="form-error">{errors.maxLossPercentage.message}</span>}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="startTime">Start time (IST)</label>
+                <input
+                  id="startTime"
+                  type="time"
+                  className={`input ${errors.startTime ? "input--error" : ""}`}
+                  {...register("startTime")}
+                />
+                {errors.startTime && <span className="form-error">{errors.startTime.message}</span>}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="closeTime">Close time (IST)</label>
+                <input
+                  id="closeTime"
+                  type="time"
+                  className={`input ${errors.closeTime ? "input--error" : ""}`}
+                  {...register("closeTime")}
+                />
+                {errors.closeTime && <span className="form-error">{errors.closeTime.message}</span>}
               </div>
 
               <div className="form-group">

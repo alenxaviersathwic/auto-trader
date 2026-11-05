@@ -10,7 +10,7 @@
 
 The strength of **Auto-Trader** lies in the deterministic coordination of its domain modules. Rather than operating in isolated silos, the platform connects macro sentiment intelligence, quantitative rule ASTs, real-time market data, broker credentials, and conversational AI co-pilots into unified execution pipelines.
 
-This specification documents the **five core end-to-end data flows** that power the platform:
+This specification documents the **core end-to-end data flows** that power the platform (the five numbered below, plus the session loop in section 7b):
 1. **Autonomous Market Intelligence Flow** (`research` $\longrightarrow$ `pgvector` $\longrightarrow$ `opportunities`)
 2. **Real-Time Trade Opportunity Discovery Flow** (`Upstox API` $\longrightarrow$ `research` $\longrightarrow$ `strategies` $\longrightarrow$ `opportunities`)
 3. **Conversational Strategy Creation Flow** (`master` $\longleftrightarrow$ `FastMCP` $\longleftrightarrow$ `strategies`)
@@ -297,6 +297,39 @@ sequenceDiagram
         Note over Health: Strategy healthy. Status remains ACTIVE.
     end
 ```
+
+---
+
+## 7b. Session Loop: From a Saved Opportunity to Trade Lock
+
+**Purpose:** Turns opportunities the engine has already saved into a ranked, capital-sized table of trades to take for one trading session, pushed live to the browser. Full specification: [10. Trading Sessions Module](10-sessions-module.md).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Browser (Opportunities loop)
+    participant Opp as OpportunityRunService
+    participant DB as PostgreSQL
+    participant Run as SessionLoopRunner (1 s loop)
+    participant Svc as SessionLoopService
+    participant Page as Browser (Session page, SSE)
+
+    UI->>Opp: POST /masters/{id}/iterate every ~20 s
+    Opp->>DB: INSERT trade_opportunities (PENDING, is_latest)
+    loop every second, per MANUAL session in its hours
+        Run->>Svc: tick(session_id)
+        Svc->>DB: saved_candidates (latest, PENDING, created in last 30 s)
+        Svc->>Svc: filter, size by confidence, rank by expected net
+        Svc->>DB: INSERT session_picks (OFFERED)
+        Run-->>Page: SSE loop event, only if something visible changed
+    end
+    Page->>Svc: POST /sessions/{id}/picks/{pickId}/lock
+    Svc->>DB: re-check hours, capital, loss budget, set LOCKED + live price
+    Svc-->>Page: locked pick (popup)
+    Note over DB: At 16:00 IST finished sessions picks move to session_picks_archive
+```
+
+The two loops are decoupled: the session only reads `trade_opportunities`, so it shows new trades only while the Opportunities loop is fetching.
 
 ---
 

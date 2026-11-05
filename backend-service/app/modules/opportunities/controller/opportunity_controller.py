@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, status
-from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,19 +88,6 @@ async def check_single_opportunity(
 @opportunity_router.post("/opportunities/masters/stop-all", response_model=ApiResponse[dict[str, Any]], status_code=OK)
 async def stop_all_masters(session: AsyncSession = Depends(get_db)) -> ApiResponse[dict[str, Any]]:
     return success(data=await svc.stop_all(session), message="All running card sessions stopped")
-
-
-@opportunity_router.get("/opportunities/stream")
-async def stream_opportunities(underlyings: str) -> StreamingResponse:
-    """SSE feed of opportunity batches for the given underlying codes (comma-separated, e.g.
-    'NIFTY50,SENSEX'). Pushes an 'opportunities.batch' event each time a running card's
-    iteration lands for one of these underlyings -- independent of who started that card."""
-    codes = [u.strip().upper() for u in underlyings.split(",") if u.strip()]
-    return StreamingResponse(
-        svc.stream_events(codes),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
-    )
 
 
 @opportunity_router.post("/opportunities/masters/search", response_model=ApiResponse[PageResult[dict[str, Any]]],

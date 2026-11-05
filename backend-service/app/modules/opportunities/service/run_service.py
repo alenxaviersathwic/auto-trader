@@ -1,8 +1,7 @@
 import asyncio
-import json
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any, AsyncGenerator
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,14 +28,31 @@ from app.modules.research.service.run_service import run_service as research_run
 
 _IST = ZoneInfo("Asia/Kolkata")
 ALL_IN_RESEARCH = 12  # select_underlyings count large enough to return every researched underlying
-
-# SSE: queues keyed by underlying code -- a session subscribes by registering one shared queue
-# under several codes, so events from any of its underlyings land in the same stream.
-_EVENT_QUEUES: dict[str, list[asyncio.Queue]] = {}
+DEDUPE_MINUTES = 30  # the same contract re-signalled inside this window is the same trade, not a new opportunity
 
 
 def _today() -> str:
     return datetime.now(_IST).strftime("%Y-%m-%d")
+
+
+def first_full_bar(created: datetime) -> datetime:
+    """Open time of the first 1-minute bar that starts after `created` (the bar holding the signal also holds
+    prices from before it existed)."""
+    bar = created.replace(second=0, microsecond=0)
+    return bar + timedelta(minutes=1) if created > bar else bar
+
+
+def first_touch(
+    win_bars: list[tuple[datetime, dict[str, Any]]], stop: float, target: float
+) -> tuple[str | None, datetime | None, float | None]:
+    """(outcome, bar open time, exit price) of the first bar touching stop or target. A bar touching both is a
+    STOP: the order inside a minute is unknown, so assume the worst. (None, None, None) when neither is touched."""
+    for bt, b in win_bars:
+        if b["l"] <= stop:
+            return "STOP_HIT", bt, stop
+        if b["h"] >= target:
+            return "TARGET_HIT", bt, target
+    return None, None, None
 
 
 class OpportunityRunService:
@@ -119,32 +135,6 @@ class OpportunityRunService:
         return {"stopped": len(rows), "masters": [self.master_dict(m) for m in rows]}
 
     # ───────────────────────── one iteration ─────────────────────────
-    async def _publish_event(self, underlying_code: str, event_data: dict[str, Any]) -> None:
-        for q in _EVENT_QUEUES.get(underlying_code, []):
-            await q.put(event_data)
-
-    async def stream_events(self, underlying_codes: list[str]) -> AsyncGenerator[str, None]:
-        """SSE generator: one shared queue registered under every requested underlying code,
-        so a single connection receives batches for all of a session's underlyings, merged."""
-        q: asyncio.Queue = asyncio.Queue()
-        for code in underlying_codes:
-            _EVENT_QUEUES.setdefault(code, []).append(q)
-        try:
-            yield f"event: connected\ndata: {json.dumps({'underlyings': underlying_codes})}\n\n"
-            while True:
-                try:
-                    event_data = await asyncio.wait_for(q.get(), timeout=15.0)
-                    yield f"event: {event_data['event']}\ndata: {json.dumps(event_data)}\n\n"
-                except asyncio.TimeoutError:
-                    yield f"event: heartbeat\ndata: {json.dumps({'time': datetime.now(UTC).isoformat()})}\n\n"
-        finally:
-            for code in underlying_codes:
-                queues = _EVENT_QUEUES.get(code)
-                if queues and q in queues:
-                    queues.remove(q)
-                    if not queues:
-                        _EVENT_QUEUES.pop(code, None)
-
     async def iterate(self, master_id: int) -> dict[str, Any]:
         lock = self._locks.setdefault(master_id, asyncio.Lock())
         if lock.locked():
@@ -170,7 +160,6 @@ class OpportunityRunService:
             await s.commit()
 
         picks: list[dict[str, Any]] = []
-        prices: dict[str, float] = {}
         note, error = "", None
         diag: dict[str, Any] = {}
         try:
@@ -191,11 +180,6 @@ class OpportunityRunService:
                 picks = ranked[: params.get("maxPerUnderlying", 2)]
                 for i, c in enumerate(picks, 1):
                     c["rank"] = i
-                for ch in (out.get("market") or {}).get("chains", []):
-                    for row in ch["strikes"]:
-                        for side in ("CE", "PE"):
-                            if row[side]["key"]:
-                                prices[row[side]["key"]] = row[side]["ltp"]
         except Exception as e:  # one bad iteration must not kill the card
             logger.error(f"opportunities iterate master={master_id} {code} failed: {type(e).__name__}: {e}")
             error = f"{type(e).__name__}: {e}"
@@ -205,11 +189,9 @@ class OpportunityRunService:
             m = await master_repo.get(s, master_id)
             assert m is not None
             saved = 0
-            event_opportunities: list[dict[str, Any]] = []
             if error is None:
-                saved, saved_rows = await self._save(s, m, iteration, picks, params)
-                event_opportunities = [self.to_dict(r, datetime.now(UTC)) for r in saved_rows]
-                await memory_service.resolve_outcomes(s, prices)
+                saved, _ = await self._save(s, m, iteration, picks, params)
+                await self._resolve_pending(s, m.underlyingCode)
                 m.iterationsCompleted = iteration
                 m.lastCompletedAt = datetime.now(UTC)
                 m.lastNote, m.lastError = note or None, None
@@ -227,18 +209,16 @@ class OpportunityRunService:
             m.lastDurationMs = int((time.monotonic() - t0) * 1000)
             await self._record_iteration(s, m, iteration, diag, note or error, saved)
             await s.commit()
-            if error is None:
-                await self._publish_event(code, {
-                    "event": "opportunities.batch", "masterId": m.id, "underlyingCode": code,
-                    "iterationNo": iteration, "count": saved, "opportunities": event_opportunities,
-                    "note": note or None,
-                })
-            else:
-                await self._publish_event(code, {
-                    "event": "opportunities.error", "masterId": m.id, "underlyingCode": code,
-                    "iterationNo": iteration, "error": error,
-                })
             return {"master": self.master_dict(m), "ran": True, "saved": saved}
+
+    async def _resolve_pending(self, s: AsyncSession, code: str) -> None:
+        """Resolve this underlying's PENDING rows from candles. A failure here must not fail the iteration."""
+        try:
+            rows = [r for r in await opportunity_repository.pending(s) if r.underlyingCode == code]
+            if rows:
+                await self._evaluate_opportunities(s, rows)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[RESOLVE_PENDING_FAILED] {code}: {type(e).__name__}: {e}")
 
     @staticmethod
     def _classify_error(err: str | None) -> str:
@@ -267,6 +247,14 @@ class OpportunityRunService:
         """This iteration's picks become the card's 'latest' set (an empty set clears the old one)."""
         now = datetime.now(UTC)
         valid_until = now + timedelta(minutes=params.get("validMinutes", 15))
+        # The same contract re-signalled within DEDUPE_MINUTES is the same trade, not a new one: skip it and keep
+        # the earlier row alive (still latest) so the card and the session loop do not lose a live idea.
+        recent = await opportunity_repository.recent_contracts(s, m.underlyingCode, now - timedelta(minutes=DEDUPE_MINUTES))
+        keep_ids = {r.id for r in recent.values() if r.isLatest and r.outcome == "PENDING" and r.validUntil > now}
+        fresh_picks = [c for c in picks if c["id"] not in recent]
+        if len(fresh_picks) != len(picks):
+            logger.info(f"[DEDUPE] {m.underlyingCode} skipped {len(picks) - len(fresh_picks)} repeat contract(s)")
+        picks = fresh_picks
         rows = [
             TradeOpportunity(
                 masterId=m.id, iterationNo=iteration, ref=make_ref(m.underlyingCode, m, iteration, c["rank"]),
@@ -280,7 +268,7 @@ class OpportunityRunService:
             )
             for c in picks
         ]
-        await opportunity_repository.replace_latest(s, m.underlyingCode, rows)
+        await opportunity_repository.replace_latest(s, m.underlyingCode, rows, keep_ids=keep_ids)
         for row, c in zip(rows, picks, strict=True):
             await memory_service.remember_pending(s, row, c.get("bias", "NEUTRAL"), "UNKNOWN")
         return len(rows), rows
@@ -334,6 +322,38 @@ class OpportunityRunService:
             })
         return {"tradeDate": today, "list": items}
 
+    async def saved_candidates(
+        self, session: AsyncSession, codes: list[str], max_age_seconds: int
+    ) -> list[dict[str, Any]]:
+        """
+        Opportunities the engine has ALREADY created and saved for these underlyings that are still live:
+        latest set, PENDING, not past validUntil and inserted within the last `max_age_seconds`. It is a plain
+        indexed DB read -- it never starts, iterates or listens to the engine. Each item is to_dict() plus
+        instrumentKey, exchange and lotUnits so a consumer (the session loop) can size it without touching
+        this module's repository or config.
+        """
+        if not codes:
+            return []
+        now = datetime.now(UTC)
+        out: list[dict[str, Any]] = []
+        for r in await opportunity_repository.fresh(session, codes, now - timedelta(seconds=max_age_seconds), now):
+            cfg = get_config(r.underlyingCode)
+            out.append({**self.to_dict(r, now), "instrumentKey": r.instrumentKey,
+                        "exchange": cfg.exchange if cfg else "NSE", "lotUnits": cfg.lotSize if cfg else 0})
+        return out
+
+    async def live_premium(self, session: AsyncSession, instrument_key: str | None, timeout: float = 1.5) -> float | None:
+        """Current traded price of one option contract, or None when it cannot be had within `timeout` seconds."""
+        if not instrument_key:
+            return None
+        try:
+            prices = await asyncio.wait_for(market_data.ltp([instrument_key], session), timeout=timeout)
+        except Exception as e:  # noqa: BLE001 -- a missing price must never block a lock
+            logger.warning(f"live premium unavailable for {instrument_key}: {type(e).__name__}: {e}")
+            return None
+        px = prices.get(instrument_key)
+        return round(float(px), 2) if px else None
+
     async def latest(self, session: AsyncSession, code: str | None = None) -> dict[str, Any]:
         rows = await opportunity_repository.latest(session, [code] if code else None)
         now = datetime.now(UTC)
@@ -346,7 +366,7 @@ class OpportunityRunService:
         row = await opportunity_repository.get(session, opportunity_id)
         if row is None:
             raise NotFoundException(f"Opportunity {opportunity_id} not found")
-        results = await self._evaluate_opportunities(session, [row])
+        results = await self._evaluate_opportunities(session, [row], rewrite=True)
         await session.commit()
         return results[0]
 
@@ -363,7 +383,7 @@ class OpportunityRunService:
         if m is None:
             raise NotFoundException(f"Opportunity master {master_id} not found")
         rows = await opportunity_repository.for_master(session, master_id, iteration_no)
-        results = await self._evaluate_opportunities(session, rows)
+        results = await self._evaluate_opportunities(session, rows, rewrite=True)
         await session.commit()
         by_batch: dict[int, list[dict[str, Any]]] = {}
         for r in results:
@@ -390,8 +410,16 @@ class OpportunityRunService:
         }
 
     async def _evaluate_opportunities(
-        self, session: AsyncSession, rows: list[TradeOpportunity]
+        self, session: AsyncSession, rows: list[TradeOpportunity], rewrite: bool = False
     ) -> list[dict[str, Any]]:
+        """Verdict for each row from Upstox 1-minute candles -- the ONLY source of TARGET_HIT / STOP_HIT / EXPIRED.
+
+        Rules (kept deliberately conservative so a backtest never flatters the engine):
+          * only bars that OPEN after the signal was created count; the bar containing `createdAt` also holds
+            prices from before the signal existed, so it is skipped
+          * a bar that touches both stop and target counts as a STOP (the order inside a minute is unknown)
+          * `rewrite=True` (manual check endpoints) also corrects an outcome stored earlier by a different pass;
+            the automatic pass only resolves rows that are still PENDING."""
         if not rows:
             return []
         now = datetime.now(UTC)
@@ -445,14 +473,15 @@ class OpportunityRunService:
                         candle_cache[ck] = []
                 bars = candle_cache[ck]
 
-            # Filter bars in [start_dt - 60s, end_dt]
+            # only bars that open after the signal existed, up to the end of its window
+            first_bar = first_full_bar(start_dt)
             win_bars = []
             for b in bars:
                 try:
                     bt = datetime.fromisoformat(b["t"])
                     if not bt.tzinfo:
                         bt = bt.replace(tzinfo=_IST)
-                    if (start_dt - timedelta(seconds=60)) <= bt <= (end_dt + timedelta(seconds=60)):
+                    if first_bar <= bt < end_dt:
                         win_bars.append((bt, b))
                 except ValueError:
                     continue
@@ -467,17 +496,9 @@ class OpportunityRunService:
                 peak_price = max(b["h"] for _, b in win_bars)
                 trough_price = min(b["l"] for _, b in win_bars)
                 exit_price = win_bars[-1][1]["c"]
-                for bt, b in win_bars:
-                    if b["h"] >= target:
-                        status_res = "TARGET_HIT"
-                        exit_price = target
-                        hit_time = bt.isoformat()
-                        break
-                    if b["l"] <= stop:
-                        status_res = "STOP_HIT"
-                        exit_price = stop
-                        hit_time = bt.isoformat()
-                        break
+                touched, touched_at, touched_px = first_touch(win_bars, stop, target)
+                if touched and touched_at and touched_px is not None:
+                    status_res, exit_price, hit_time = touched, touched_px, touched_at.isoformat()
             else:
                 # Fallback to already-resolved outcome or live LTP
                 ltp = live_ltps.get(r.instrumentKey or "")
@@ -508,21 +529,33 @@ class OpportunityRunService:
                 achieved_pct = round((exit_price - entry) / target_move * 100, 1)
 
             # Persist resolved outcome if it newly resolved
-            if status_res in ("TARGET_HIT", "STOP_HIT") and r.outcome == "PENDING":
-                r.outcome = status_res
-                r.resolvedAt = now
-            elif status_res == "EXPIRED" and r.outcome == "PENDING" and now >= end_dt:
-                r.outcome = "EXPIRED"
-                r.resolvedAt = now
+            if r.outcome == "PENDING" or (rewrite and win_bars):
+                if status_res in ("TARGET_HIT", "STOP_HIT", "EXPIRED") and r.outcome != status_res:
+                    r.outcome = status_res
+                    r.resolvedAt = now
+                    await memory_service.sync_outcome(session, r)
+                elif status_res == "PENDING" and r.outcome != "PENDING":
+                    r.outcome, r.resolvedAt = "PENDING", None  # a stale snapshot verdict the candles do not support
+                    await memory_service.sync_outcome(session, r)
 
             out.append({
                 "opportunityId": r.id,
                 "masterId": r.masterId,
                 "iterationNo": r.iterationNo,
                 "ref": r.ref,
+                "underlyingCode": r.underlyingCode,
+                "underlyingType": r.underlyingType,
+                "spot": float(r.spot),
                 "strike": float(r.strike),
                 "optionType": r.optionType,
                 "expiry": r.expiry,
+                "confidence": r.confidence,
+                "rewardRisk": float(r.rewardRisk),
+                "rank": r.rank,
+                "riskLevel": r.riskLevel,
+                "strategy": r.strategy,
+                "reasons": r.reasons or [],
+                "risks": r.risks or [],
                 "createdAt": start_dt.isoformat(),
                 "validUntil": end_dt.isoformat(),
                 "entry": entry,
@@ -540,16 +573,6 @@ class OpportunityRunService:
                 "hitAt": hit_time,
                 "candlesChecked": len(win_bars),
                 "windowEnded": now >= end_dt,
-                "series": [
-                    {
-                        "t": bt.isoformat(),
-                        "o": round(b["o"], 2),
-                        "h": round(b["h"], 2),
-                        "l": round(b["l"], 2),
-                        "c": round(b["c"], 2),
-                    }
-                    for bt, b in win_bars
-                ],
             })
         return out
 

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, Numeric, SmallInteger, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Index, Integer, Numeric, SmallInteger, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -94,6 +94,13 @@ class TradeOpportunity(BaseEntity):
     outcome: Mapped[str] = mapped_column("outcome", String(12), nullable=False, default="PENDING")
     resolvedAt: Mapped[datetime | None] = mapped_column("resolved_at", DateTime(timezone=True), nullable=True)
     isLatest: Mapped[bool] = mapped_column("is_latest", Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        Index(
+            "ix_trade_opportunities_loop_fresh", "created_at",
+            postgresql_where=text("is_latest AND outcome = 'PENDING' AND status = 1"),
+        ),
+    )
 
 
 class OpportunityMemory(BaseEntity):

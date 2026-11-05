@@ -41,6 +41,14 @@ class TradingSession(BaseEntity):
         "route_through_upstox", Boolean, nullable=False, default=False
     )  # False = every order in this session is simulated; True = orders actually go to Upstox
 
+    # Realised P&L of the session's closed trades (negative = loss). Written by the execution phase once it
+    # exists; until then it stays 0, so currentCapital == capital.
+    realizedPnl: Mapped[float] = mapped_column("realized_pnl", Numeric(14, 2), nullable=False, default=0)
+
+    # Trading hours (IST day, stored UTC): nothing is offered before startAt; the loop closes the session at closeAt.
+    startAt: Mapped[datetime] = mapped_column("start_at", DateTime(timezone=True), nullable=False)
+    closeAt: Mapped[datetime] = mapped_column("close_at", DateTime(timezone=True), nullable=False)
+
     sessionStatus: Mapped[str] = mapped_column(
         "session_status", String(10), nullable=False, default="ACTIVE"
     )  # ACTIVE | CLOSED | EXPIRED

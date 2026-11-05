@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "auto-trader"
+    APP_NAME: str = "ordergrid"
     APP_ENV: str = "development"
     API_V1_PREFIX: str = "/api/v1"
     HOST: str = "0.0.0.0"

@@ -48,3 +48,7 @@ backup/*.sql
 backup/autotrader_backup_*
 !backup/latest.sql.gz
 !backup/.gitkeep
+
+# Backtest cache + output (large, regenerate with scripts/backtest_setups.py)
+backend-service/data/backtest/
+backend-service/backtest_out/

@@ -1,0 +1,280 @@
+import asyncio
+from datetime import UTC, datetime
+from typing import Any, Protocol
+from zoneinfo import ZoneInfo
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exception.app_exceptions import ConflictException, NotFoundException
+from app.core.pagination.page_result import PageResult
+from app.modules.opportunities.service.run_service import opportunity_run_service
+from app.modules.sessions.entity.session_pick_entity import SessionPick
+from app.modules.sessions.entity.trading_session_entity import TradingSession
+from app.modules.sessions.repository.session_pick_repository import SessionPickRepository
+from app.modules.sessions.repository.trading_session_repository import TradingSessionRepository
+from app.modules.sessions.schema.session_pick_schema import (
+    SessionCapitalResponse,
+    SessionLoopResponse,
+    SessionPickResponse,
+    SessionPickSearchFilter,
+)
+from app.modules.sessions.service.session_sizing import (
+    MAX_OPEN_OFFERS,
+    MAX_OPPORTUNITY_AGE_SECONDS,
+    MIN_PICK_WINDOW_SECONDS,
+    CapitalState,
+    capital_state,
+    lots_for,
+    rank_key,
+    size_candidate,
+)
+
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+class OpportunityReader(Protocol):
+    async def saved_candidates(
+        self, session: AsyncSession, codes: list[str], max_age_seconds: int
+    ) -> list[dict[str, Any]]: ...
+
+    async def live_premium(self, session: AsyncSession, instrument_key: str | None) -> float | None: ...
+
+
+def _utc(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+class SessionLoopService:
+    """
+    The MANUAL session loop. One tick = read the opportunities the engine inserted in the last
+    MAX_OPPORTUNITY_AGE_SECONDS (a DB read; never runs or listens to the engine), size each against this session's
+    capital / loss budget / win probability, and offer the best ones. An offer stays open until the opportunity behind it expires (its own validUntil) or it is
+    locked. Trade Lock records the lock; what happens after is defined later.
+    """
+
+    def __init__(
+        self,
+        session_repo: TradingSessionRepository | None = None,
+        pick_repo: SessionPickRepository | None = None,
+        opportunities: OpportunityReader | None = None,
+    ):
+        self.sessions = session_repo or TradingSessionRepository()
+        self.picks = pick_repo or SessionPickRepository()
+        self.opportunities = opportunities or opportunity_run_service
+        self._locks: dict[int, asyncio.Lock] = {}  # single uvicorn worker: one lock per session is enough
+
+    def _lock_for(self, session_id: int) -> asyncio.Lock:
+        return self._locks.setdefault(session_id, asyncio.Lock())
+
+    # ───────────────────────── mapping ─────────────────────────
+    @staticmethod
+    def pick_response(p: SessionPick, now: datetime) -> SessionPickResponse:
+        entry, stop, target = float(p.entry), float(p.stop), float(p.target)
+        left = (_utc(p.expiresAt) - now).total_seconds() if p.pickState == "OFFERED" else 0.0
+        state = "EXPIRED" if p.pickState == "OFFERED" and left <= 0 else p.pickState  # not yet swept by a tick
+        return SessionPickResponse(
+            id=p.id, sessionId=p.sessionId, opportunityId=p.opportunityId, opportunityRef=p.opportunityRef,
+            underlyingCode=p.underlyingCode, optionType=p.optionType, strike=float(p.strike), expiry=p.expiry,
+            instrumentKey=p.instrumentKey, strategy=p.strategy, confidence=p.confidence,
+            entry=entry, entryMax=float(p.entryMax), stop=stop, target=target,
+            stopPct=round((entry - stop) / entry * 100, 2), targetPct=round((target - entry) / entry * 100, 2),
+            rewardRisk=float(p.rewardRisk), lots=p.lots, lotUnits=p.lotUnits, quantity=p.quantity,
+            capitalRequired=float(p.capitalRequired), riskAmount=float(p.riskAmount),
+            rewardAmount=float(p.rewardAmount), expectedNet=float(p.expectedNet),
+            capitalAtPick=float(p.capitalAtPick), availableAtPick=float(p.availableAtPick),
+            reasons=p.reasons or [], risks=p.risks or [], pickState=state,
+            signalAt=p.signalAt, holdUntil=p.holdUntil, offeredAt=p.offeredAt, expiresAt=p.expiresAt,
+            lockedAt=p.lockedAt, lockedPrice=float(p.lockedPrice) if p.lockedPrice is not None else None,
+            winProbPct=float(p.confidence), usagePct=round(float(p.capitalRequired) / float(p.availableAtPick) * 100, 1)
+            if float(p.availableAtPick) > 0 else 0.0, secondsLeft=round(max(0.0, left), 2), createdAt=p.createdAt,
+        )
+
+    @staticmethod
+    def _ranked(picks: list[SessionPick]) -> list[SessionPick]:
+        """Best first: expected net rupees, then confidence, then reward:risk."""
+        return sorted(picks, key=lambda p: (float(p.expectedNet), p.confidence, float(p.rewardRisk)), reverse=True)
+
+    @staticmethod
+    def _refit(p: SessionPick, lots: int, cap: CapitalState) -> None:
+        """Re-size an open offer to the capital that is free NOW (another row may have been locked)."""
+        old = max(1, p.lots)
+        p.expectedNet = round(float(p.expectedNet) / old * lots, 2)
+        p.lots, p.quantity = lots, lots * p.lotUnits
+        p.capitalRequired = round(p.quantity * float(p.entry), 2)
+        p.riskAmount = round(p.quantity * (float(p.entry) - float(p.stop)), 2)
+        p.rewardAmount = round(p.quantity * (float(p.target) - float(p.entry)), 2)
+        p.capitalAtPick, p.availableAtPick = cap.currentCapital, cap.availableCapital
+
+    @staticmethod
+    def _codes(s: TradingSession) -> list[str]:
+        return list(s.underlyings if s.scope == "INDEX" else s.commodityItems) or []
+
+    def _loop_response(self, s: TradingSession, now: datetime, cap: CapitalState, state: str, message: str,
+                       picks: list[SessionPick] | None = None, candidates: int = 0,
+                       excluded: dict[str, int] | None = None) -> SessionLoopResponse:
+        return SessionLoopResponse(
+            sessionId=s.id, serverTime=now, state=state, message=message,
+            picks=[self.pick_response(p, now) for p in self._ranked(picks or [])],
+            capital=SessionCapitalResponse(**cap.as_dict()),
+            scanned={"candidates": candidates, "excluded": excluded or {}},
+        )
+
+    async def _load(self, db: AsyncSession, session_id: int) -> TradingSession:
+        s = await self.sessions.get_by_id(db, session_id)
+        if not s:
+            raise NotFoundException(message=f"Trading session {session_id} not found")
+        return s
+
+    # ───────────────────────── loop tick ─────────────────────────
+    async def tick(self, db: AsyncSession, session_id: int) -> SessionLoopResponse:
+        async with self._lock_for(session_id):
+            s = await self._load(db, session_id)
+            now = datetime.now(UTC)
+            open_picks = await self.picks.open_picks(db, session_id)
+            for p in open_picks:  # an offer closes when its opportunity expires
+                if p.pickState == "OFFERED" and _utc(p.expiresAt) <= now:
+                    p.pickState = "EXPIRED"
+            await db.flush()
+            locked = [p for p in open_picks if p.pickState == "LOCKED"]
+            cap = capital_state(s.capital, s.maxLossPercentage, s.realizedPnl, locked)
+
+            if s.sessionStatus != "ACTIVE":
+                return self._loop_response(s, now, cap, "SESSION_CLOSED", f"Session is {s.sessionStatus}")
+            today = now.astimezone(_IST).date().isoformat()
+            if s.tradeDate != today:
+                return self._loop_response(s, now, cap, "SESSION_CLOSED",
+                                           f"Session trade date {s.tradeDate} is not today ({today})")
+            if s.closeAt is not None and now >= _utc(s.closeAt):  # trading hours are over: close the session
+                for p in open_picks:
+                    if p.pickState == "OFFERED":
+                        p.pickState = "EXPIRED"
+                s.sessionStatus, s.closedAt = "CLOSED", now
+                await db.flush()
+                at_ = _utc(s.closeAt).astimezone(_IST).strftime("%H:%M")
+                return self._loop_response(s, now, cap, "SESSION_CLOSED", f"Session closed at {at_} IST")
+            if s.sessionType != "MANUAL":
+                return self._loop_response(s, now, cap, "UNSUPPORTED_TYPE",
+                                           f"{s.sessionType} sessions are not defined yet; only MANUAL runs the loop")
+            if s.startAt is not None and now < _utc(s.startAt):
+                at_ = _utc(s.startAt).astimezone(_IST).strftime("%H:%M")
+                return self._loop_response(s, now, cap, "SCHEDULED", f"Starts at {at_} IST")
+            if cap.lossUsed >= cap.maxLossAmount:
+                if s.haltedAt is None:
+                    s.haltReason, s.haltedAt = "MAX_LOSS", now
+                    await db.flush()
+                return self._loop_response(s, now, cap, "HALTED",
+                                           f"Session loss limit reached ({s.maxLossPercentage}% of capital)")
+            # open offers stay on the table until their opportunity expires, re-fitted to the capital free right now
+            live = [p for p in open_picks if p.pickState == "OFFERED"]
+            for p in list(live):
+                lots, _ = lots_for(float(p.entry), float(p.stop), p.lotUnits, p.confidence, cap)
+                if lots is None:  # another lock used the money / loss budget this row needed
+                    p.pickState = "EXPIRED"
+                    live.remove(p)
+                elif lots != p.lots:
+                    self._refit(p, lots, cap)
+            await db.flush()
+
+            room = MAX_OPEN_OFFERS - len(live)
+            candidates = await self.opportunities.saved_candidates(db, self._codes(s), MAX_OPPORTUNITY_AGE_SECONDS)
+            seen = await self.picks.offered_opportunity_ids(db, session_id)
+            excluded: dict[str, int] = {}
+
+            def drop(reason: str) -> None:
+                excluded[reason] = excluded.get(reason, 0) + 1
+
+            ranked: list[tuple[tuple, dict[str, Any], Any]] = []
+            for opp in candidates:
+                if int(opp["id"]) in seen:
+                    drop("already offered")
+                    continue
+                if (_utc(datetime.fromisoformat(opp["validUntil"])) - now).total_seconds() < MIN_PICK_WINDOW_SECONDS:
+                    drop("expires too soon")
+                    continue
+                sized, why = size_candidate(opp, cap)
+                if sized is None:
+                    drop(why or "excluded")
+                    continue
+                ranked.append((rank_key(opp, sized), opp, sized))
+
+            ranked.sort(key=lambda x: x[0], reverse=True)
+            for _, opp, z in ranked[: max(0, room)]:
+                valid_until = _utc(datetime.fromisoformat(opp["validUntil"]))
+                pick = SessionPick(
+                    sessionId=s.id, opportunityId=int(opp["id"]), opportunityRef=opp["ref"],
+                    underlyingCode=opp["underlyingCode"], optionType=opp["optionType"], strike=opp["strike"],
+                    expiry=opp["expiry"], instrumentKey=opp.get("instrumentKey"), strategy=opp.get("strategy"),
+                    confidence=int(opp["confidence"]), entry=opp["entry"], entryMax=z.entryMax, stop=opp["stop"],
+                    target=opp["target"], rewardRisk=opp["rewardRisk"], lots=z.lots, lotUnits=z.lotUnits,
+                    quantity=z.quantity, capitalRequired=z.capitalRequired, riskAmount=z.riskAmount,
+                    rewardAmount=z.rewardAmount, expectedNet=z.expectedNet, capitalAtPick=cap.currentCapital,
+                    availableAtPick=cap.availableCapital, reasons=list(opp.get("reasons") or []),
+                    risks=list(opp.get("risks") or []), pickState="OFFERED",
+                    signalAt=_utc(datetime.fromisoformat(opp["createdAt"])), holdUntil=valid_until,
+                    offeredAt=now, expiresAt=valid_until,
+                )
+                await self.picks.save(db, pick)
+                live.append(pick)
+            if len(ranked) > room:
+                excluded["table full"] = len(ranked) - max(0, room)
+
+            if not live:
+                msg = "No saved opportunity fits this session right now" if candidates else \
+                    "No live saved opportunities for this session's underlyings"
+                return self._loop_response(s, now, cap, "WAITING", msg, candidates=len(candidates), excluded=excluded)
+            n = len(live)
+            return self._loop_response(s, now, cap, "PICK_READY", f"{n} trade{'s' if n != 1 else ''} to take", picks=live,
+                                       candidates=len(candidates), excluded=excluded)
+
+    # ───────────────────────── trade lock ─────────────────────────
+    async def lock(self, db: AsyncSession, session_id: int, pick_id: int) -> SessionPickResponse:
+        """Trade Lock: valid only while the pick is OFFERED and its opportunity has not expired. Idempotent once LOCKED."""
+        async with self._lock_for(session_id):
+            s = await self._load(db, session_id)
+            pick = await self.picks.get_by_id(db, pick_id)
+            if not pick or pick.sessionId != session_id:
+                raise NotFoundException(message=f"Pick {pick_id} not found in session {session_id}")
+            now = datetime.now(UTC)
+            if pick.pickState == "LOCKED":
+                return self.pick_response(pick, now)
+            if pick.pickState != "OFFERED":
+                raise ConflictException(message=f"Pick is {pick.pickState}; the window has closed",
+                                        error={"code": "PICK_NOT_OFFERED", "pickState": pick.pickState})
+            if _utc(pick.expiresAt) <= now:
+                raise ConflictException(message="Too late: this opportunity has expired",
+                                        error={"code": "PICK_EXPIRED"})
+            if s.sessionStatus != "ACTIVE":
+                raise ConflictException(message=f"Session is {s.sessionStatus}", error={"code": "SESSION_NOT_ACTIVE"})
+            if s.closeAt is not None and now >= _utc(s.closeAt):
+                raise ConflictException(message="Session trading hours are over", error={"code": "SESSION_HOURS_OVER"})
+
+            locked = [p for p in await self.picks.open_picks(db, session_id) if p.pickState == "LOCKED"]
+            cap = capital_state(s.capital, s.maxLossPercentage, s.realizedPnl, locked)
+            if cap.lossUsed >= cap.maxLossAmount:
+                raise ConflictException(message="Session loss limit reached", error={"code": "HALTED"})
+            if float(pick.capitalRequired) > cap.availableCapital + 0.005:
+                raise ConflictException(message="Not enough free capital for this pick",
+                                        error={"code": "INSUFFICIENT_CAPITAL"})
+            if float(pick.riskAmount) > cap.remainingLossBudget + 0.005:
+                raise ConflictException(message="This pick exceeds the remaining session loss budget",
+                                        error={"code": "LOSS_BUDGET"})
+            pick.pickState, pick.lockedAt = "LOCKED", now
+            # the item's CURRENT price, shown in the Trade Lock popup; a slow/missing quote never blocks the lock
+            pick.lockedPrice = await self.opportunities.live_premium(db, pick.instrumentKey)
+            await db.flush()
+            return self.pick_response(pick, now)
+
+    # ───────────────────────── history ─────────────────────────
+    async def search_picks(
+        self, db: AsyncSession, session_id: int, filter_obj: SessionPickSearchFilter
+    ) -> PageResult[SessionPickResponse]:
+        await self._load(db, session_id)
+        now = datetime.now(UTC)
+        page = await self.picks.search(db, session_id, filter_obj)
+        return PageResult(
+            list=[self.pick_response(p, now) for p in page.list], page=page.page, limit=page.limit,
+            totalPages=page.totalPages, totalItems=page.totalItems,
+        )
+
+
+session_loop_service = SessionLoopService()

@@ -182,6 +182,7 @@ Background recurring jobs run within the single Uvicorn process using **APSchedu
 - **Lifecycle**: Initialized in `lifespan` of `main.py` via `start_scheduler()` and gracefully shut down with `shutdown_scheduler()`.
 - **Registered Jobs**:
   - `users.upstox_token_refresh`: Runs every 15 minutes, inspecting expiring tokens and renewing them before market sessions.
+  - `sessions.archive_session_picks`: Runs daily at 16:00 IST (and once at startup) and moves the picks of finished trading sessions from `session_picks` to `session_picks_archive`; see [10](10-sessions-module.md).
 
 ---
 

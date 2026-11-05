@@ -4,10 +4,12 @@ from typing import Optional
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.filter.base_filter import BaseFilter
+from app.modules.sessions.schema.session_pick_schema import SessionLoopResponse
 
 SCOPE_VALUES = ("INDEX", "COMMODITY")
 SESSION_TYPE_VALUES = ("FULL_AUTO", "SEMI_AUTO", "MANUAL")
 SESSION_STATUS_VALUES = ("ACTIVE", "CLOSED", "EXPIRED")
+HHMM_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"  # 24-hour HH:MM, read as IST
 
 
 class TradingSessionCreateRequest(BaseModel):
@@ -23,6 +25,8 @@ class TradingSessionCreateRequest(BaseModel):
     commodityItems: list[str] = Field(default_factory=list, description="Selected commodities (scope=COMMODITY)")
     sessionType: str = Field(default="MANUAL", description="FULL_AUTO | SEMI_AUTO | MANUAL")
     routeThroughUpstox: bool = Field(default=False, description="False = fully simulated session")
+    startTime: Optional[str] = Field(default=None, pattern=HHMM_PATTERN, description="HH:MM IST. Blank = now if created at/after 09:25, else 09:15")
+    closeTime: Optional[str] = Field(default=None, pattern=HHMM_PATTERN, description="HH:MM IST. Blank = 15:45")
 
     @model_validator(mode="after")
     def _validate(self) -> "TradingSessionCreateRequest":
@@ -49,6 +53,8 @@ class TradingSessionUpdateRequest(BaseModel):
     sessionType: Optional[str] = None
     routeThroughUpstox: Optional[bool] = None
     sessionStatus: Optional[str] = Field(default=None, description="ACTIVE | CLOSED | EXPIRED")
+    startTime: Optional[str] = Field(default=None, pattern=HHMM_PATTERN, description="HH:MM IST")
+    closeTime: Optional[str] = Field(default=None, pattern=HHMM_PATTERN, description="HH:MM IST")
 
     @model_validator(mode="after")
     def _validate(self) -> "TradingSessionUpdateRequest":
@@ -67,6 +73,8 @@ class TradingSessionResponse(BaseModel):
     tradeDate: str
     userId: int
     capital: float
+    realizedPnl: float = 0.0
+    currentCapital: float = 0.0
     maxLossPercentage: float
     scope: str
     underlyings: list[str]
@@ -74,11 +82,15 @@ class TradingSessionResponse(BaseModel):
     sessionType: str
     routeThroughUpstox: bool
     sessionStatus: str
+    startAt: datetime
+    closeAt: datetime
     haltReason: Optional[str] = None
     haltedAt: Optional[datetime] = None
     closedAt: Optional[datetime] = None
     status: str
     createdAt: datetime
+    # newest tick of the server-side loop (only on GET /sessions/{id}; None until the first tick / when not running)
+    loop: Optional[SessionLoopResponse] = None
 
 
 class TradingSessionSearchFilter(BaseFilter):

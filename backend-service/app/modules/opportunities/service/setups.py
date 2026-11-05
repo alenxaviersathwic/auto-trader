@@ -16,19 +16,21 @@ and the menu turns that plan into an option premium target/stop through the cont
   SUPERTREND_RETEST  after a flip, price retests the Supertrend line and holds         TREND / MIXED
   INSIDE_BAR       inside bar (vs its mother bar) broken on a close                    any regime
   RANGE_BREAKOUT   tight multi-bar consolidation broken on a close                    any regime
-  GAP_GO           gap >= 0.3% that holds (gap unfilled), continuation bar             first 90 minutes
+  GAP_GO           0.5-2% gap holds, close > open & VWAP, >=75% of bars on the gap side,  09:30-10:45
+                   within 0.4% of VWAP (not chasing)
   PCR_SHIFT        option-chain PCR drift + put/call OI writing, price confirms         any regime
   SHORT_COVERING_SPIKE  futures price up + OI down + volume spike (mirror: long unwinding)  any regime
 
 Raw setups come from detect(); confirm_timeframes() then keeps only those where the 15-minute trend, the 5-minute
-trigger and the 1-minute entry bar all agree.
+trigger and the 1-minute chart all agree. The 1-minute chart is ALWAYS checked (see one_minute_check()): entry bar,
+1-min EMA9 side, no fresh 1-min swing against the trade, setup stop not touched, not chasing, target not already hit.
 
 Futures OI buildup confirms (+1) or contradicts (-1, flagged) each signal; volume spike adds +1.
 """
 
 from typing import Any
 
-from app.modules.opportunities.service.market_analysis import next_level
+from app.modules.opportunities.service.market_analysis import ema, next_level
 
 MIN_SETUP_RR = 1.3  # underlying reward:risk below this is not a setup
 
@@ -262,14 +264,35 @@ def _extra_setups(a: dict[str, Any], bars: list[dict[str, Any]], lv: dict[str, A
             if last["c"] < lo:
                 add("RANGE_BREAKOUT", "PE", min(hi, last["c"] + 1.5 * atr5) + tick, 2 + spike, f"closed below the {len(box)}-bar range low {lo:.1f}")
 
-    # 11. Opening gap that holds (gap-and-go): continuation bar while the gap stays unfilled
+    # 11. Gap-and-Go: 0.5-2% gap that never fills, close holds above open AND futures VWAP (reverse for a
+    # gap down), at least 75% of this session's 5-min futures closes agree with the gap side, price is not
+    # chasing (within 0.4% of VWAP), only between ~09:30 and ~10:45. Invalidation: whichever of VWAP/open is
+    # nearer to price right now, minus about one 5-minute move (atr5).
     gap, pdc, day_o = lv.get("gapPct"), lv.get("pdc"), lv.get("dayOpen")
     since_open = (a.get("session") or {}).get("minutesSinceOpen", 0)
-    if gap is not None and pdc and day_o and abs(gap) >= 0.3 and 15 <= since_open <= 90:
-        if gap > 0 and lv.get("dayLow", 0) > pdc and last["c"] > day_o and green and last["c"] > prev["h"]:
-            add("GAP_GO", "CE", max(day_o, min(last["l"], prev["l"])) - tick, 3, f"gap-up {gap:+.2f}% holding above the previous close")
-        if gap < 0 and lv.get("dayHigh", 0) < pdc and last["c"] < day_o and red and last["c"] < prev["l"]:
-            add("GAP_GO", "PE", min(day_o, max(last["h"], prev["h"])) + tick, 3, f"gap-down {gap:+.2f}% holding below the previous close")
+    vw = a.get("vwap")
+    vw_series = a.get("vwapSeries5") or []
+    fb = a.get("futBars5") or []
+    if gap is not None and pdc and day_o and vw and 0.5 <= abs(gap) <= 2.0 and 15 <= since_open <= 90:
+        gap_up = gap > 0
+        gap_still_open = lv.get("dayLow", 0) > pdc if gap_up else lv.get("dayHigh", float("inf")) < pdc
+        holds = (last["c"] > day_o and vw["above"]) if gap_up else (last["c"] < day_o and not vw["above"])
+        not_chasing = abs(vw["distPct"]) <= 0.4
+        on_side = sum(
+            1 for i, b in enumerate(fb)
+            if i < len(vw_series) and vw_series[i] is not None
+            and ((b["c"] > vw_series[i]) if gap_up else (b["c"] < vw_series[i]))
+        )
+        counted = sum(1 for v in vw_series if v is not None)
+        strong = counted > 0 and on_side / counted >= 0.75
+        if gap_still_open and holds and not_chasing and strong:
+            nearer = day_o if abs(last["c"] - day_o) <= abs(last["c"] - vw["value"]) else vw["value"]
+            direction = "gap-up" if gap_up else "gap-down"
+            side_word = "above" if gap_up else "below"
+            reason = (f"{direction} {gap:+.2f}% holding {side_word} open and VWAP, {on_side}/{counted} "
+                      f"5-min bars on the gap side, {abs(vw['distPct']):.2f}% off VWAP")
+            stop = (nearer - atr5) if gap_up else (nearer + atr5)
+            add("GAP_GO", "CE" if gap_up else "PE", stop, 3, reason)
 
     # 12. PCR / option-OI shift: puts being written (PCR rising) = support building -> CE; calls written -> PE
     sh = a.get("oiShift")
@@ -290,30 +313,77 @@ def _extra_setups(a: dict[str, Any], bars: list[dict[str, Any]], lv: dict[str, A
 
 
 # ───────────────────────── multi-timeframe confirmation ─────────────────────────
+MIN_1M_BARS = 5  # completed 1-minute bars needed before any entry is allowed
+EMA_1M = 9
+MAX_CHASE_ATR = 0.5  # 1-min price may run at most 0.5 x ATR5 past the setup entry before the trade is "chased"
+STOP_LOOKBACK_1M = 5  # the setup stop must not have been touched on any of the last 5 one-minute bars
+
+
+def one_minute_check(b1: list[dict[str, Any]], s: dict[str, Any], atr5: float) -> tuple[str | None, dict[str, Any]]:
+    """Entry-timing gate on the 1-minute chart. Returns (reject_reason | None, info).
+    CE (PE is the mirror):
+      1. at least MIN_1M_BARS completed 1-minute bars
+      2. entry bar: last 1-min bar is green and closes at/above the prior 1-min close
+      3. 1-min trend: last close above the 1-min EMA9
+      4. structure: the entry bar did not make a fresh low below the previous 3 one-minute lows
+      5. invalidation: no 1-min low in the last STOP_LOOKBACK_1M bars at/below the setup stop
+      6. not chasing: last close no more than MAX_CHASE_ATR x ATR5 above the setup entry
+      7. room left: last close still below the setup target
+    info carries entry1m (last 1-min close), trigger1m (break of the entry bar high/low) and ema1m."""
+    ce = s["side"] == "CE"
+    if len(b1) < MIN_1M_BARS:
+        return f"only {len(b1)} completed 1-min bars, need {MIN_1M_BARS}", {}
+    l1, p1 = b1[-1], b1[-2]
+    closes = [b["c"] for b in b1[-30:]]
+    e9 = ema(closes, EMA_1M)[-1] if len(closes) >= 2 else closes[-1]
+    buf = 0.05 * atr5 if atr5 > 0 else 0.0
+    info = {"entry1m": round(l1["c"], 2), "ema1m": round(e9, 2),
+            "trigger1m": round(l1["h"] + buf if ce else l1["l"] - buf, 2)}
+    word = "bullish" if ce else "bearish"
+
+    if not ((l1["c"] > l1["o"] and l1["c"] >= p1["c"]) if ce else (l1["c"] < l1["o"] and l1["c"] <= p1["c"])):
+        return f"1-min entry bar does not confirm ({word} close needed)", info
+    if (l1["c"] <= e9) if ce else (l1["c"] >= e9):
+        return f"1-min close {l1['c']:.1f} is {'below' if ce else 'above'} 1-min EMA{EMA_1M} {e9:.1f}", info
+    prior = b1[-4:-1]
+    if ce and l1["l"] < min(b["l"] for b in prior):
+        return "1-min entry bar made a fresh lower low", info
+    if not ce and l1["h"] > max(b["h"] for b in prior):
+        return "1-min entry bar made a fresh higher high", info
+    stop, entry, target = s.get("stop"), s.get("entry"), s.get("target")
+    recent = b1[-STOP_LOOKBACK_1M:]
+    if stop is not None and (any(b["l"] <= stop for b in recent) if ce else any(b["h"] >= stop for b in recent)):
+        return f"1-min chart already touched the setup stop {stop:.1f}", info
+    if entry is not None and atr5 > 0:
+        run = (l1["c"] - entry) if ce else (entry - l1["c"])
+        if run > MAX_CHASE_ATR * atr5:
+            return f"1-min price ran {run:.1f} pts past the setup entry (chasing, max {MAX_CHASE_ATR * atr5:.1f})", info
+    if target is not None and ((l1["c"] >= target) if ce else (l1["c"] <= target)):
+        return f"1-min price already at the setup target {target:.1f}", info
+    return None, info
+
+
 def confirm_timeframes(a: dict[str, Any], found: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Keep only setups where all three timeframes agree on the side:
          15-minute  trend must point the same way (UP for CE, DOWN for PE)
           5-minute  the setup itself is the trigger (already a completed 5-minute bar)
-          1-minute  the last completed 1-minute bar closes with the trade and does not give back the prior close
+          1-minute  one_minute_check() passes -- always run, for every setup
     Returns (confirmed, rejected) where each rejected item is {name, side, reason}."""
     trend = a.get("trend15", "FLAT")
     b1 = a.get("bars1") or []
+    atr5 = a.get("atr5") or 0.0
     ok: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     for s in found:
         ce = s["side"] == "CE"
         reason = None
+        info: dict[str, Any] = {}
         if trend != ("UP" if ce else "DOWN"):
             reason = f"15-min trend is {trend}, needs {'UP' if ce else 'DOWN'}"
-        elif len(b1) < 2:
-            reason = "no completed 1-minute bars for the entry check"
         else:
-            l1, p1 = b1[-1], b1[-2]
-            agrees = (l1["c"] > l1["o"] and l1["c"] >= p1["c"]) if ce else (l1["c"] < l1["o"] and l1["c"] <= p1["c"])
-            if not agrees:
-                reason = f"1-min entry bar does not confirm ({'bullish' if ce else 'bearish'} close needed)"
+            reason, info = one_minute_check(b1, s, atr5)
         if reason:
             rejected.append({"name": s["name"], "side": s["side"], "reason": reason})
         else:
-            ok.append({**s, "timeframes": {"15m": trend, "5m": s["name"], "1m": "confirmed"}})
+            ok.append({**s, **info, "timeframes": {"15m": trend, "5m": s["name"], "1m": "confirmed"}})
     return ok, rejected

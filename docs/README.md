@@ -19,7 +19,8 @@ The documentation is organized into modular, deep-dive specifications covering s
 | [**06. Users & Broker Module**](06-users-broker-module.md) | Authentication & Brokerage (`users`) | Multi-user management, Upstox OAuth2 flow, automated token refresh daemon (APScheduler), AES-GCM secret encryption, and live account/margin synchronization. |
 | [**07. System & Runtime Module**](07-system-module.md) | System Registry & Diagnostics (`system`) | Centralized execution engine registry, system-wide health checks (PostgreSQL, pgvector, Upstox), background task lifecycle, and runtime state monitoring. |
 | [**08. Frontend Architecture**](08-frontend-architecture.md) | React 19 SPA & UI Systems | React 19 + TypeScript, TanStack Query key factories, TanStack Router, TanStack Table manual pagination, Zod form validation, and Zerodha Kite dark trading theme. |
-| [**09. Inter-Module Data Flows**](09-inter-module-data-flows.md) | End-to-End Execution Flows | Comprehensive sequence diagrams: Autonomous Market Intelligence, Live Trade Opportunity Generation, Master AI Proposal Lifecycle, Broker Token Renewal, and Health Quarantine. |
+| [**09. Inter-Module Data Flows**](09-inter-module-data-flows.md) | End-to-End Execution Flows | Comprehensive sequence diagrams: Autonomous Market Intelligence, Live Trade Opportunity Generation, Master AI Proposal Lifecycle, Broker Token Renewal, Health Quarantine, and the Session Loop. |
+| [**10. Trading Sessions Module**](10-sessions-module.md) | Session Loop & Trade Lock (`sessions`) | Per-day capital / loss / hours envelope, server-side 1 s loop that reads saved opportunities, sizing by win probability, SSE live table, Trade Lock, and the daily 16:00 IST archive of `session_picks`. |
 
 ---
 
@@ -44,6 +45,7 @@ graph TB
         UI_Master["AI Master Chat (/master)"]
         UI_Strat["Strategies & Rules (/strategies)"]
         UI_Opp["Opportunities Scanner (/opportunities)"]
+        UI_Sess["Trading Sessions (/sessions)"]
         UI_Res["Research Engine (/research)"]
         UI_Users["Users & Broker Settings (/settings/users)"]
         UI_Client["Axios httpClient (Envelope Unwrapping)"]
@@ -60,6 +62,7 @@ graph TB
         MOD_Strat["Strategies & Rules Engine (DSL & AST)"]
         MOD_Res["Research Engine (14-Step Pipeline)"]
         MOD_Opp["Opportunities Engine (Market Scanner)"]
+        MOD_Sess["Trading Sessions (Loop + SSE)"]
         MOD_Users["Users & Upstox Service (OAuth2)"]
         MOD_Sys["System & Engine Registry"]
     end
@@ -88,6 +91,7 @@ graph TB
     MOD_Res --> EXT_RSS
     MOD_Users --> EXT_Upstox
     MOD_Opp --> EXT_Upstox
+    MOD_Sess -->|reads saved opportunities| MOD_Opp
 ```
 
 ---

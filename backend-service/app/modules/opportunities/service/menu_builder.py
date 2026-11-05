@@ -153,7 +153,8 @@ def build_brief(cfg: UnderlyingConfig, research: dict[str, Any], market: dict[st
         "vix": analysis.get("vix"),
         "setups": [
             {"name": s["name"], "side": s["side"], "strength": s["strength"], "why": s["reason"],
-             "target": r(s["target"]), "stop": r(s["stop"]), "conflict": s.get("conflict")}
+             "target": r(s["target"]), "stop": r(s["stop"]), "conflict": s.get("conflict"),
+             "entry1m": r(s.get("entry1m")), "trigger1m": r(s.get("trigger1m")), "ema1m": r(s.get("ema1m"))}
             for s in setups
         ],
         "researchStatus": research.get("newsStatus"),

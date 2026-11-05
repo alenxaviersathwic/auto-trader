@@ -10,14 +10,33 @@ from app.modules.opportunities.entity.opportunity_entity import OpportunityItera
 class OpportunityRepository:
     """Reads and writes trade_opportunities (one table for every underlying)."""
 
-    async def replace_latest(self, session: AsyncSession, code: str, rows: list[TradeOpportunity]) -> None:
-        """New iteration for an underlying: its previous 'latest' set stops being latest."""
-        await session.execute(
+    async def recent_contracts(
+        self, session: AsyncSession, code: str, since: datetime
+    ) -> dict[str, TradeOpportunity]:
+        """Newest row per contract id created at/after `since` (any outcome) -- used to skip repeat signals."""
+        res = await session.execute(
+            select(TradeOpportunity)
+            .where(TradeOpportunity.status == 1)
+            .where(TradeOpportunity.underlyingCode == code)
+            .where(TradeOpportunity.createdAt >= since)
+            .order_by(TradeOpportunity.id.asc())
+        )
+        return {r.contractId: r for r in res.scalars().all()}
+
+    async def replace_latest(
+        self, session: AsyncSession, code: str, rows: list[TradeOpportunity], keep_ids: Iterable[int] = ()
+    ) -> None:
+        """New iteration for an underlying: its previous 'latest' set stops being latest, except `keep_ids`
+        (still-live rows this iteration re-signalled, which stay latest instead of being duplicated)."""
+        q = (
             update(TradeOpportunity)
             .where(TradeOpportunity.underlyingCode == code)
             .where(TradeOpportunity.isLatest.is_(True))
-            .values(isLatest=False)
         )
+        keep = list(keep_ids)
+        if keep:
+            q = q.where(TradeOpportunity.id.notin_(keep))
+        await session.execute(q.values(isLatest=False))
         for r in rows:
             session.add(r)
         await session.flush()
@@ -31,6 +50,23 @@ class OpportunityRepository:
         )
         if codes is not None:
             q = q.where(TradeOpportunity.underlyingCode.in_([c.upper() for c in codes]))
+        return list((await session.execute(q)).scalars().all())
+
+    async def fresh(
+        self, session: AsyncSession, codes: Iterable[str], created_since: datetime, now: datetime
+    ) -> list[TradeOpportunity]:
+        """Latest, still-PENDING, unexpired rows created at/after `created_since` -- the session loop's read.
+        Served by the partial index ix_trade_opportunities_loop_fresh (created_at)."""
+        q = (
+            select(TradeOpportunity)
+            .where(TradeOpportunity.status == 1)
+            .where(TradeOpportunity.isLatest.is_(True))
+            .where(TradeOpportunity.outcome == "PENDING")
+            .where(TradeOpportunity.createdAt >= created_since)
+            .where(TradeOpportunity.validUntil > now)
+            .where(TradeOpportunity.underlyingCode.in_([c.upper() for c in codes]))
+            .order_by(TradeOpportunity.createdAt.desc(), TradeOpportunity.rank.asc())
+        )
         return list((await session.execute(q)).scalars().all())
 
     async def pending(self, session: AsyncSession) -> list[TradeOpportunity]:

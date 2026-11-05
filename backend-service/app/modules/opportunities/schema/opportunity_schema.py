@@ -89,4 +89,3 @@ class OpportunityResponse(BaseModel):
     ageSeconds: int
     outcome: str
     extra: dict[str, Any] = {}
-

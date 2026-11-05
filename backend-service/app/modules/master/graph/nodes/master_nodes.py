@@ -83,7 +83,7 @@ class MasterNodes:
 
         messages = [{"role": "user", "content": state.userText}]
         sys_prompt = (
-            "You are an intent classifier for Auto-Trader. Classify the user intent into one of:\n"
+            "You are an intent classifier for OrderGrid. Classify the user intent into one of:\n"
             "- CHAT: Greetings ('hi', 'hello', 'hai'), small talk, general questions about trading/indicators (RSI, VWAP, EMA), market concepts, or what the platform does.\n"
             "- ADD_STRATEGY: User wants to create or build a new trading strategy (specifying entry, exit, or indicators).\n"
             "- ADD_RULE: User wants to define a risk rule, guardrail, max daily loss, or position sizing limit.\n"
@@ -137,8 +137,8 @@ class MasterNodes:
         pref_str = json.dumps(state.preferences) if state.preferences else "No custom preferences saved."
 
         sys_prompt = (
-            "You are AI Master, an expert trading assistant and algorithmic copilot for Auto-Trader.\n"
-            "Auto-Trader is an automated trading execution platform with automated strategy lifecycles and risk guardrails.\n\n"
+            "You are AI Master, an expert trading assistant and algorithmic copilot for OrderGrid.\n"
+            "OrderGrid is an automated trading execution platform with automated strategy lifecycles and risk guardrails.\n\n"
             f"Current System State & Memory:\n"
             f"- Saved User Preferences: {pref_str}\n"
             f"- Registered Platform Strategies: {strategies_summary}\n\n"

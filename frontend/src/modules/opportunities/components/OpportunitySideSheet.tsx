@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import {
   Activity,
   AlertTriangle,
+  ClipboardCheck,
   ChevronRight,
   LayoutGrid,
   List,
@@ -19,7 +20,6 @@ import {
   OpportunityCheckItem,
   OpportunityIteration,
 } from "../types/opportunities.types";
-import { useCheckOpportunity } from "../hooks/useOpportunities";
 import { BatchDiagnostics, ResultBadge } from "./BatchDiagnostics";
 import {
   formatDateTime,
@@ -28,7 +28,8 @@ import {
   getMoneyness,
 } from "./formatters";
 import { OpportunityCard } from "./OpportunityCard";
-import { OpportunityCheckChart } from "./OpportunityCheckChart";
+import { CheckVerdict } from "./CheckVerdict";
+import { useCheckOpportunity } from "../hooks/useOpportunities";
 import { LOT_SIZES, UNDERLYING_NAMES } from "./underlyingNames";
 
 interface Batch {
@@ -109,17 +110,13 @@ export const OpportunitySideSheet: React.FC<OpportunitySideSheetProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>("CARDS");
   const [checkedItems, setCheckedItems] = useState<Record<number, OpportunityCheckItem>>({});
   const [checkingOppId, setCheckingOppId] = useState<number | null>(null);
-  const checkOppMutation = useCheckOpportunity();
+  const checkOpportunity = useCheckOpportunity();
 
+  /** Replays this signal on the 1-minute candles: did it reach target, stop, or neither? */
   const handleCheckOpportunity = (opportunityId: number) => {
     setCheckingOppId(opportunityId);
-    checkOppMutation.mutate(opportunityId, {
-      onSuccess: (res) => {
-        setCheckedItems((prev) => ({
-          ...prev,
-          [res.opportunityId]: res,
-        }));
-      },
+    checkOpportunity.mutate(opportunityId, {
+      onSuccess: (res) => setCheckedItems((prev) => ({ ...prev, [opportunityId]: res })),
       onSettled: () => setCheckingOppId(null),
     });
   };
@@ -679,20 +676,17 @@ export const OpportunitySideSheet: React.FC<OpportunitySideSheetProps> = ({
                                             className={`oc-check-btn ${chk ? "oc-check-btn--done" : ""}`}
                                             onClick={() => handleCheckOpportunity(item.id)}
                                             disabled={isCheckingRow}
+                                            title="Replay this signal on the 1-minute candles: did it hit target or stop?"
                                           >
-                                            {isCheckingRow ? (
-                                              <Loader2 size={11} className="sp-spin" />
-                                            ) : (
-                                              <Activity size={11} />
-                                            )}
-                                            <span>{chk ? "Re-check" : "Check Result"}</span>
+                                            {isCheckingRow ? <Loader2 size={11} className="sp-spin" /> : <ClipboardCheck size={11} />}
+                                            <span>{isCheckingRow ? "Checking…" : chk ? "Re-check" : "Check"}</span>
                                           </button>
                                         </td>
                                       </tr>
                                       {chk && (
                                         <tr>
                                           <td colSpan={12} style={{ padding: 0 }}>
-                                            <OpportunityCheckChart checkResult={chk} />
+                                            <CheckVerdict result={chk} />
                                           </td>
                                         </tr>
                                       )}

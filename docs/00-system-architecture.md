@@ -193,7 +193,8 @@ auto-trader/
             ├── master/           # Chat interface, proposal cards, message timeline
             ├── strategies/       # Strategy list, detail, visual editor, rules
             ├── research/         # Research cards, sentiment meters, thesis view
-            ├── opportunities/    # Live session cards, iteration logs, strike list
+            ├── opportunities/    # Live session cards, iteration logs, strike list, check result
+            ├── sessions/         # Trading sessions, SSE-driven trades-to-take table, Trade Lock
             └── users/            # Accounts, Upstox connect dialog, funds display
 ```
 

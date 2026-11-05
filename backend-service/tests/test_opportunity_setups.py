@@ -178,23 +178,48 @@ def test_resample_marks_open_bucket():
     assert r[0]["done"] and not r[1]["done"]
 
 
+def _rising_1m(n=8, start=100.0, step=0.5):
+    """n green 1-minute bars stepping up (higher lows, closes above a rising EMA9)."""
+    return [bar(595 + i, start + step * i, start + step * i + 0.6, start + step * i - 0.1, start + step * (i + 1))
+            for i in range(n)]
+
+
 def _a(**kw):
-    base = {"trend15": "UP", "bars1": [bar(600, 100, 101, 99, 100), bar(601, 100, 102, 100, 101.5)]}
+    base = {"trend15": "UP", "atr5": 10.0, "bars1": _rising_1m()}
     base.update(kw)
     return base
 
 
 def test_timeframes_must_agree():
-    ce = {"name": "ORB", "side": "CE", "strength": 3}
-    pe = {"name": "ORB", "side": "PE", "strength": 3}
+    ce = {"name": "ORB", "side": "CE", "strength": 3, "entry": 103.0, "stop": 95.0, "target": 120.0}
+    pe = {"name": "ORB", "side": "PE", "strength": 3, "entry": 103.0, "stop": 110.0, "target": 90.0}
     ok, rej = setup_detector.confirm_timeframes(_a(), [ce, pe])
     assert [s["side"] for s in ok] == ["CE"] and "15-min trend" in rej[0]["reason"]
+    assert ok[0]["timeframes"]["1m"] == "confirmed" and ok[0]["trigger1m"] > ok[0]["entry1m"]
     # 1-minute bar red -> a CE has no entry confirmation
-    red = [bar(600, 100, 101, 99, 100), bar(601, 101, 101, 99, 99.5)]
+    red = _rising_1m()[:-1] + [bar(603, 104.5, 104.6, 103.6, 103.8)]
     ok, rej = setup_detector.confirm_timeframes(_a(bars1=red), [ce])
-    assert not ok and "1-min" in rej[0]["reason"]
+    assert not ok and "1-min entry bar" in rej[0]["reason"]
     ok, rej = setup_detector.confirm_timeframes(_a(bars1=[]), [ce])
-    assert not ok
+    assert not ok and "completed 1-min bars" in rej[0]["reason"]
+
+
+def test_one_minute_chart_always_checked():
+    ce = {"name": "ORB", "side": "CE", "strength": 3, "entry": 103.0, "stop": 95.0, "target": 120.0}
+    # below the 1-min EMA9: a long run of falling bars, then one small green bar
+    falling = [bar(590 + i, 110 - i, 110.2 - i, 108.9 - i, 109 - i) for i in range(10)]
+    falling.append(bar(600, 100.0, 100.4, 99.8, 100.3))
+    ok, rej = setup_detector.confirm_timeframes(_a(bars1=falling), [ce])
+    assert not ok and "EMA9" in rej[0]["reason"]
+    # setup stop touched on the 1-min chart
+    ok, rej = setup_detector.confirm_timeframes(_a(), [{**ce, "stop": 102.0}])
+    assert not ok and "touched the setup stop" in rej[0]["reason"]
+    # chasing: 1-min close far past the setup entry (> 0.5 x ATR5 = 5 pts)
+    ok, rej = setup_detector.confirm_timeframes(_a(), [{**ce, "entry": 96.0, "stop": 90.0}])
+    assert not ok and "chasing" in rej[0]["reason"]
+    # target already reached on the 1-min chart
+    ok, rej = setup_detector.confirm_timeframes(_a(), [{**ce, "target": 103.5}])
+    assert not ok and "target" in rej[0]["reason"]
 
 
 def _bars5(specs, start=555):
@@ -229,7 +254,9 @@ def test_gap_go_and_short_covering_and_pcr():
     cfg = get_config("NIFTY")
     bars = _bars5([(100, 102, 99, 101)] * 4 + [(101, 105, 100, 104), (104, 109, 103, 108)])
     lv = {"gapPct": 0.6, "pdc": 96.0, "dayOpen": 99.0, "dayLow": 98.5, "dayHigh": 109}
-    found = setup_detector.detect(_setup_input(bars, levels=lv), cfg)
+    vw = {"value": 107.8, "futLast": 108.0, "above": True, "distPct": 0.2}
+    vw_series = [100.0] * len(bars)
+    found = setup_detector.detect(_setup_input(bars, levels=lv, vwap=vw, vwapSeries5=vw_series, futBars5=bars), cfg)
     assert any(s["name"] == "GAP_GO" and s["side"] == "CE" for s in found)
 
     vol = {"spike": True, "ratio5m": 2.0, "dry": False, "lastBarUp": True}

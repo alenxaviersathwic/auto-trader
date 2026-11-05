@@ -221,22 +221,24 @@ export interface IterationSearchResult {
   totalItems: number;
 }
 
-export interface OpportunityCandlePoint {
-  t: string;
-  o: number;
-  h: number;
-  l: number;
-  c: number;
-}
-
 export interface OpportunityCheckItem {
   opportunityId: number;
   masterId: number;
   iterationNo: number;
   ref: string;
+  underlyingCode?: string;
+  underlyingType?: "INDEX" | "COMMODITY";
+  spot?: number;
   strike: number;
   optionType: "CE" | "PE";
   expiry: string;
+  confidence?: number;
+  rewardRisk?: number;
+  rank?: number;
+  riskLevel?: "LOW" | "MEDIUM" | "HIGH";
+  strategy?: string | null;
+  reasons?: string[];
+  risks?: string[];
   createdAt: string;
   validUntil: string;
   entry: number;
@@ -254,7 +256,6 @@ export interface OpportunityCheckItem {
   hitAt: string | null;
   candlesChecked: number;
   windowEnded: boolean;
-  series?: OpportunityCandlePoint[];
 }
 
 export interface BatchCheckSummary {
