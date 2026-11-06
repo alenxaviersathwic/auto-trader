@@ -10,14 +10,14 @@ const inr = (n: number): string => `₹${Math.round(n).toLocaleString("en-IN")}`
 const hms = (iso: string | null): string =>
   iso ? new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }) : "";
 
-interface RowProps {
+interface CardProps {
   pick: SessionPick;
   clockOffsetMs: number;
   locking: boolean;
   onLock: (pickId: number) => void;
 }
 
-const OpportunityRow: React.FC<RowProps> = ({ pick: p, clockOffsetMs, locking, onLock }) => {
+const OpportunityCard: React.FC<CardProps> = ({ pick: p, clockOffsetMs, locking, onLock }) => {
   const [open, setOpen] = useState(false);
   const left = useCountdown(p.expiresAt, clockOffsetMs);
   const live = p.pickState === "OFFERED" && left > 0;
@@ -27,103 +27,99 @@ const OpportunityRow: React.FC<RowProps> = ({ pick: p, clockOffsetMs, locking, o
   const holdMinutes = Math.max(0, Math.round((Date.parse(p.holdUntil) - now) / 60000));
 
   return (
-    <>
-      <tr className={`sl-row ${live ? "" : "sl-row--dead"}`} onClick={() => setOpen((o) => !o)}>
-        <td>
-          <div className="sl-trade">
-            {open ? <ChevronDown size={14} className="text-muted" /> : <ChevronRight size={14} className="text-muted" />}
-            <span className={`sl-dir ${ce ? "sl-dir--ce" : "sl-dir--pe"}`} title={ce ? "Buy call" : "Buy put"}>
-              {ce ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-            </span>
-            <div className="sl-trade__name">
-              <span className="mono text-heading">
-                {p.underlyingCode} {p.strike} {p.optionType}
-              </span>
-              <span className="micro text-muted">
-                {formatExpiry(p.expiry)}
-                {p.strategy ? ` · ${p.strategy}` : ""}
-              </span>
-            </div>
-          </div>
-        </td>
-        <td>
-          <div className="sl-win">
-            <span className="mono">{p.winProbPct.toFixed(0)}%</span>
-            <span className="sl-win__track">
-              <span
-                className={`sl-win__fill ${p.winProbPct >= 85 ? "sl-win__fill--high" : p.winProbPct <= 55 ? "sl-win__fill--low" : ""}`}
-                style={{ width: `${p.winProbPct}%` }}
-              />
-            </span>
-          </div>
-        </td>
-        <td className="mono">
-          {px(p.entry)} – {px(p.entryMax)}
-        </td>
-        <td>
-          <span className="mono text-red">{px(p.stop)}</span>
-          <div className="micro text-muted">−{p.stopPct.toFixed(1)}%</div>
-        </td>
-        <td>
-          <span className="mono text-green">{px(p.target)}</span>
-          <div className="micro text-muted">+{p.targetPct.toFixed(1)}% · R:R {p.rewardRisk.toFixed(2)}</div>
-        </td>
-        <td>
-          <span className="mono">
-            {p.lots} × {p.lotUnits} = {p.quantity}
+    <div className={`card sl-card ${live ? "" : "sl-card--dead"}`}>
+      <div className="sl-card__head">
+        <span className={`sl-dir ${ce ? "sl-dir--ce" : "sl-dir--pe"}`} title={ce ? "Buy call" : "Buy put"}>
+          {ce ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+        </span>
+        <div className="sl-trade__name">
+          <span className="mono text-heading">
+            {p.underlyingCode} {p.strike} {p.optionType}
           </span>
-          <div className="micro text-muted">
-            {inr(p.capitalRequired)} · {p.usagePct.toFixed(0)}% of free
-          </div>
-        </td>
-        <td>
-          <span className="mono text-red">−{inr(p.riskAmount)}</span>
-          <span className="mono text-green sl-pnl-gap">+{inr(p.rewardAmount)}</span>
-        </td>
-        <td className="sl-col-lock" onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            className="sl-lock sl-lock--sm"
-            disabled={!live || locking}
-            onClick={() => onLock(p.id)}
-          >
-            <span className="sl-lock__label">
-              <Lock size={13} />
-              <span>{locking ? "LOCKING…" : live ? "LOCK" : "CLOSED"}</span>
-            </span>
-          </button>
-        </td>
-      </tr>
+          <span className="micro text-muted">
+            {formatExpiry(p.expiry)}
+            {p.strategy ? ` · ${p.strategy}` : ""}
+          </span>
+        </div>
+        <div className="sl-win sl-card__win">
+          <span className="mono">{p.winProbPct.toFixed(0)}% win</span>
+          <span className="sl-win__track">
+            <span
+              className={`sl-win__fill ${p.winProbPct >= 85 ? "sl-win__fill--high" : p.winProbPct <= 55 ? "sl-win__fill--low" : ""}`}
+              style={{ width: `${p.winProbPct}%` }}
+            />
+          </span>
+        </div>
+      </div>
+
+      <div className="sl-card__grid">
+        <div className="sl-stat">
+          <span className="label">Entry area ₹</span>
+          <span className="sl-stat__value">{px(p.entry)} – {px(p.entryMax)}</span>
+        </div>
+        <div className="sl-stat">
+          <span className="label">Stop loss ₹</span>
+          <span className="sl-stat__value text-red">{px(p.stop)} <span className="micro text-muted">−{p.stopPct.toFixed(1)}%</span></span>
+        </div>
+        <div className="sl-stat">
+          <span className="label">Target ₹</span>
+          <span className="sl-stat__value text-green">{px(p.target)} <span className="micro text-muted">+{p.targetPct.toFixed(1)}%</span></span>
+        </div>
+        <div className="sl-stat">
+          <span className="label">Quantity</span>
+          <span className="sl-stat__value">{p.lots} × {p.lotUnits} = {p.quantity}</span>
+        </div>
+        <div className="sl-stat">
+          <span className="label">Capital · R:R</span>
+          <span className="sl-stat__value">{inr(p.capitalRequired)} <span className="micro text-muted">{p.usagePct.toFixed(0)}% · {p.rewardRisk.toFixed(2)}</span></span>
+        </div>
+        <div className="sl-stat">
+          <span className="label">Stopped / target</span>
+          <span className="sl-stat__value">
+            <span className="text-red">−{inr(p.riskAmount)}</span> <span className="text-green">+{inr(p.rewardAmount)}</span>
+          </span>
+        </div>
+      </div>
+
+      <div className="sl-card__foot">
+        <button type="button" className="btn btn--ghost" onClick={() => setOpen((o) => !o)}>
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <span>{open ? "Hide details" : "Details"}</span>
+        </button>
+        <button type="button" className="sl-lock sl-lock--sm" disabled={!live || locking} onClick={() => onLock(p.id)}>
+          <span className="sl-lock__label">
+            <Lock size={13} />
+            <span>{locking ? "LOCKING…" : live ? "LOCK TRADE" : "CLOSED"}</span>
+          </span>
+        </button>
+      </div>
+
       {open && (
-        <tr className="sl-row-detail">
-          <td colSpan={8}>
-            <div className="sl-detail">
-              <PriceLadder stop={p.stop} entry={p.entry} entryMax={p.entryMax} target={p.target} stopPct={p.stopPct} targetPct={p.targetPct} />
-              <div className="sl-detail__why">
-                <ul className="sl-points">
-                  {p.reasons.slice(0, 4).map((r, i) => (
-                    <li key={`r${i}`}>
-                      <CheckCircle2 size={14} className="text-green" />
-                      <span>{r}</span>
-                    </li>
-                  ))}
-                  {p.risks.slice(0, 3).map((r, i) => (
-                    <li key={`k${i}`}>
-                      <AlertTriangle size={14} className="text-amber" />
-                      <span>{r}</span>
-                    </li>
-                  ))}
-                </ul>
-                <span className="micro text-muted">
-                  Expected {inr(p.expectedNet)} after charges. Signal {signalAge}s old. Valid until {hms(p.holdUntil)} IST, hold up to {holdMinutes} min. Do not buy above{" "}
-                  {formatRupee(p.entryMax)}: reward drops below 1.2× risk.
-                </span>
-              </div>
-            </div>
-          </td>
-        </tr>
+        <div className="sl-detail sl-card__detail">
+          <PriceLadder stop={p.stop} entry={p.entry} entryMax={p.entryMax} target={p.target} stopPct={p.stopPct} targetPct={p.targetPct} />
+          <div className="sl-detail__why">
+            <ul className="sl-points">
+              {p.reasons.slice(0, 4).map((r, i) => (
+                <li key={`r${i}`}>
+                  <CheckCircle2 size={14} className="text-green" />
+                  <span>{r}</span>
+                </li>
+              ))}
+              {p.risks.slice(0, 3).map((r, i) => (
+                <li key={`k${i}`}>
+                  <AlertTriangle size={14} className="text-amber" />
+                  <span>{r}</span>
+                </li>
+              ))}
+            </ul>
+            <span className="micro text-muted">
+              Expected {inr(p.expectedNet)} after charges. Signal {signalAge}s old. Valid until {hms(p.holdUntil)} IST, hold up to {holdMinutes} min. Do not buy above{" "}
+              {formatRupee(p.entryMax)}: reward drops below 1.2× risk.
+            </span>
+          </div>
+        </div>
       )}
-    </>
+    </div>
   );
 };
 
@@ -134,35 +130,26 @@ interface Props {
   onLock: (pickId: number) => void;
 }
 
-/** The trades this session can take right now, best first. Every row has its own Trade Lock and stays open until its opportunity expires. */
-export const SessionOpportunityTable: React.FC<Props> = ({ picks, clockOffsetMs, lockingId, onLock }) => (
-  <div className="card sl-table-card">
-    <div className="sl-table-scroll">
-      <table className="data-table sl-table">
-        <thead>
-          <tr>
-            <th>Trade</th>
-            <th>Win chance</th>
-            <th>Entry area ₹</th>
-            <th>Stop loss ₹</th>
-            <th>Target ₹</th>
-            <th>Quantity · capital</th>
-            <th>Stopped / target</th>
-            <th className="sl-col-lock" />
-          </tr>
-        </thead>
-        <tbody>
-          {picks.map((p) => (
-            <OpportunityRow
-              key={p.id}
-              pick={p}
-              clockOffsetMs={clockOffsetMs}
-              locking={lockingId === p.id}
-              onLock={onLock}
-            />
-          ))}
-        </tbody>
-      </table>
+/** Open trades grouped per underlying, two cards per row. Each card has its own Lock Trade button. */
+export const SessionOpportunityTable: React.FC<Props> = ({ picks, clockOffsetMs, lockingId, onLock }) => {
+  const groups = new Map<string, SessionPick[]>();
+  picks.forEach((p) => groups.set(p.underlyingCode, [...(groups.get(p.underlyingCode) ?? []), p]));
+
+  return (
+    <div className="sl-groups">
+      {[...groups.entries()].map(([code, list]) => (
+        <section key={code} className="sl-group">
+          <div className="sl-table-head">
+            <span className="section-title">{code}</span>
+            <span className="badge badge--cyan">{list.length} OPEN</span>
+          </div>
+          <div className="sl-card-grid">
+            {list.map((p) => (
+              <OpportunityCard key={p.id} pick={p} clockOffsetMs={clockOffsetMs} locking={lockingId === p.id} onLock={onLock} />
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
-  </div>
-);
+  );
+};

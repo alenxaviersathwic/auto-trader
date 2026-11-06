@@ -76,7 +76,9 @@ class TradingSessionService:
             name = f"{request.tradeDate} — {'/'.join(picked)}"
 
         try:
-            start_at, close_at = session_hours.resolve(request.tradeDate, request.startTime, request.closeTime)
+            start_at, close_at = session_hours.resolve(
+                request.tradeDate, request.startTime, request.closeTime, scope=request.scope
+            )
         except ValueError as e:
             raise BadRequestException(message=str(e)) from e
 
@@ -147,7 +149,7 @@ class TradingSessionService:
             try:
                 entity.startAt, entity.closeAt = session_hours.resolve(
                     entity.tradeDate, data.get("startTime") or hhmm(entity.startAt),
-                    data.get("closeTime") or hhmm(entity.closeAt),
+                    data.get("closeTime") or hhmm(entity.closeAt), scope=entity.scope,
                 )
             except ValueError as e:
                 raise BadRequestException(message=str(e)) from e

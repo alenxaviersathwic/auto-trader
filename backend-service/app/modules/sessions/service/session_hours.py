@@ -2,7 +2,7 @@
 Trading hours of a session (IST). Pure functions, no I/O.
 
   start  default = now when the session is created at/after 09:25, otherwise 09:15 (market open)
-  close  default = 15:45
+  close  default = 15:45 for INDEX, 23:00 for COMMODITY (MCX trades in the evening)
 The loop does not offer anything before `start` and closes the session at `close`.
 """
 import re
@@ -13,7 +13,12 @@ _IST = ZoneInfo("Asia/Kolkata")
 MARKET_OPEN = time(9, 15)
 LATE_START_AFTER = time(9, 25)  # created at/after this time: start right now instead of at the open
 DEFAULT_CLOSE = time(15, 45)
+COMMODITY_CLOSE = time(23, 0)
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def default_close(scope: str = "INDEX") -> time:
+    return COMMODITY_CLOSE if (scope or "").upper() == "COMMODITY" else DEFAULT_CLOSE
 
 
 def parse_hhmm(value: str) -> time:
@@ -38,11 +43,11 @@ def default_start(trade_date: str, now: datetime | None = None) -> datetime:
 
 
 def resolve(trade_date: str, start_time: str | None, close_time: str | None,
-            now: datetime | None = None) -> tuple[datetime, datetime]:
-    """(startAt, closeAt) for a session: the given HH:MM values, else the defaults. Raises ValueError when
+            now: datetime | None = None, scope: str = "INDEX") -> tuple[datetime, datetime]:
+    """(startAt, closeAt) for a session: the given HH:MM values, else the defaults for its scope. Raises ValueError when
     close is not after start."""
     start = at(trade_date, parse_hhmm(start_time)) if start_time else default_start(trade_date, now)
-    close = at(trade_date, parse_hhmm(close_time)) if close_time else at(trade_date, DEFAULT_CLOSE)
+    close = at(trade_date, parse_hhmm(close_time)) if close_time else at(trade_date, default_close(scope))
     if close <= start:
         raise ValueError(
             f"close time ({close.astimezone(_IST):%H:%M}) must be after start time ({start.astimezone(_IST):%H:%M})"

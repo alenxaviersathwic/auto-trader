@@ -32,7 +32,9 @@ function defaultStartTime(): string {
   const now = `${hh === "24" ? "00" : hh}:${mm}`;
   return now >= "09:25" ? now : "09:15";
 }
-const DEFAULT_CLOSE_TIME = "15:45";
+const INDEX_CLOSE_TIME = "15:45";
+const COMMODITY_CLOSE_TIME = "23:00"; // MCX trades in the evening
+const closeTimeFor = (scope: "INDEX" | "COMMODITY") => (scope === "COMMODITY" ? COMMODITY_CLOSE_TIME : INDEX_CLOSE_TIME);
 
 const SESSION_TYPE_OPTIONS: Array<{ value: "FULL_AUTO" | "SEMI_AUTO" | "MANUAL"; label: string }> = [
   { value: "MANUAL", label: "Manual" },
@@ -52,7 +54,7 @@ const DEFAULT_VALUES: SessionCreateFormValues = {
   sessionType: "MANUAL",
   routeThroughUpstox: false,
   startTime: defaultStartTime(),
-  closeTime: DEFAULT_CLOSE_TIME,
+  closeTime: INDEX_CLOSE_TIME,
 };
 
 export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, onCreate }) => {
@@ -74,11 +76,21 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
   useEffect(() => {
     if (isOpen) {
       setServerError(null);
-      reset({ ...DEFAULT_VALUES, tradeDate: todayIST(), startTime: defaultStartTime(), closeTime: DEFAULT_CLOSE_TIME });
+      reset({ ...DEFAULT_VALUES, tradeDate: todayIST(), startTime: defaultStartTime(), closeTime: INDEX_CLOSE_TIME });
     }
   }, [isOpen, reset]);
 
   const scope = watch("scope");
+  const closeTime = watch("closeTime");
+
+  // Switching scope moves the exit time to that scope's default (Index 15:45, Commodity 23:00),
+  // unless the user already typed their own time.
+  useEffect(() => {
+    if (closeTime === INDEX_CLOSE_TIME || closeTime === COMMODITY_CLOSE_TIME) {
+      setValue("closeTime", closeTimeFor(scope), { shouldValidate: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope]);
   const underlyings = watch("underlyings") || [];
   const commodityItems = watch("commodityItems") || [];
   const routeThroughUpstox = watch("routeThroughUpstox");

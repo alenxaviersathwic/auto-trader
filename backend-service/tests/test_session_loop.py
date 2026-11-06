@@ -298,6 +298,15 @@ def test_default_start_is_now_from_0925_else_0915_and_close_is_1545():
     assert hrs.default_start("2026-11-06", ist(11, 42)).astimezone(_IST).strftime("%H:%M") == "09:15"
 
 
+def test_commodity_session_closes_at_2300_by_default():
+    start, close = hrs.resolve(D, None, None, ist(9, 10), scope="COMMODITY")
+    assert close.astimezone(_IST).strftime("%H:%M") == "23:00"
+    _, idx_close = hrs.resolve(D, None, None, ist(9, 10), scope="INDEX")
+    assert idx_close.astimezone(_IST).strftime("%H:%M") == "15:45"
+    _, explicit = hrs.resolve(D, None, "21:30", ist(9, 10), scope="COMMODITY")
+    assert explicit.astimezone(_IST).strftime("%H:%M") == "21:30"
+
+
 def test_explicit_times_win_and_close_must_follow_start():
     start, close = hrs.resolve(D, "10:00", "14:30", ist(11, 0))
     assert (start.astimezone(_IST).strftime("%H:%M"), close.astimezone(_IST).strftime("%H:%M")) == ("10:00", "14:30")
