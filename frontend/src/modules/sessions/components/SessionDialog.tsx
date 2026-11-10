@@ -292,8 +292,8 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
               </span>
             </div>
             <div className="session-summary-cell">
-              <span className="session-summary-label">Parallel Traders</span>
-              <span className="session-summary-value text-green">Max 3 Active</span>
+              <span className="session-summary-label">Parallel Open Trades</span>
+              <span className="session-summary-value text-green">Max 3 at once (No total limit)</span>
             </div>
           </div>
 

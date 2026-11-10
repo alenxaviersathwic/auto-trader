@@ -36,11 +36,11 @@ export const SessionCapitalStrip: React.FC<{ capital: SessionCapital; maxLossPer
         </div>
       </div>
       <div className="sl-stat">
-        <span className="label">Active Parallel Trades</span>
+        <span className="label">Open Parallel Trades</span>
         <span className={`sl-stat__value mono ${activeCount >= maxParallel ? "text-amber" : "text-green"}`}>
-          {activeCount} / {maxParallel}
+          {activeCount} / {maxParallel} Open
         </span>
-        <span className="micro text-muted">max {maxParallel} parallel per session</span>
+        <span className="micro text-muted">{c.lockedTrades} total trades taken (no limit)</span>
       </div>
     </div>
   );
