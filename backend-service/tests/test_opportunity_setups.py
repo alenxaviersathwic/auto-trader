@@ -150,7 +150,7 @@ def test_menu_uses_setup_levels_and_costs():
     found = setup_detector.detect(a, cfg)
     menu = build_menu(cfg, m, "BULLISH", 5.0, setups=found)
     ce = [x for x in menu if x["side"] == "CE"]
-    assert ce and ce[0]["setup"] == "ORB" and ce[0]["costPct"] > 0
+    assert ce and ce[0]["setup"] == "ORB" and ce[0]["costPct"] > 0 and ce[0]["exitMode"] == "PCT"
     assert all(x["setup"] is None for x in menu if x["side"] == "PE")
 
 
@@ -163,9 +163,10 @@ def test_costs_and_net_edge():
 def test_session_blocks_and_mcx_dst_close():
     assert session_info("09:15", "15:40", datetime(2026, 11, 2, 9, 18, tzinfo=IST))["blocked"]  # first 5 minutes
     assert session_info("09:15", "15:40", datetime(2026, 11, 2, 9, 21, tzinfo=IST))["blocked"] is None
-    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 12, 30, tzinfo=IST))["blocked"]  # 12:00-13:30 chop
-    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 13, 31, tzinfo=IST))["blocked"] is None
-    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 15, 20, tzinfo=IST))["blocked"]
+    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 12, 30, tzinfo=IST))["blocked"]  # 12:00-13:00 chop
+    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 13, 1, tzinfo=IST))["blocked"] is None
+    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 15, 20, tzinfo=IST))["blocked"] is None  # 20 min left
+    assert session_info("09:15", "15:40", datetime(2026, 11, 2, 15, 21, tzinfo=IST))["blocked"]
     assert session_info("09:15", "15:40", datetime(2026, 11, 2, 10, 0, tzinfo=IST))["blocked"] is None
     gold = get_config("GOLD")
     assert gold.close_today(datetime(2026, 7, 1, 12, tzinfo=IST)) == "23:55"
@@ -196,10 +197,10 @@ def test_timeframes_must_agree():
     ok, rej = setup_detector.confirm_timeframes(_a(), [ce, pe])
     assert [s["side"] for s in ok] == ["CE"] and "15-min trend" in rej[0]["reason"]
     assert ok[0]["timeframes"]["1m"] == "confirmed" and ok[0]["trigger1m"] > ok[0]["entry1m"]
-    # 1-minute bar red -> a CE has no entry confirmation
+    # one red 1-minute bar above the 1-min EMA9 with no fresh low no longer vetoes a CE (it flickered every 20 s)
     red = _rising_1m()[:-1] + [bar(603, 104.5, 104.6, 103.6, 103.8)]
     ok, rej = setup_detector.confirm_timeframes(_a(bars1=red), [ce])
-    assert not ok and "1-min entry bar" in rej[0]["reason"]
+    assert ok
     ok, rej = setup_detector.confirm_timeframes(_a(bars1=[]), [ce])
     assert not ok and "completed 1-min bars" in rej[0]["reason"]
 
@@ -264,9 +265,12 @@ def test_gap_go_and_short_covering_and_pcr():
     found = setup_detector.detect(_setup_input(bars, volume=vol, buildup=bu), cfg)
     assert any(s["name"] == "SHORT_COVERING_SPIKE" and s["side"] == "CE" for s in found)
 
+    # PCR_SHIFT demoted 10 Nov 2026 (weak/no predictive power on NSE intraday returns -- Jena, Tiwari & Mitra
+    # 2019): an OI shift must never fire a setup on its own any more, only nudge confidence via
+    # menu_builder.pcr_adjustment() on whatever other setup already fired.
     shift = {"pcrChg": 0.12, "peOiChgPct": 3.0, "ceOiChgPct": 0.5, "pcr": 1.1}
     found = setup_detector.detect(_setup_input(bars, oiShift=shift), cfg)
-    assert any(s["name"] == "PCR_SHIFT" and s["side"] == "CE" for s in found)
+    assert not any(s["name"] == "PCR_SHIFT" for s in found)
 
 
 def test_ema_cross_retest_and_supertrend():
@@ -299,3 +303,91 @@ if __name__ == "__main__":
                 print("FAIL", name, type(e).__name__, e)
                 traceback.print_exc(limit=2)
     raise SystemExit(fails)
+
+
+def test_flat_15m_trend_vetoes_trend_setups_only():
+    ce = {"name": "ORB", "side": "CE", "strength": 3, "entry": 103.0, "stop": 95.0, "target": 120.0}
+    rng = {**ce, "name": "PDH_PDL_RETEST"}
+    rev = {**ce, "name": "FAILED_BREAK_RECLAIM"}
+    ok, rej = setup_detector.confirm_timeframes(_a(trend15="FLAT"), [ce, rng, rev])
+    assert [s["name"] for s in ok] == ["PDH_PDL_RETEST", "FAILED_BREAK_RECLAIM"]
+    assert rej[0]["name"] == "ORB" and "FLAT" in rej[0]["reason"]
+    # against the 15-minute trend: only the reversal family may trade
+    ok, rej = setup_detector.confirm_timeframes(_a(trend15="DOWN"), [ce, rng, rev])
+    assert [s["name"] for s in ok] == ["FAILED_BREAK_RECLAIM"] and ok[0]["family"] == "REVERSAL"
+
+
+def _v_day_market():
+    """NIFTY 9 Nov 2026 shape: holds above the S1-ish level, breaks it, then closes back above (failed breakdown)."""
+    bars = []
+    px = 25070.0
+    t = 555
+    for _ in range(6):  # drifting lower but above 25000
+        bars += five(t, px, px - 8, v=1000)
+        px -= 8
+        t += 5
+    bars += five(t, px, 24985, v=1500)  # breaks 25000 (the put-OI strike)
+    t += 5
+    bars += five(t, 24985, 24978, v=1500)
+    t += 5
+    bars += five(t, 24978, 25012, v=3000)  # closes back above 25000 -> reclaim
+    ch = chain(25010)
+    ch["support"] = 25000.0
+    ch["resistance"] = 25100.0
+    return {"spot": 25012, "spotBars1m": bars, "futBars1m": bars, "daily": daily(h=25200, l=24700, c=25076),
+            "vix": None, "chains": [ch], "lotUnits": 65}
+
+
+def test_failed_breakdown_reclaim_fires():
+    cfg = get_config("NIFTY")
+    a = analyze(cfg, _v_day_market(), now=datetime(2026, 11, 9, 10, 2, 5, tzinfo=IST))
+    rec = [s for s in setup_detector.detect(a, cfg) if s["name"] == "FAILED_BREAK_RECLAIM"]
+    assert rec and rec[0]["side"] == "CE" and "failed breakdown" in rec[0]["reason"]
+    assert rec[0]["stop"] < 24978 and rec[0]["target"] > rec[0]["entry"]
+
+
+def test_no_reclaim_when_the_level_never_held():
+    """A rally from below a level is not a failed breakdown of it (the ORB market opens under BC)."""
+    cfg = get_config("NIFTY")
+    a = analyze(cfg, _orb_market(), now=datetime(2026, 11, 2, 9, 45, 5, tzinfo=IST))
+    assert not [s for s in setup_detector.detect(a, cfg) if s["name"] == "FAILED_BREAK_RECLAIM"]
+
+
+def test_point_based_exits_follow_the_chart_not_a_fixed_percent():
+    cfg = get_config("NIFTY")
+    m = _orb_market()
+    a = analyze(cfg, m, now=datetime(2026, 11, 2, 9, 45, 5, tzinfo=IST))
+    found = setup_detector.detect(a, cfg)
+    menu = build_menu(cfg, m, "BULLISH", 1.0, max_stop=3.0, max_margin=6.0, setups=found, atr5=a["atr5"])
+    ce = [x for x in menu if x["side"] == "CE" and x["setup"]]
+    assert ce and all(x["exitMode"] == "POINTS" for x in ce)
+    x = ce[0]
+    stop_pts = x["entry"] * x["stopPct"] / 100 / x["delta"]
+    assert 0.5 * a["atr5"] - 0.5 <= stop_pts <= 1.25 * a["atr5"] + 0.5
+    assert x["rewardRisk"] >= 1.2
+
+
+def test_expiry_day_after_1330_is_itm_only(monkeypatch):
+    from app.modules.opportunities.service import menu_builder as mb
+
+    cfg = get_config("NIFTY")
+    m = _orb_market()
+    a = analyze(cfg, m, now=datetime(2026, 11, 2, 9, 45, 5, tzinfo=IST))
+    found = setup_detector.detect(a, cfg)
+    monkeypatch.setattr(mb, "_is_0dte_blocked", lambda expiry, now=None: True)
+    reasons: dict = {}
+    menu = mb.build_menu(cfg, m, "BULLISH", 1.0, setups=found, reasons=reasons, atr5=a["atr5"])
+    assert all(x["delta"] >= mb.EXPIRY_ITM_DELTA for x in menu)
+    assert reasons.get("expiry-day after 13:30 needs ITM", 0) >= 1
+
+
+def test_vwap_band_fade_on_a_flat_vwap_day():
+    b = lambda o, h, l, c: {"t": "2026-11-09T11:00:00+05:30", "o": o, "h": h, "l": l, "c": c, "v": 1000, "oi": 0}
+    bars = [b(25000, 25010, 24995, 25005), b(25005, 25062, 25004, 25058), b(25058, 25060, 25035, 25038)]
+    a = {"bars5": bars, "futBars5": bars, "atr5": 20.0, "regime": "RANGE", "trend15": "FLAT", "levels": {},
+         "keyLevels": [], "vwap": {"value": 25000.0, "sd": 25.0, "slopePct": 0.01, "above": True}}
+    fade = [s for s in setup_detector.detect(a, get_config("NIFTY")) if s["name"] == "VWAP_BAND_REVERT"]
+    assert fade and fade[0]["side"] == "PE" and fade[0]["targetLevel"] == "VWAP"
+    assert fade[0]["target"] == 25000.0 and fade[0]["stop"] > 25062
+    a["vwap"]["slopePct"] = 0.2  # trending VWAP: no fade
+    assert not [s for s in setup_detector.detect(a, get_config("NIFTY")) if s["name"] == "VWAP_BAND_REVERT"]

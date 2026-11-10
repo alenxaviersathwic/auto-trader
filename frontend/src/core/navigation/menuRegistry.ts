@@ -42,7 +42,7 @@ class MenuRegistry {
   }
 }
 
-import { Users, TrendingUp, BotMessageSquare, Sparkles, Lightbulb, CalendarClock } from "lucide-react";
+import { Users, TrendingUp, BotMessageSquare, Sparkles, Lightbulb, CalendarClock, History, Activity } from "lucide-react";
 
 export const menuRegistry = new MenuRegistry();
 
@@ -80,6 +80,24 @@ menuRegistry.register({
   path: "/sessions",
   icon: CalendarClock,
   order: 2,
+});
+
+// Register Active Trader navigation item
+menuRegistry.register({
+  id: "active-trader",
+  label: "Active Trader",
+  path: "/trades",
+  icon: Activity,
+  order: 2.5,
+});
+
+// Register Backtest navigation item
+menuRegistry.register({
+  id: "backtest",
+  label: "Backtest",
+  path: "/backtest",
+  icon: History,
+  order: 6,
 });
 
 // Register AI Master chat navigation item

@@ -47,7 +47,7 @@ class SessionLoopRunner:
     def eligible(s: TradingSession, now: datetime | None = None) -> bool:
         today = (now or datetime.now(UTC)).astimezone(_IST).date().isoformat()
         return (
-            s.sessionStatus == "ACTIVE" and s.sessionType == "MANUAL"
+            s.sessionStatus == "ACTIVE" and s.sessionType in ("MANUAL", "SEMI_AUTO", "FULL_AUTO")
             and s.tradeDate == today and s.status == EntityStatus.ACTIVE
         )
 
@@ -78,14 +78,14 @@ class SessionLoopRunner:
             self.stop(s.id)
 
     async def resume_today(self) -> int:
-        """Startup: restart the loop of every ACTIVE MANUAL session dated today."""
+        """Startup: restart the loop of every ACTIVE session dated today."""
         today = datetime.now(UTC).astimezone(_IST).date().isoformat()
         async with self._factory() as db:
             rows = (await db.execute(
                 select(TradingSession.id)
                 .where(TradingSession.status == EntityStatus.ACTIVE)
                 .where(TradingSession.sessionStatus == "ACTIVE")
-                .where(TradingSession.sessionType == "MANUAL")
+                .where(TradingSession.sessionType.in_(("MANUAL", "SEMI_AUTO", "FULL_AUTO")))
                 .where(TradingSession.tradeDate == today)
             )).scalars().all()
         for sid in rows:

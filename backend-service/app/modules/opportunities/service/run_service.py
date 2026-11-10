@@ -22,7 +22,7 @@ from app.modules.opportunities.repository.opportunity_repository import (
     risk_level,
 )
 from app.modules.opportunities.schema.opportunity_schema import StartOpportunityRequest
-from app.modules.opportunities.service import memory_service
+from app.modules.opportunities.service import guardrails, memory_service
 from app.modules.opportunities.service.selector import select_underlyings
 from app.modules.research.service.run_service import run_service as research_run_service
 
@@ -190,6 +190,25 @@ class OpportunityRunService:
             assert m is not None
             saved = 0
             if error is None:
+                if picks:
+                    day_start = datetime.now(_IST).replace(hour=0, minute=0, second=0, microsecond=0)
+                    today_rows = await opportunity_repository.created_since(s, m.underlyingCode, day_start)
+                    # Per-setup demotion looks back SETUP_DEMOTE_LOOKBACK trades, not calendar days, but a
+                    # slow setup can take weeks to accumulate them -- 30 days keeps the query bounded without
+                    # starving a setup that trades a few times a week.
+                    recent_rows = await opportunity_repository.resolved_recent(
+                        s, m.underlyingCode, datetime.now(UTC) - timedelta(days=30)
+                    )
+                    picks, held = guardrails.apply(today_rows, picks, datetime.now(UTC),
+                                                   int(params.get("maxPerDay", guardrails.MAX_PER_DAY)),
+                                                   int(params.get("maxPerSetup", guardrails.MAX_PER_SETUP)),
+                                                   max_daily_loss=params.get("maxDailyLossRs"),
+                                                   recent=recent_rows)
+                    if held:
+                        diag["guardrail"] = held
+                        note = f"{note} · held back: {held}" if note else f"held back: {held}"
+                        if not picks:
+                            diag["result"] = "GUARDRAIL"
                 saved, _ = await self._save(s, m, iteration, picks, params)
                 await self._resolve_pending(s, m.underlyingCode)
                 m.iterationsCompleted = iteration
@@ -264,7 +283,7 @@ class OpportunityRunService:
                 profitMarginPct=c["marginPct"], rewardRisk=c["rewardRisk"], confidence=c["confidence"],
                 riskLevel=risk_level(c["confidence"], c["rewardRisk"], c.get("spreadPct", 0)), rank=c["rank"],
                 strategy=c.get("strategy"), reasons=c.get("reasons", []), risks=c.get("risks", []),
-                source=c["source"], validUntil=valid_until, isLatest=True,
+                source=c["source"], validUntil=valid_until, isLatest=True, timeMachine=c.get("timeMachine"),
             )
             for c in picks
         ]
@@ -353,6 +372,39 @@ class OpportunityRunService:
             return None
         px = prices.get(instrument_key)
         return round(float(px), 2) if px else None
+
+    async def option_candles_1m(
+        self, session: AsyncSession, instrument_key: str | None, trade_date: str | None = None, timeout: float = 3.0
+    ) -> list[dict[str, Any]]:
+        """Today's 1-minute option premium candles for an active trade's chart & microstructure check."""
+        if not instrument_key:
+            return []
+        day = trade_date or _today()
+        try:
+            bars = await asyncio.wait_for(
+                market_data.candles_1m_range(instrument_key, day, day, session),
+                timeout=timeout,
+            )
+            return bars[-60:]
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"1m option candles unavailable for {instrument_key}: {type(e).__name__}: {e}")
+            return []
+
+    async def resolve_win_rate_pct(
+        self, session: AsyncSession, underlying_code: str, strategy_name: str | None, confidence: int
+    ) -> float:
+        """
+        Resolves the historical win-rate % for a pick from OpportunityMemory hit_rate (if resolved history exists)
+        or falls back to the opportunity's confidence %.
+        """
+        try:
+            hr = await memory_service.hit_rate(session, underlying_code)
+            if "=" in hr and hr.endswith("%"):
+                pct_str = hr.split("=")[-1].strip().rstrip("%")
+                return float(pct_str)
+        except Exception:
+            pass
+        return float(confidence)
 
     async def latest(self, session: AsyncSession, code: str | None = None) -> dict[str, Any]:
         rows = await opportunity_repository.latest(session, [code] if code else None)
@@ -533,9 +585,14 @@ class OpportunityRunService:
                 if status_res in ("TARGET_HIT", "STOP_HIT", "EXPIRED") and r.outcome != status_res:
                     r.outcome = status_res
                     r.resolvedAt = now
+                    r.exitPrice = round(exit_price, 2)
+                    cfg = get_config(r.underlyingCode)
+                    lot = cfg.lotSize if cfg else 1
+                    r.realizedPnl = round((exit_price - entry) * lot, 2)
                     await memory_service.sync_outcome(session, r)
                 elif status_res == "PENDING" and r.outcome != "PENDING":
                     r.outcome, r.resolvedAt = "PENDING", None  # a stale snapshot verdict the candles do not support
+                    r.exitPrice, r.realizedPnl = None, None
                     await memory_service.sync_outcome(session, r)
 
             out.append({
@@ -556,6 +613,7 @@ class OpportunityRunService:
                 "strategy": r.strategy,
                 "reasons": r.reasons or [],
                 "risks": r.risks or [],
+                "timeMachine": r.timeMachine,
                 "createdAt": start_dt.isoformat(),
                 "validUntil": end_dt.isoformat(),
                 "entry": entry,
@@ -616,7 +674,7 @@ class OpportunityRunService:
             "risks": s.risks, "source": s.source, "validUntil": s.validUntil.isoformat(),
             "ageSeconds": int((now - s.createdAt).total_seconds()),
             "expired": s.validUntil < now, "outcome": s.outcome, "isLatest": s.isLatest,
-            "createdAt": s.createdAt.isoformat(),
+            "createdAt": s.createdAt.isoformat(), "timeMachine": s.timeMachine,
         }
 
 

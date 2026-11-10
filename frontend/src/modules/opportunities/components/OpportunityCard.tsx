@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Opportunity, OpportunityCheckItem } from "../types/opportunities.types";
 import { CheckVerdict } from "./CheckVerdict";
+import { TimeMachineStrip } from "./TimeMachineStrip";
 import {
   formatCompactRupee,
   formatDateTime,
@@ -224,6 +225,8 @@ export const OpportunityCard: React.FC<{
               </div>
             </div>
           </div>
+
+          {s.timeMachine && <TimeMachineStrip tm={s.timeMachine} />}
 
           {/* ── Check: replay the signal on the candles to see if the strategy worked ── */}
           {onCheck && (

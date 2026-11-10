@@ -17,7 +17,7 @@ from app.modules.opportunities.provider.underlying_config import UnderlyingConfi
 BASE = "https://api.upstox.com"
 VIX_KEY = "NSE_INDEX|India VIX"
 _IST = ZoneInfo("Asia/Kolkata")
-CHAIN_STRIKES = 14  # strikes kept per expiry around spot (index and MCX)
+CHAIN_STRIKES = 24  # strikes kept per expiry around spot (index and MCX); wide enough for 0.1-0.35 delta strikes
 MCX_STRIKES_FETCHED = 20  # 20 strikes x CE/PE = 40 keys: inside the 50-key option-greek limit
 
 
@@ -157,6 +157,34 @@ class UpstoxMarketData:
                         raise  # a different failure (bad key, auth, etc.) -- no point retrying shorter windows
                     return _bars((r.json().get("data") or {}).get("candles", []))
                 raise last_err or MarketDataUnavailable(f"{cfg.code}: Upstox rejected every date range tried")
+
+        return await self._with_token(session, run)
+
+    async def candles_5m_history(self, key: str, session: AsyncSession, days: int = 90) -> list[dict[str, Any]]:
+        """5-minute candles of an instrument for the last `days` calendar days, TODAY EXCLUDED (the Time Machine
+        pool must never contain bars that are still forming). Upstox v3 serves at most one month of 1-15 minute
+        candles per request, so the window is fetched in 28-day chunks."""
+        if not key:
+            return []
+
+        async def run(token: str) -> list[dict[str, Any]]:
+            today = datetime.now(_IST).date()
+            k = key.replace("|", "%7C")
+            seen: dict[str, dict[str, Any]] = {}
+            async with self._client(token) as c:
+                end = today - timedelta(days=1)
+                start = today - timedelta(days=days)
+                while end >= start:
+                    frm = max(start, end - timedelta(days=27))
+                    r = await self._get(
+                        c, f"{BASE}/v3/historical-candle/{k}/minutes/5/{end.isoformat()}/{frm.isoformat()}",
+                        "5-minute history",
+                    )
+                    for b in _bars((r.json().get("data") or {}).get("candles", [])):
+                        if b["t"][:10] < today.isoformat():
+                            seen[b["t"]] = b
+                    end = frm - timedelta(days=1)
+            return sorted(seen.values(), key=lambda x: x["t"])
 
         return await self._with_token(session, run)
 

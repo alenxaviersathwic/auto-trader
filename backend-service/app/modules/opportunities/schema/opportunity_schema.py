@@ -88,4 +88,5 @@ class OpportunityResponse(BaseModel):
     validUntil: str
     ageSeconds: int
     outcome: str
+    timeMachine: dict[str, Any] | None = None
     extra: dict[str, Any] = {}

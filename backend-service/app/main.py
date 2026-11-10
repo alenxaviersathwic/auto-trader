@@ -100,7 +100,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Strategy/rule registry seeding failed on startup: {e}")
 
-    # 3. Resume the loop of every ACTIVE MANUAL session dated today (their loops died with the last process)
+    # 3. Resume the loop of every ACTIVE session and RUNNING trade dated today (their loops died with the last process)
     try:
         from app.modules.sessions.engine import session_loop_runner
 
@@ -108,6 +108,14 @@ async def lifespan(app: FastAPI):
         logger.info(f"{BRIGHT_GREEN}Session loops resumed: {resumed}{RESET}")
     except Exception as e:
         logger.error(f"Session loop resume failed on startup: {e}")
+
+    try:
+        from app.modules.trades.engine import trade_pilot_runner
+
+        resumed_trades = await trade_pilot_runner.resume_today()
+        logger.info(f"{BRIGHT_GREEN}Trade pilot loops resumed: {resumed_trades}{RESET}")
+    except Exception as e:
+        logger.error(f"Trade pilot loop resume failed on startup: {e}")
 
     # 3b. Daily 16:00 IST: finished sessions' picks move to session_picks_archive (also run now to catch up)
     try:
@@ -136,6 +144,12 @@ async def lifespan(app: FastAPI):
         await session_loop_runner.stop_all()
     except Exception as e:
         logger.error(f"Session loop shutdown failed: {e}")
+    try:
+        from app.modules.trades.engine import trade_pilot_runner
+
+        await trade_pilot_runner.stop_all()
+    except Exception as e:
+        logger.error(f"Trade pilot loop shutdown failed: {e}")
     await async_engine.dispose()
     logger.info("Database connection pools disposed. Shutdown clean.")
 
@@ -224,6 +238,8 @@ def create_application() -> FastAPI:
     from app.modules.opportunities.controller import opportunity_router
     from app.modules.opportunities.engine import opportunity_engine  # auto-registers opportunities engine
     from app.modules.sessions.controller import session_pick_router, session_router
+    from app.modules.trades.controller import trade_router
+    from app.modules.backtest.controller import backtest_router
 
     app.include_router(user_router, prefix=settings.API_V1_PREFIX)
     app.include_router(oauth_router, prefix=settings.API_V1_PREFIX)
@@ -235,6 +251,8 @@ def create_application() -> FastAPI:
     app.include_router(opportunity_router, prefix=settings.API_V1_PREFIX)
     app.include_router(session_router, prefix=settings.API_V1_PREFIX)
     app.include_router(session_pick_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(trade_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(backtest_router, prefix=settings.API_V1_PREFIX)
 
     app.include_router(strategy_mcp_router)
     app.include_router(research_mcp_router)

@@ -74,6 +74,11 @@ def patched(monkeypatch):
     monkeypatch.setattr(nodes.memory_service, "recall", fake_recall)
     monkeypatch.setattr(nodes.memory_service, "hit_rate", fake_hit)
     monkeypatch.setattr(nodes._strategy_service, "list_suggestable_summaries", no_strats)
+
+    async def no_time_machine(state):
+        return None
+
+    monkeypatch.setattr(nodes, "_time_machine_context", no_time_machine)
     nodes._last_answer.clear()
 
 
@@ -214,6 +219,39 @@ def test_small_profit_band_and_tight_stop():
         assert m["spreadPct"] <= 1.5
 
 
+def test_reversal_setups_get_a_tighter_atm_stop_than_other_families():
+    """10 Nov 2026 fix: FAILED_BREAK_RECLAIM (family REVERSAL) trades ATM against the day's trend/bias, so a wrong
+    reclaim should cost less than a trend-aligned or range setup's full 1.25x-ATR stop."""
+    market, atr5 = _market(), 20.0
+    base_setup = {"side": "CE", "name": "X", "strength": 3, "target": 24500.0, "stop": 23700.0}
+
+    def stop_pct_for(family: str) -> float:
+        menu = build_menu(get_config("NIFTY"), market, "NEUTRAL", 1.0, setups=[{**base_setup, "family": family}],
+                           require_setup=True, atr5=atr5, max_stop=50.0, max_margin=50.0)
+        ce = next(m for m in menu if m["side"] == "CE" and m["setup"] == "X")
+        return ce["stopPct"]
+
+    reversal_stop = stop_pct_for("REVERSAL")
+    range_stop = stop_pct_for("RANGE")
+    trend_stop = stop_pct_for("TREND")
+    assert reversal_stop < range_stop == trend_stop
+    assert reversal_stop == pytest.approx(range_stop * (0.8 / 1.25), rel=0.01)
+
+
+def test_pcr_adjustment_is_confluence_only_and_small():
+    from app.modules.opportunities.service.menu_builder import PCR_BONUS, pcr_adjustment
+
+    bullish_shift = {"pcrChg": 0.12, "peOiChgPct": 3.0, "ceOiChgPct": 0.5, "pcr": 1.1}
+    assert pcr_adjustment({"oiShift": bullish_shift}, "CE") == PCR_BONUS
+    assert pcr_adjustment({"oiShift": bullish_shift}, "PE") == 0
+    bearish_shift = {"pcrChg": -0.12, "peOiChgPct": 0.5, "ceOiChgPct": 3.0, "pcr": 0.8}
+    assert pcr_adjustment({"oiShift": bearish_shift}, "PE") == PCR_BONUS
+    assert pcr_adjustment({}, "CE") == 0
+    # weaker evidence than a coded setup (SETUP_BONUS) or a volume spike (VOLUME_BONUS): never the deciding factor
+    from app.modules.opportunities.service.menu_builder import SETUP_BONUS, VOLUME_BONUS
+    assert PCR_BONUS < SETUP_BONUS and PCR_BONUS < VOLUME_BONUS
+
+
 def test_expected_edge_needs_real_probability():
     from app.modules.opportunities.service.menu_builder import expected_edge_pct
 
@@ -248,3 +286,44 @@ async def test_menu_is_atm_or_one_itm_with_delta_floor(patched, monkeypatch):
         assert m["delta"] >= 0.5
         assert m["strike"] in ((24000, 23950) if m["side"] == "CE" else (24000, 24050))
         assert m["setup"] == "ORB"
+
+
+@pytest.mark.asyncio
+async def test_time_machine_drops_the_side_history_runs_against(patched, monkeypatch):
+    """A falling history: the PE plan leans to its target and is kept with the odds; the CE plan is dropped."""
+    import random
+
+    from app.modules.opportunities.service import timemachine as tm
+
+    rnd = random.Random(5)
+    bars = []
+    for d in range(30):
+        p = 24000.0
+        for i in range(75):
+            mins = 9 * 60 + 15 + 5 * i
+            o, c = p, p * (1 - 0.0008 + rnd.gauss(0, 0.0005))
+            bars.append({"t": f"2026-09-{d + 1:02d}T{mins // 60:02d}:{mins % 60:02d}:00+05:30", "o": o,
+                         "h": max(o, c) * 1.0002, "l": min(o, c) * 0.9998, "c": c, "v": 0, "oi": 0})
+            p = c
+    sessions = tm.sessions_from_bars(bars, "09:15")
+    ctx = (sessions, tm.build_pool(sessions), 20, 35)
+
+    async def with_history(state):
+        return ctx
+
+    monkeypatch.setattr(nodes, "_time_machine_context", with_history)
+
+    async def down():
+        return None
+
+    monkeypatch.setattr(nodes._llm, "_resolve_healthy_url", down)  # baseline picks both sides
+    payload = _payload(conf=1)
+    payload["research"] = {"direction": "NEUTRAL"}
+    out = await underlying_graph.ainvoke(payload)
+    sides = {c["side"] for c in out["candidates"]}
+    assert "CE" not in sides and "PE" in sides
+    assert out["diag"]["dropped"].get("timeMachine", 0) >= 1
+    pe = next(c for c in out["candidates"] if c["side"] == "PE")
+    assert pe["timeMachine"]["lean"] > 0
+    assert any(r.startswith("Time Machine") for r in pe["reasons"])
+    assert any("from the Time Machine odds" in r for r in pe["reasons"])

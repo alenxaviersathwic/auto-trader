@@ -102,6 +102,125 @@ graph TD
    - Rejects trade if expected net profit margin $< 4.0\%$ after all statutory taxes and brokerages.
    - Verifies risk-to-reward ratio ($\text{RRR} \ge 1.5$).
    - Verifies trading time window (e.g. blocks 15:15-15:30 intraday square-off rush).
+   - Runs the **Time Machine** on every pick (section 3b) before the confidence and edge checks.
+   - Menu rule from the Day Trader skill: a contract whose bid-ask spread is more than half of its premium stop is
+     dropped (`spread eats stop`) — buying at the ask already puts the trade that far down, so quote noise stops it out.
+
+---
+
+## 3b. Time Machine — odds from the underlying's own history (`service/timemachine.py`)
+
+Ported from the Day Trader skill's `trader-timemachine` (github.com/Jakeschincariol/day-trader-skill, MIT) and adapted
+to NSE/MCX sessions and CE/PE. It replaces the AI's uncalibrated confidence with what the underlying actually did at
+this time of day.
+
+**Data.** Once per IST day per instrument, `UpstoxMarketDataProvider.candles_5m_history()` pulls ~90 calendar days
+(~60 sessions) of 5-minute bars (Upstox v3 `minutes/5`, 28-day chunks), **today excluded**. Index → the spot index key;
+commodity → the near-month future the analysis already reads. A failed fetch is retried after 10 minutes; without
+history the pick is judged the old way.
+
+**The plan replayed** is the pick's own premium target/stop mapped onto the underlying through its delta
+(`move = premium × pct / delta`), from the current spot — the same levels the outcome checker grades. Horizon = the
+validity window (`validMinutes`, rounded up to 5-minute bars), capped at the session's last bar.
+
+| Step | What it does |
+|---|---|
+| Pool | Every past session's bar *i* as (o, h, l, c) ÷ bar *i-1* close, keyed by time-of-day slot |
+| Replays | 2,000 runs, seed 19: each next bar drawn from the same slot ±2 bars, scaled to the current price; stop checked before target (a bar touching both = stop) |
+| Odds | P(target first), P(stop first), P(neither), average R, average R of the "neither" runs |
+| History | The same plan (% distances) walked over the **real** bars of every past session from the same slot |
+| Lean | P(target \| a side was hit) − 1/(1+R). 1R needs 50 %, 2R 33 %, 3R 25 % |
+
+**How it changes a pick** (only when ≥ 20 past sessions cover the window and ≥ 15 % of runs hit a side):
+
+| Lean | Effect |
+|---|---|
+| ≤ −5 points (leans toward the stop) | pick **dropped** (`dropped.timeMachine` in the iteration diagnostics) |
+| otherwise | confidence = average of the AI-adjusted confidence and 100 × P(target \| side hit) |
+| always | edge = P(target)·target% − P(stop)·stop% + P(neither)·avgR(neither)·stop% − costs; ranking uses this edge |
+
+The odds are saved with the opportunity (`trade_opportunities.time_machine`, migration `0020`), returned as
+`timeMachine` by the API, added as a line in `reasons`, and drawn on the card as a target/stop/neither
+bar with the verdict and the real-history counts. It is a simulation from the last ~60 sessions, not a prediction:
+news, expiry gamma and IV moves can do things those sessions never did.
+
+---
+
+## 3c. Entry rules after the 9 Nov 2026 review
+
+On 9 Nov 2026 (NIFTY weekly expiry shifted to Monday by a holiday) NIFTY and SENSEX made a V-reversal
+(NIFTY 25,076 → 24,839 → 25,045; SENSEX 81,339 → 80,519 → 81,107) and the engine saved **zero** picks on both, while
+BANKNIFTY's clean trend day gave 7. The rejection log showed why: about 48% of scans hit a time block, and every setup
+that did fire was vetoed by "15-min trend is FLAT". These rules changed:
+
+| Rule | Before | Now | Why |
+|---|---|---|---|
+| Midday block | 12:00-13:30 | **12:00-13:00** | NSE 1-min data: 11:00-13:00 is the quiet stretch; 13:00-14:00 is more volatile than 10:00-11:00 |
+| Last entries | close − 25 min | **close − 20 min** (15:10 on a 15:30 close) | the last half hour often carries the day's push |
+| 15-min trend | must agree for every setup; FLAT vetoed all | by **family**: TREND setups need agreement; RANGE setups (PDH/PDL retest, OI wall, PCR shift, VWAP band fade) allow FLAT; REVERSAL (failed break → reclaim) allowed against the trend | a lagging 15-min filter reads a V-day as FLAT exactly when the reversal trade appears |
+| New setups | — | **FAILED_BREAK_RECLAIM** (a level that held is broken by ≥ 0.1 ATR, then a 5-min close back through it; covers the opening-range fade) and **VWAP_BAND_REVERT** (stretch beyond futures VWAP ± 2 SD on a flat-VWAP day, close back inside, target VWAP) | the trades a discretionary trader takes on range / reversal days |
+| 1-min gate | last 1-min bar had to be green/red and beyond the prior close | dropped; 1-min EMA9 side + no fresh low/high remain | one bar re-read every 20 s flickered |
+| Exits | premium target 3-6%, stop 2.5-3% | **point-based** when the setup has a chart plan: stop = chart invalidation clamped to 0.5-1.25 × 5-min ATR, target = next level capped at 3 × that stop, both converted to premium through delta (`exitMode: "POINTS"`); the strategy % stop override no longer tightens these | a 2.5% stop on a ₹100 ATM premium is ~5 NIFTY points — inside one 5-min bar's noise |
+| Expiry day after 13:30 | 0-DTE series skipped | 0-DTE allowed **ITM only** (|delta| ≥ 0.6); the expiry date comes from the live chain, so holiday shifts are automatic | ATM gamma on expiry afternoons; ITM tracks the index |
+| Guardrails (`service/guardrails.py`) | — | max 6 picks per underlying per day (`params.maxPerDay`; **4 since §3d**), pause 30 min after 2 stop-hits in a row, no second same-side pick within 10 min; iteration result `GUARDRAIL` | stops the looser rules turning into overtrading |
+
+What did not change: the first 5 minutes are still blocked; the cards still only run while the Opportunities page is open
+(9 Nov's cards started at 11:26, so the 09:15-11:26 move was never scanned — start the cards at the open).
+Validate with the outcome Check and `scripts/backtest_setups.py run` before trusting the new setups: more picks is not
+more profit.
+
+---
+
+## 3d. Day type, strike modes and premium exits (10 Nov 2026 redesign)
+
+Why: a replay of 9 Nov under §3c still lost on the trend-following setups (VWAP pullback / EMA retest inside chop), and
+the engine could only buy ATM / 1-ITM. Research summary: SEBI FY26 — ~88 % of individual F&O traders lost money, ~90 %
+of option-only buyers; cheap far-OTM options are overpriced on average (Boyer & Vorkink 2014); intraday momentum is
+real mainly outside a "noise area" around the open (Zarattini, Aziz & Barbon 2024) and on short-gamma days (Baltussen
+et al. 2021); stops cluster just beyond round numbers (Osler 2005). So: fewer trades, gated by day type, and
+out-of-the-money strikes only when the day is expanding.
+
+**Day type (`service/day_type.py`, in `analysis["dayType"]`, `diag.dayType`)**
+
+| Type | Rule | Allowed |
+|---|---|---|
+| PIN | ≤ 1 day to expiry, after 10:30, inside the noise area and inside an OI box ≤ 2 × the straddle-implied move, VIX not rising | REVERSAL + RANGE setups only |
+| RANGE | inside the noise area (default) | REVERSAL + RANGE setups only |
+| TREND | last 5-min close outside the noise area | TREND setups on that side, REVERSAL, RANGE (no VWAP fades) |
+| EXPANSION | TREND + fuel: gap ≥ 0.5 daily ATR, VIX ≥ +3 %, day range ≥ 80 % of daily ATR, or price through the OI wall | same as TREND |
+
+Noise area = `max(open, prevClose) × (1 + σ)` … `min(open, prevClose) × (1 − σ)`, σ = average |move from the open| at this
+time of day over the last 14 sessions (the Time Machine's cached 5-min history); without history, a daily-ATR ×
+√time proxy (`noise.source = "atr-proxy"`).
+
+**New setups**: `NOISE_BREAKOUT` (first 5-min close outside the noise area), `LATE_DAY_MOMENTUM` (14:30-15:05, first
+half hour and day return agree, outside the noise area), and round numbers (NIFTY 100s, BANKNIFTY/SENSEX 500s) added
+to the levels `FAILED_BREAK_RECLAIM` watches.
+
+**Strike mode (`menu_builder.strike_mode`, index options only)**
+
+| Mode | When | Strikes | Exits |
+|---|---|---|---|
+| ATM | default; every reclaim / range setup | ATM or 1 ITM, \|delta\| ≥ 0.45 | chart points (§3c) |
+| ITM | expiry day after 13:30 | \|delta\| ≥ 0.6 | chart points |
+| OTM | TREND-family setup on a TREND/EXPANSION day, ≤ 1 day to expiry | \|delta\| 0.20-0.35 | premium −35 % (min −20 %) / +60 %, exit if no new high in 10 min |
+| LOTTERY | as OTM, EXPANSION day, expiry day after 13:30 | \|delta\| 0.08-0.20 | premium −50 % / +100 %; risk per lot = whole premium |
+
+Filters: premium ≥ ₹2; under ₹20 the spread must be ≤ 1 tick (₹0.05) instead of the % rule. `costPct` now includes
+slippage (1 tick per side under ₹20, else 0.25 % per side) and STT 0.15 % on the sell side. Each saved pick carries a
+sizing line: risk per lot and lots for `params.riskPerTradeRs` (default ₹2,000). Out-of-the-money picks skip the Time
+Machine (a delta map cannot replay gamma). Guardrail daily cap is now 4 per underlying.
+
+**Chain recorder (`service/chain_recorder.py`, table `option_chain_snapshots`, migration 0021)**: each iteration's
+chain (24 strikes: LTP, OI, volume, bid, ask, delta, IV) is stored about once a minute. Upstox keeps no chain history,
+so OI-wall / short-covering / premium-momentum rules can only be backtested from these rows — keep the cards running.
+
+**Replay** `scripts/backtest_day.py` (9 Nov 2026, Black-Scholes premiums at a fixed IV, one position at a time):
+11 opportunities (NIFTY 4, BANKNIFTY 4, SENSEX 3), about +₹8,400 for one lot of each; 303 of 393 fired setups were
+blocked by the day type. One day is not evidence: shadow-trade 4-8 weeks and judge on 200+ trades.
+
+Not built yet: premium-momentum breakout on the option's own chart, wall-break with short covering, gamma
+concentration (all need the recorded chains), constituent-breadth program-flow proxy, 30-level depth.
 
 ---
 
@@ -118,7 +237,7 @@ def round_trip_cost_pct(premium: float, lot_units: int, exchange: str, target_pc
     exch = turnover * EXCHANGE_TXN.get(exchange, 0.0003503) # NSE ~0.03503%
     sebi = turnover * 1e-6                                  # Rs 10 per crore
     gst = 0.18 * (brokerage + exch + sebi)                  # 18% GST on fees
-    stt = sell * STT_SELL.get(exchange, 0.001)              # 0.1% STT on SELL premium
+    stt = sell * STT_SELL.get(exchange, 0.0015)             # 0.15% STT on SELL premium (0.1% until 31 Mar 2026)
     stamp = buy * 0.00003                                   # 0.003% Stamp duty on BUY
     total_charges = brokerage + exch + sebi + gst + stt + stamp
     return round((total_charges / buy) * 100, 2)
@@ -197,6 +316,7 @@ erDiagram
         numeric profit_margin_pct
         numeric reward_risk
         smallint confidence
+        jsonb time_machine
         string outcome
         boolean is_latest
     }

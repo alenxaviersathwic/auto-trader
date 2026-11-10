@@ -18,12 +18,28 @@ and the menu turns that plan into an option premium target/stop through the cont
   RANGE_BREAKOUT   tight multi-bar consolidation broken on a close                    any regime
   GAP_GO           0.5-2% gap holds, close > open & VWAP, >=75% of bars on the gap side,  09:30-10:45
                    within 0.4% of VWAP (not chasing)
-  PCR_SHIFT        option-chain PCR drift + put/call OI writing, price confirms         any regime
+  PCR_SHIFT        DEMOTED 10 Nov 2026 (see below) -- no longer an independent setup, confluence only
   SHORT_COVERING_SPIKE  futures price up + OI down + volume spike (mirror: long unwinding)  any regime
+  FAILED_BREAK_RECLAIM  a key level (OR low/high, PDL/PDH, S1/R1, BC/TC, pivot, OI strike) broken by >= 0.1 ATR,
+                   then a 5-min close back through it: the trapped side's stops fuel the move   any regime
+                   (also covers the opening-range fade: a failed first break of the OR)
+  VWAP_BAND_REVERT stretch beyond futures VWAP +/- 2 SD, 5-min close back inside, VWAP flat  RANGE / MIXED
+  NOISE_BREAKOUT   first 5-min close outside the noise area (Zarattini et al. 2024): the move is no longer noise
+  LATE_DAY_MOMENTUM  14:30-15:05: first-half-hour return and the day's return agree and price is outside the noise
+                   area on that side (Gao et al. JFE 2018: the first half hour predicts the last)
 
-Raw setups come from detect(); confirm_timeframes() then keeps only those where the 15-minute trend, the 5-minute
-trigger and the 1-minute chart all agree. The 1-minute chart is ALWAYS checked (see one_minute_check()): entry bar,
-1-min EMA9 side, no fresh 1-min swing against the trade, setup stop not touched, not chasing, target not already hit.
+Day type (service/day_type.py) decides which setups may trade at all (confirm_timeframes()):
+  PIN / RANGE        only REVERSAL and RANGE-family setups (theta beats trend-following inside the noise area)
+  TREND / EXPANSION  TREND-family setups on the day's side, plus REVERSAL; no VWAP band fades
+
+Setup families decide what the 15-minute trend must say (confirm_timeframes()):
+  TREND     needs the 15-minute trend on its side (a FLAT 15-min trend is no trend to follow)
+  RANGE     the 15-minute trend may be FLAT or on its side, never against it
+  REVERSAL  FAILED_BREAK_RECLAIM: may go against a 15-minute trend -- a reclaimed level is how a V-day turns
+A FLAT 15-minute trend used to veto every setup; on a V-reversal day (NIFTY/SENSEX, 9 Nov 2026) that removed all of
+them while a discretionary trader traded the reclaim. The 5-minute trigger and the 1-minute chart still must agree:
+one_minute_check() is ALWAYS run (1-min EMA9 side, no fresh 1-min swing against the trade, setup stop not touched,
+not chasing, target not already hit).
 
 Futures OI buildup confirms (+1) or contradicts (-1, flagged) each signal; volume spike adds +1.
 """
@@ -52,6 +68,16 @@ def _plan(a: dict[str, Any], side: str, entry: float, stop: float, atr5: float) 
         return None
     return {"entry": round(entry, 2), "stop": round(stop, 2), "target": round(target, 2),
             "targetLevel": target_name, "rr": round(rr, 2)}
+
+
+def _fixed_plan(entry: float, stop: float, target: float, target_name: str, up: bool) -> dict[str, Any] | None:
+    """A plan whose target is given (e.g. VWAP for a band fade) instead of the next key level."""
+    risk = (entry - stop) if up else (stop - entry)
+    reward = (target - entry) if up else (entry - target)
+    if risk <= 0 or reward <= 0 or reward / risk < MIN_SETUP_RR:
+        return None
+    return {"entry": round(entry, 2), "stop": round(stop, 2), "target": round(target, 2),
+            "targetLevel": target_name, "rr": round(reward / risk, 2)}
 
 
 def _signal(name, side, plan, strength, reason) -> dict[str, Any]:
@@ -294,13 +320,11 @@ def _extra_setups(a: dict[str, Any], bars: list[dict[str, Any]], lv: dict[str, A
             stop = (nearer - atr5) if gap_up else (nearer + atr5)
             add("GAP_GO", "CE" if gap_up else "PE", stop, 3, reason)
 
-    # 12. PCR / option-OI shift: puts being written (PCR rising) = support building -> CE; calls written -> PE
-    sh = a.get("oiShift")
-    if sh:
-        if sh["pcrChg"] >= 0.08 and sh["peOiChgPct"] > sh["ceOiChgPct"] + 1.0 and green:
-            add("PCR_SHIFT", "CE", last["l"] - tick, 2, f"PCR rose {sh['pcrChg']:+.2f} to {sh['pcr']}, put OI {sh['peOiChgPct']:+.1f}% vs call OI {sh['ceOiChgPct']:+.1f}%")
-        if sh["pcrChg"] <= -0.08 and sh["ceOiChgPct"] > sh["peOiChgPct"] + 1.0 and red:
-            add("PCR_SHIFT", "PE", last["h"] + tick, 2, f"PCR fell {sh['pcrChg']:+.2f} to {sh['pcr']}, call OI {sh['ceOiChgPct']:+.1f}% vs put OI {sh['peOiChgPct']:+.1f}%")
+    # 12. PCR / option-OI shift: DEMOTED from an independent trigger (10 Nov 2026 research review -- Jena,
+    # Tiwari & Mitra, Economies 2019: NSE volume-PCR has no predictive power on returns, and NIFTY returns
+    # Granger-cause PCR, not the other way; OI-PCR only predicts at a 12-day-plus horizon, useless intraday).
+    # `a["oiShift"]` is still computed and left in the analysis dict for `menu_builder.pcr_adjustment()` to use
+    # as a small confidence nudge on whatever OTHER setup fired on that side -- never as its own trade.
 
     # 13. Short-covering spike (CE) / long-unwinding spike (PE): price and OI move opposite, on a volume spike
     bu = a.get("buildup") or {}
@@ -309,10 +333,129 @@ def _extra_setups(a: dict[str, Any], bars: list[dict[str, Any]], lv: dict[str, A
             add("SHORT_COVERING_SPIKE", "CE", last["l"] - tick, 3, f"futures up {bu['priceChgPct']:+.2f}% with OI {bu['oiChgPct']:+.2f}% on a volume spike")
         if bu.get("state") == "LONG_UNWINDING" and bu.get("oiChgPct", 0) <= -0.15 and red:
             add("SHORT_COVERING_SPIKE", "PE", last["h"] + tick, 3, f"futures down {bu['priceChgPct']:+.2f}% with OI {bu['oiChgPct']:+.2f}% on a volume spike (long unwinding)")
+
+    # 14. Failed break -> reclaim (and the opening-range fade): a level swept by >= 0.1 ATR, then a 5-min close back
+    #     through it. Fresh only: this bar is the reclaim (the previous close was still on the broken side, or this
+    #     bar itself swept and closed back).
+    oi_ctx = a.get("oi") or {}
+    vwa = a.get("vwap") or {}
+    window = bars[-6:]
+    lows = [("OR low", lv.get("orLow")), ("previous-day low", lv.get("pdl")), ("S1", lv.get("s1")),
+            ("CPR BC", lv.get("bc")), ("pivot", lv.get("pivot")), ("put-OI strike", oi_ctx.get("support"))]
+    highs = [("OR high", lv.get("orHigh")), ("previous-day high", lv.get("pdh")), ("R1", lv.get("r1")),
+             ("CPR TC", lv.get("tc")), ("pivot", lv.get("pivot")), ("call-OI strike", oi_ctx.get("resistance"))]
+    sweep_lo, sweep_hi = min(b["l"] for b in window), max(b["h"] for b in window)
+    # round numbers: stop orders cluster just beyond them (Osler 2005). The round level is the one that was swept.
+    step = (lv.get("roundAbove") or 0) - (lv.get("roundBelow") or 0)
+    if step > 0:
+        lows.append(("round number", -(-sweep_lo // step) * step))
+        highs.append(("round number", (sweep_hi // step) * step))
+    lo_i = len(bars) - len(window) + min(range(len(window)), key=lambda i: window[i]["l"])
+    hi_i = len(bars) - len(window) + max(range(len(window)), key=lambda i: window[i]["h"])
+    before_lo, before_hi = bars[max(0, lo_i - 12):lo_i], bars[max(0, hi_i - 12):hi_i]
+    for name, L in lows:
+        if not L or not green:
+            continue
+        # a breakDOWN needs the level to have held first: some close above it before the sweep bar
+        swept = sweep_lo <= L - tick and any(b["c"] > L for b in before_lo)
+        fresh = prev["c"] <= L or (last["l"] <= L - tick)
+        if swept and fresh and last["c"] > L + 0.5 * tick:
+            boost = 1 if vwa and vwa.get("above") else 0
+            add("FAILED_BREAK_RECLAIM", "CE", sweep_lo - tick, 3 + boost + spike,
+                f"broke the {name} {L:.1f} (low {sweep_lo:.1f}) and closed back above it -- failed breakdown")
+            break
+    for name, L in highs:
+        if not L or not red:
+            continue
+        swept = sweep_hi >= L + tick and any(b["c"] < L for b in before_hi)
+        fresh = prev["c"] >= L or (last["h"] >= L + tick)
+        if swept and fresh and last["c"] < L - 0.5 * tick:
+            boost = 1 if vwa and vwa.get("above") is False else 0
+            add("FAILED_BREAK_RECLAIM", "PE", sweep_hi + tick, 3 + boost + spike,
+                f"broke the {name} {L:.1f} (high {sweep_hi:.1f}) and closed back below it -- failed breakout")
+            break
+
+    # 15. VWAP band reversion: only on a balanced day (flat VWAP), back inside the +/- 2 SD band, target = VWAP.
+    sd, slope = vwa.get("sd") or 0.0, vwa.get("slopePct")
+    fb5 = a.get("futBars5") or []
+    if vwa and sd > 0 and slope is not None and abs(slope) <= 0.05 and regime in ("RANGE", "MIXED") and len(fb5) >= 2:
+        v, fl, fp = vwa["value"], fb5[-1], fb5[-2]
+        upper, lower = v + 2 * sd, v - 2 * sd
+        to_vwap = abs(fl["c"] - v)  # the futures distance back to VWAP, applied to the spot entry
+        if fp["h"] >= upper and fl["c"] < upper and red and fl["c"] > v:
+            stop = max(last["h"], prev["h"]) + tick
+            plan = _fixed_plan(last["c"], stop, last["c"] - to_vwap, "VWAP", up=False)
+            if plan:
+                out.append(_signal("VWAP_BAND_REVERT", "PE", plan, 2,
+                                   f"stretched above VWAP +2 SD ({upper:.1f}) on a flat-VWAP day, closed back inside"))
+        if fp["l"] <= lower and fl["c"] > lower and green and fl["c"] < v:
+            stop = min(last["l"], prev["l"]) - tick
+            plan = _fixed_plan(last["c"], stop, last["c"] + to_vwap, "VWAP", up=True)
+            if plan:
+                out.append(_signal("VWAP_BAND_REVERT", "CE", plan, 2,
+                                   f"stretched below VWAP -2 SD ({lower:.1f}) on a flat-VWAP day, closed back inside"))
+
+    # 16. Noise-area breakout: the first 5-min close outside the band (the previous close was inside).
+    noise = a.get("noise") or {}
+    if noise.get("prevState") == "INSIDE" and noise.get("state") in ("ABOVE", "BELOW"):
+        if noise["state"] == "ABOVE" and green:
+            add("NOISE_BREAKOUT", "CE", min(last["l"], noise["upper"]) - tick, 3 + spike,
+                f"5-min close {last['c']:.1f} above the noise area {noise['upper']:.1f} (move is no longer noise)")
+        if noise["state"] == "BELOW" and red:
+            add("NOISE_BREAKOUT", "PE", max(last["h"], noise["lower"]) + tick, 3 + spike,
+                f"5-min close {last['c']:.1f} below the noise area {noise['lower']:.1f} (move is no longer noise)")
+
+    # 17. Late-day momentum: first half hour and the whole day point the same way, price outside the noise area.
+    sess = a.get("session") or {}
+    fh, pdc2 = a.get("firstHalfHourRetPct"), lv.get("pdc")
+    if fh is not None and pdc2 and LATE_MOMO_MIN_TO_CLOSE[0] <= sess.get("minutesToClose", 0) <= LATE_MOMO_MIN_TO_CLOSE[1]:
+        day_ret = (last["c"] - pdc2) / pdc2 * 100
+        recent = bars[-3:]
+        if fh > 0 and day_ret > 0 and noise.get("state") == "ABOVE" and green:
+            add("LATE_DAY_MOMENTUM", "CE", min(b["l"] for b in recent) - tick, 3,
+                f"first half hour {fh:+.2f}% and day {day_ret:+.2f}% both up, above the noise area into the close")
+        if fh < 0 and day_ret < 0 and noise.get("state") == "BELOW" and red:
+            add("LATE_DAY_MOMENTUM", "PE", max(b["h"] for b in recent) + tick, 3,
+                f"first half hour {fh:+.2f}% and day {day_ret:+.2f}% both down, below the noise area into the close")
     return out
 
 
 # ───────────────────────── multi-timeframe confirmation ─────────────────────────
+RANGE_SETUPS = {"PDH_PDL_RETEST", "OI_WALL_REJECT", "VWAP_BAND_REVERT"}  # PCR_SHIFT demoted 10 Nov 2026
+REVERSAL_SETUPS = {"FAILED_BREAK_RECLAIM"}
+LATE_MOMO_MIN_TO_CLOSE = (35, 70)  # 14:30-15:05 on a 15:40 close
+
+
+def day_type_block(a: dict[str, Any], s: dict[str, Any]) -> str | None:
+    """Why today's day type does not allow this setup, or None. No day type (no noise area yet) = no veto.
+
+    `dayBias` (day_type.apply_bias(), 10 Nov 2026 post-mortem) is the STICKY call for the session, separate from
+    the instantaneous `dayType`: once the day has confirmed EXPANSION on a side, every family -- REVERSAL
+    (FAILED_BREAK_RECLAIM) included -- is blocked from trading the other side, even during a pullback that reads
+    back as RANGE/PIN a few minutes later. A plain TREND bias (no fuel yet) still allows a REVERSAL bet against
+    it, since an unconfirmed trend is exactly the setup "a reclaimed level is how a V-day turns" is for."""
+    dt = a.get("dayType") or {}
+    kind = dt.get("type")
+    bias = a.get("dayBias") or {}
+    if bias.get("type") == "EXPANSION" and bias.get("side") and s["side"] != bias["side"]:
+        return f"EXPANSION bias ({bias['side']}) still in force for the session: no trades against it"
+    if not kind:
+        return None
+    fam = family(s["name"])
+    if kind in ("PIN", "RANGE"):
+        if fam == "TREND":
+            return f"{kind} day (price inside the noise area): trend/breakout setups are not traded"
+        return None
+    if s["name"] == "VWAP_BAND_REVERT":
+        return f"{kind} day: no VWAP fades against an expanding move"
+    if fam == "TREND" and dt.get("side") and s["side"] != dt["side"]:
+        return f"{kind} day is on the {dt['side']} side"
+    return None
+
+
+def family(name: str) -> str:
+    return "REVERSAL" if name in REVERSAL_SETUPS else "RANGE" if name in RANGE_SETUPS else "TREND"
+
 MIN_1M_BARS = 5  # completed 1-minute bars needed before any entry is allowed
 EMA_1M = 9
 MAX_CHASE_ATR = 0.5  # 1-min price may run at most 0.5 x ATR5 past the setup entry before the trade is "chased"
@@ -323,7 +466,8 @@ def one_minute_check(b1: list[dict[str, Any]], s: dict[str, Any], atr5: float) -
     """Entry-timing gate on the 1-minute chart. Returns (reject_reason | None, info).
     CE (PE is the mirror):
       1. at least MIN_1M_BARS completed 1-minute bars
-      2. entry bar: last 1-min bar is green and closes at/above the prior 1-min close
+      2. (dropped) "last 1-min bar green and above the prior close" -- one bar re-read every 20 s flickered and
+         missed entries; the EMA9 side + no-fresh-low checks below carry the same intent
       3. 1-min trend: last close above the 1-min EMA9
       4. structure: the entry bar did not make a fresh low below the previous 3 one-minute lows
       5. invalidation: no 1-min low in the last STOP_LOOKBACK_1M bars at/below the setup stop
@@ -333,16 +477,13 @@ def one_minute_check(b1: list[dict[str, Any]], s: dict[str, Any], atr5: float) -
     ce = s["side"] == "CE"
     if len(b1) < MIN_1M_BARS:
         return f"only {len(b1)} completed 1-min bars, need {MIN_1M_BARS}", {}
-    l1, p1 = b1[-1], b1[-2]
+    l1 = b1[-1]
     closes = [b["c"] for b in b1[-30:]]
     e9 = ema(closes, EMA_1M)[-1] if len(closes) >= 2 else closes[-1]
     buf = 0.05 * atr5 if atr5 > 0 else 0.0
     info = {"entry1m": round(l1["c"], 2), "ema1m": round(e9, 2),
             "trigger1m": round(l1["h"] + buf if ce else l1["l"] - buf, 2)}
-    word = "bullish" if ce else "bearish"
 
-    if not ((l1["c"] > l1["o"] and l1["c"] >= p1["c"]) if ce else (l1["c"] < l1["o"] and l1["c"] <= p1["c"])):
-        return f"1-min entry bar does not confirm ({word} close needed)", info
     if (l1["c"] <= e9) if ce else (l1["c"] >= e9):
         return f"1-min close {l1['c']:.1f} is {'below' if ce else 'above'} 1-min EMA{EMA_1M} {e9:.1f}", info
     prior = b1[-4:-1]
@@ -364,8 +505,9 @@ def one_minute_check(b1: list[dict[str, Any]], s: dict[str, Any], atr5: float) -
 
 
 def confirm_timeframes(a: dict[str, Any], found: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Keep only setups where all three timeframes agree on the side:
-         15-minute  trend must point the same way (UP for CE, DOWN for PE)
+    """Keep only setups where the timeframes agree on the side:
+         15-minute  TREND setups: trend must point the same way (UP for CE, DOWN for PE)
+                    RANGE setups: FLAT or the same way; REVERSAL setups: any (see family())
           5-minute  the setup itself is the trigger (already a completed 5-minute bar)
           1-minute  one_minute_check() passes -- always run, for every setup
     Returns (confirmed, rejected) where each rejected item is {name, side, reason}."""
@@ -378,12 +520,20 @@ def confirm_timeframes(a: dict[str, Any], found: list[dict[str, Any]]) -> tuple[
         ce = s["side"] == "CE"
         reason = None
         info: dict[str, Any] = {}
-        if trend != ("UP" if ce else "DOWN"):
-            reason = f"15-min trend is {trend}, needs {'UP' if ce else 'DOWN'}"
+        want = "UP" if ce else "DOWN"
+        fam = family(s["name"])
+        block = day_type_block(a, s)
+        if block:
+            reason = block
+        elif fam == "TREND" and trend != want:
+            reason = f"15-min trend is {trend}, needs {want}"
+        elif fam == "RANGE" and trend not in (want, "FLAT"):
+            reason = f"15-min trend is {trend}, against a {s['name']} {s['side']}"
         else:
             reason, info = one_minute_check(b1, s, atr5)
         if reason:
             rejected.append({"name": s["name"], "side": s["side"], "reason": reason})
         else:
-            ok.append({**s, **info, "timeframes": {"15m": trend, "5m": s["name"], "1m": "confirmed"}})
+            ok.append({**s, **info, "family": fam, "dayType": (a.get("dayType") or {}).get("type"),
+                       "timeframes": {"15m": trend, "5m": s["name"], "1m": "confirmed"}})
     return ok, rejected

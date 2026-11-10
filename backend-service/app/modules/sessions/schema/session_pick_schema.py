@@ -47,6 +47,7 @@ class SessionPickResponse(BaseModel):
     expiresAt: datetime
     lockedAt: Optional[datetime] = None
     lockedPrice: Optional[float] = None  # live premium when Trade Lock was pressed
+    tradeId: Optional[int] = None        # ActiveTrade.id once entered
     winProbPct: float = 0.0              # win probability the size was scaled by (the opportunity's confidence)
     usagePct: float = 0.0                # share of the free capital this pick uses
     secondsLeft: float = 0.0  # seconds until the opportunity expires (0 once LOCKED / EXPIRED)
@@ -64,6 +65,9 @@ class SessionCapitalResponse(BaseModel):
     committedRisk: float
     remainingLossBudget: float
     lockedTrades: int
+    activeTradesCount: int = 0
+    maxParallelTrades: int = 3
+    activeTradeIds: list[int] = []
 
 
 class SessionLoopResponse(BaseModel):
@@ -75,6 +79,7 @@ class SessionLoopResponse(BaseModel):
     state: str
     message: str
     picks: list[SessionPickResponse] = []  # open offers, best first: the rows of the session table
+    lockedPicks: list[SessionPickResponse] = []  # LOCKED picks awaiting entry (SEMI_AUTO / MANUAL)
     capital: SessionCapitalResponse
     scanned: dict[str, Any]  # {"candidates": n, "excluded": {reason: n}}
 

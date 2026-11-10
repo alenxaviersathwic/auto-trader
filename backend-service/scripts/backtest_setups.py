@@ -42,7 +42,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.modules.opportunities.provider.underlying_config import get_config  # noqa: E402
-from app.modules.opportunities.service import setups as setup_detector  # noqa: E402
+from app.modules.opportunities.service import day_type, setups as setup_detector  # noqa: E402
 from app.modules.opportunities.service.costs import round_trip_cost_pct  # noqa: E402
 from app.modules.opportunities.service.market_analysis import _bar_min, _mins, analyze  # noqa: E402
 
@@ -50,7 +50,8 @@ IST = ZoneInfo("Asia/Kolkata")
 FIELDS = ["t", "o", "h", "l", "c", "v", "oi"]
 ALL_SETUPS = ["ORB", "VWAP_PULLBACK", "PDH_PDL_RETEST", "CPR_BREAKOUT", "OI_WALL_REJECT", "MOMENTUM_FLAG",
               "EMA_CROSS_RETEST", "SUPERTREND_FLIP", "SUPERTREND_RETEST", "INSIDE_BAR", "RANGE_BREAKOUT",
-              "GAP_GO", "PCR_SHIFT", "SHORT_COVERING_SPIKE"]
+              "GAP_GO", "PCR_SHIFT", "SHORT_COVERING_SPIKE", "FAILED_BREAK_RECLAIM", "VWAP_BAND_REVERT",
+              "NOISE_BREAKOUT", "LATE_DAY_MOMENTUM"]
 UNTESTABLE = {"OI_WALL_REJECT": "needs historical option-chain OI", "PCR_SHIFT": "needs historical option-chain OI"}
 MIN_BARS_PER_DAY = 300  # skip holidays / half days / partial downloads
 
@@ -86,11 +87,11 @@ def day_bar(bars: list[dict[str, Any]]) -> dict[str, Any]:
 
 # ───────────────────────── scan: run the real engine code each minute ─────────────────────────
 def scan(code: str, spot_days: dict[str, list[dict[str, Any]]], fut_days: dict[str, list[dict[str, Any]]],
-         warmup: int, proxy: bool) -> list[dict[str, Any]]:
+         warmup: int, proxy: bool, seed_daily: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     cfg = get_config(code)
     assert cfg is not None
     open_m, close_m = _mins(cfg.open), _mins(cfg.close)
-    daily: list[dict[str, Any]] = []
+    daily: list[dict[str, Any]] = list(seed_daily or [])
     cands: list[dict[str, Any]] = []
     seen_days = 0
     lookback = max(5, min(warmup, 20))
@@ -105,6 +106,7 @@ def scan(code: str, spot_days: dict[str, list[dict[str, Any]]], fut_days: dict[s
             mins = [_bar_min(b["t"]) for b in bars]
             fmins = [_bar_min(b["t"]) for b in fut]
             y, mo, dd = int(d[:4]), int(d[5:7]), int(d[8:10])
+            bias_state: dict[str, Any] = {}  # sticky day-type call for THIS day only (day_type.apply_bias())
             for k in range(1, len(bars)):
                 m = mins[k]
                 if m < open_m + 6:
@@ -117,12 +119,14 @@ def scan(code: str, spot_days: dict[str, list[dict[str, Any]]], fut_days: dict[s
                 a = analyze(cfg, market, datetime(y, mo, dd, m // 60, m % 60, tzinfo=IST))
                 if a["session"]["blocked"]:
                     continue
+                bias_state = day_type.apply_bias(a.get("dayType") or {}, bias_state, m)
                 raw = setup_detector.detect(a, cfg)
                 if raw:
                     cands.append({"d": d, "k": k, "m": m, "raw": raw, "trend15": a.get("trend15"),
                                   "atr5": a.get("atr5") or 0.0, "bars1": a["bars1"][-30:],
                                   "sig5": a["bars5"][-1]["start"], "regime": a.get("regime"),
-                                  "window": a["session"]["window"], "src": src,
+                                  "window": a["session"]["window"], "src": src, "dayType": a.get("dayType"), "noise": a.get("noise"),
+                                  "dayBias": bias_state.get("bias"),
                                   "dtrend": None if len(daily) < lookback else ("UP" if daily[-1]["c"] > daily[-lookback]["c"] else "DOWN")})
         daily.append(day_bar(bars))
         seen_days += 1
@@ -172,7 +176,8 @@ def gate_ok(cd: dict[str, Any], s: dict[str, Any], c: SimCfg) -> bool:
             return False
         l1, p1 = b1[-1], b1[-2]
         return (l1["c"] > l1["o"] and l1["c"] >= p1["c"]) if ce else (l1["c"] < l1["o"] and l1["c"] <= p1["c"])
-    ok, _ = setup_detector.confirm_timeframes({"trend15": cd["trend15"], "bars1": b1, "atr5": cd["atr5"]}, [s])
+    ok, _ = setup_detector.confirm_timeframes({"trend15": cd["trend15"], "bars1": b1, "atr5": cd["atr5"],
+                                               "dayType": cd.get("dayType"), "dayBias": cd.get("dayBias")}, [s])
     return bool(ok)
 
 

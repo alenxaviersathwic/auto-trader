@@ -23,6 +23,33 @@ class OpportunityRepository:
         )
         return {r.contractId: r for r in res.scalars().all()}
 
+    async def created_since(self, session: AsyncSession, code: str, since: datetime) -> list[TradeOpportunity]:
+        """Every row of an underlying created at/after `since` (oldest first) -- the guardrails' view of today."""
+        res = await session.execute(
+            select(TradeOpportunity)
+            .where(TradeOpportunity.status == 1)
+            .where(TradeOpportunity.underlyingCode == code)
+            .where(TradeOpportunity.createdAt >= since)
+            .order_by(TradeOpportunity.id.asc())
+        )
+        return list(res.scalars().all())
+
+    async def resolved_recent(self, session: AsyncSession, code: str, since: datetime, limit: int = 200) -> list[TradeOpportunity]:
+        """This underlying's resolved (non-PENDING) rows since `since`, oldest first -- guardrails.apply()'s
+        `recent` arg for the per-setup rolling-demotion check. `limit` caps a pathological lookback window;
+        guardrails._demoted_setups() only looks at the last SETUP_DEMOTE_LOOKBACK per (setup, side) anyway, so
+        a generous limit here just needs to cover every setup's trades, not be exact."""
+        res = await session.execute(
+            select(TradeOpportunity)
+            .where(TradeOpportunity.status == 1)
+            .where(TradeOpportunity.underlyingCode == code)
+            .where(TradeOpportunity.outcome != "PENDING")
+            .where(TradeOpportunity.resolvedAt >= since)
+            .order_by(TradeOpportunity.resolvedAt.asc())
+            .limit(limit)
+        )
+        return list(res.scalars().all())
+
     async def replace_latest(
         self, session: AsyncSession, code: str, rows: list[TradeOpportunity], keep_ids: Iterable[int] = ()
     ) -> None:

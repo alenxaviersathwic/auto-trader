@@ -91,8 +91,15 @@ class TradeOpportunity(BaseEntity):
     risks: Mapped[list[str]] = mapped_column("risks", JSONB, nullable=False, default=list)
     source: Mapped[str] = mapped_column("source", String(10), nullable=False, default="AI")
     validUntil: Mapped[datetime] = mapped_column("valid_until", DateTime(timezone=True), nullable=False)
+    # Time Machine odds of this pick at save time (service/timemachine.py); None when there was not enough history
+    timeMachine: Mapped[dict[str, Any] | None] = mapped_column("time_machine", JSONB, nullable=True)
     outcome: Mapped[str] = mapped_column("outcome", String(12), nullable=False, default="PENDING")
     resolvedAt: Mapped[datetime | None] = mapped_column("resolved_at", DateTime(timezone=True), nullable=True)
+    # Set alongside `outcome` the moment it first resolves (run_service._evaluate_opportunities). realizedPnl is
+    # rupee for ONE lot: (exitPrice - entry) * lot size -- the engine only buys options, never writes them, so
+    # no CE/PE sign flip is needed. Feeds guardrails.apply()'s daily-drawdown stop and per-setup demotion check.
+    exitPrice: Mapped[float | None] = mapped_column("exit_price", Numeric(12, 2), nullable=True)
+    realizedPnl: Mapped[float | None] = mapped_column("realized_pnl", Numeric(14, 2), nullable=True)
     isLatest: Mapped[bool] = mapped_column("is_latest", Boolean, nullable=False, default=True)
 
     __table_args__ = (
@@ -135,3 +142,22 @@ class OpportunityIteration(BaseEntity):
     savedCount: Mapped[int] = mapped_column("saved_count", SmallInteger, nullable=False, default=0)
     details: Mapped[dict[str, Any]] = mapped_column("details", JSONB, nullable=False, default=dict)
     durationMs: Mapped[int | None] = mapped_column("duration_ms", Integer, nullable=True)
+
+
+class OptionChainSnapshot(BaseEntity):
+    """One option-chain reading per underlying / expiry, about once a minute while the engine runs.
+    Upstox keeps no history of chain OI / IV / bid-ask, so anything that reads the chain (OI walls, short covering,
+    premium momentum, out-of-the-money strike rules) can only be backtested from what is recorded here."""
+
+    __tablename__ = "option_chain_snapshots"
+
+    underlyingCode: Mapped[str] = mapped_column("underlying_code", String(30), nullable=False)
+    expiry: Mapped[str] = mapped_column("expiry", String(10), nullable=False)
+    spot: Mapped[float] = mapped_column("spot", Numeric(14, 2), nullable=False)
+    pcr: Mapped[float | None] = mapped_column("pcr", Numeric(8, 3), nullable=True)
+    atmStraddle: Mapped[float | None] = mapped_column("atm_straddle", Numeric(12, 2), nullable=True)
+    vix: Mapped[float | None] = mapped_column("vix", Numeric(8, 2), nullable=True)
+    # rows of [strike, ceLtp, ceOi, ceVol, ceBid, ceAsk, ceDelta, ceIv, peLtp, peOi, peVol, peBid, peAsk, peDelta, peIv]
+    strikes: Mapped[list[Any]] = mapped_column("strikes", JSONB, nullable=False, default=list)
+
+    __table_args__ = (Index("ix_option_chain_snapshots_code_time", "underlying_code", "created_at"),)

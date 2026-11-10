@@ -13,7 +13,7 @@ from app.modules.opportunities.graph.state import UnderlyingState
 from app.modules.opportunities.provider.underlying_config import get_config, is_market_open
 from app.modules.opportunities.provider.upstox_market_data import market_data
 from app.modules.opportunities.schema.opportunity_schema import AiAnswer
-from app.modules.opportunities.service import memory_service, setups as setup_detector
+from app.modules.opportunities.service import chain_recorder, day_type, memory_service, setups as setup_detector, timemachine
 from app.modules.opportunities.service.market_analysis import analyze, oi_shift
 from app.modules.opportunities.service.menu_builder import (
     baseline_pick,
@@ -23,8 +23,10 @@ from app.modules.opportunities.service.menu_builder import (
     buildup_adjustment,
     direction_bias,
     expected_edge_pct,
+    pcr_adjustment,
     setup_adjustment,
     strategy_stop_loss_for_pick,
+    strike_mode,
     tag_adjustment,
     volume_adjustment,
     volume_confirms,
@@ -35,6 +37,7 @@ from app.modules.opportunities.service.day_context import compute_calendar_tags,
 MAX_DATA_AGE_SECONDS = 120
 REPRICE_TOLERANCE_PCT = 3.0  # after a slow AI step: keep a pick only if its premium moved less than this
 _last_answer: dict[str, dict[str, Any]] = {}  # code -> {"hash": str, "answer": dict}
+_day_bias: dict[str, dict[str, Any]] = {}  # code -> {"date": date, "bias": day_type.apply_bias() dict}; reset daily
 _strategy_service = StrategyService()
 _llm = OllamaClient()
 # One local model serves every card; the frontend iterates cards one by one. Cap overlap at 2.
@@ -89,11 +92,16 @@ async def gather(state: UnderlyingState) -> dict[str, Any]:
         for i in items
         if i.get("stopLossPct") is not None
     }
+    await chain_recorder.record(code, market)
+    market["sessions5"] = await _noise_sessions(cfg, market)
     analysis = analyze(cfg, market)
+    analysis["dayBias"] = _session_day_bias(code, analysis.get("dayType"))
     _attach_oi_shift(code, analysis)
     raw = setup_detector.detect(analysis, cfg)
     found, rejected = setup_detector.confirm_timeframes(analysis, raw)
-    diag = {"regime": analysis.get("regime"), "window": analysis["session"].get("window"),
+    diag = {"regime": analysis.get("regime"), "dayType": analysis.get("dayType"), "dayBias": analysis.get("dayBias"),
+            "noise": analysis.get("noise"),
+            "dte": analysis.get("dte"), "window": analysis["session"].get("window"),
             "trend15": analysis.get("trend15"), "trend15Source": analysis.get("trend15Source"),
             "setupsFired": [{"name": s["name"], "side": s["side"], "strength": s["strength"]} for s in raw],
             "setupsConfirmed": [{"name": s["name"], "side": s["side"], "strength": s["strength"]} for s in found],
@@ -110,6 +118,37 @@ async def gather(state: UnderlyingState) -> dict[str, Any]:
             "strategyTags": {i["name"]: i.get("tags") or [] for i in items},
             "strategyStopLoss": strategy_stop_loss, "dayTags": day_tags,
             "analysis": analysis, "setups": found, "diag": diag}
+
+
+def _session_day_bias(code: str, day_type_now: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Sticky day-type call for TODAY's session (day_type.apply_bias(), 10 Nov 2026 post-mortem): once this
+    underlying has confirmed EXPANSION on a side today, keeps remembering it through later snapshots that read
+    back as a RANGE/PIN pullback -- but only once a new direction has held for day_type.MIN_PERSIST_MIN minutes,
+    so a brief opening whipsaw can't lock in the wrong side for the rest of the session. Reset whenever the date
+    rolls over (single process; fine for one backend)."""
+    now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
+    today = now_ist.date()
+    entry = _day_bias.get(code)
+    state = entry["state"] if entry and entry["date"] == today else {}
+    state = day_type.apply_bias(day_type_now or {}, state, now_ist.hour * 60 + now_ist.minute)
+    _day_bias[code] = {"date": today, "state": state}
+    return state.get("bias")
+
+
+async def _noise_sessions(cfg: Any, market: dict[str, Any]) -> list:
+    """Past sessions of 5-minute bars for the noise area (the Time Machine's once-a-day cache); [] when unavailable."""
+    key = market.get("futuresKey") if cfg.type == "COMMODITY" else cfg.instrumentKey
+
+    async def fetch(k: str) -> list[dict[str, Any]]:
+        async with async_session_factory() as s:
+            return await market_data.candles_5m_history(k, s, timemachine.HISTORY_DAYS)
+
+    try:
+        got = await timemachine.pool_for(key, cfg.open, fetch)
+    except Exception as e:  # the noise area falls back to the ATR proxy
+        logger.warning(f"[DAY_TYPE] {cfg.code} history unavailable: {type(e).__name__}: {e}")
+        return []
+    return got[0] if got else []
 
 
 def _attach_oi_shift(code: str, analysis: dict[str, Any]) -> None:
@@ -151,6 +190,9 @@ async def make_menu(state: UnderlyingState) -> dict[str, Any]:
     drop_reasons: dict[str, int] = {}
     strat_stops = [float(v) for v in (state.get("strategyStopLoss") or {}).values() if v and v > 0]
     effective_max_stop = max(strat_stops) if strat_stops else float(state["params"].get("maxStopLossPct", 3.5))
+    strike_modes = {side: strike_mode(analysis, next((s for s in setups if s["side"] == side and not s.get("conflict")), None))
+                    for side in ("CE", "PE")} if cfg.type == "INDEX" else None  # type: ignore[union-attr]
+    diag["strikeModes"] = strike_modes
     menu = build_menu(  # type: ignore[arg-type]
         cfg, state["market"], bias, state["params"]["minProfitMargin"],
         max_margin=state["params"].get("maxProfitMargin", 10.0),
@@ -160,6 +202,8 @@ async def make_menu(state: UnderlyingState) -> dict[str, Any]:
         require_setup=True,
         atm_itm_only=True,
         min_delta=MIN_DELTA,
+        atr5=analysis.get("atr5") or None,
+        strike_modes=strike_modes,
     )
     for m in menu:
         m["underlyingType"] = cfg.type  # type: ignore[union-attr]
@@ -251,7 +295,10 @@ async def validate(state: UnderlyingState) -> dict[str, Any]:
         if live:
             fresh = True
     out: list[dict[str, Any]] = []
-    dropped = {"stale": 0, "priceMoved": 0, "notOnMenu": 0, "lowConfidence": 0, "strategyRule": 0, "lowEdge": 0}
+    dropped = {"stale": 0, "priceMoved": 0, "notOnMenu": 0, "lowConfidence": 0, "strategyRule": 0, "lowEdge": 0,
+               "timeMachine": 0}
+    tm_ctx = await _time_machine_context(state) if answer.get("picks") else None
+    tm_seen: list[dict[str, Any]] = []
     setup_names = {s["name"].lower() for s in setups}
     for pk in answer.get("picks", []):
         m = by_id.get(pk["id"])
@@ -277,7 +324,9 @@ async def validate(state: UnderlyingState) -> dict[str, Any]:
         strat_sl_pct, strat_sl_src = strategy_stop_loss_for_pick(
             state.get("strategyStopLoss"), pk.get("strategy")
         )
-        if strat_sl_pct is not None and strat_sl_pct > 0:
+        # point-based exits already sit on the chart structure: a strategy's fixed % stop would pull the stop back
+        # inside one bar's noise, so it only applies to percentage-mode picks
+        if strat_sl_pct is not None and strat_sl_pct > 0 and m.get("exitMode") != "POINTS":
             applied_sl = round(min(strat_sl_pct, float(m.get("marginPct", strat_sl_pct)) / 1.2), 1)
             if applied_sl >= 1.5:
                 entry_px = float(m["entry"])
@@ -301,6 +350,11 @@ async def validate(state: UnderlyingState) -> dict[str, Any]:
             conf += b_adj
             bu = analysis["buildup"]["state"].replace("_", " ").lower()
             (reasons if b_adj > 0 else risks).append(f"Futures {bu}")
+        p_adj = pcr_adjustment(analysis, m["side"])
+        if p_adj:
+            conf += p_adj
+            sh = analysis["oiShift"]
+            reasons.append(f"PCR drift confirms (PCR {sh['pcrChg']:+.2f} to {sh['pcr']}) -- confluence only")
         t_adj, matched_tags = tag_adjustment(state.get("dayTags") or [], state.get("strategyTags") or {},
                                              pk.get("strategy"))
         if t_adj:
@@ -313,15 +367,39 @@ async def validate(state: UnderlyingState) -> dict[str, Any]:
             conf -= 5
             risks.append("Midday chop window")
         conf = max(1, min(99, conf))
+        # out-of-the-money premium exits cannot be mapped onto the underlying through delta (gamma): no replay
+        tm = _run_time_machine(tm_ctx, m, spot) if m.get("exitMode") != "PREMIUM" else None
+        tm_ok = bool(tm and timemachine.judged(tm))
+        if tm:
+            tm_seen.append({"id": m["id"], "pTarget": tm["pTarget"], "pStop": tm["pStop"], "lean": tm["lean"]})
+            h = tm["history"]
+            reasons.append(
+                f"Time Machine ({tm['replays']:,} replays of the next {tm['barsAhead'] * 5} min from the last "
+                f"{h['sessions']} sessions, seed {tm['seed']}): target first {tm['pTarget'] * 100:.1f}%, "
+                f"stop first {tm['pStop'] * 100:.1f}%, neither {tm['pNeither'] * 100:.1f}% · real history "
+                f"{h['target']} target / {h['stop']} stop / {h['neither']} neither · {tm['verdict']}")
+        if tm_ok and tm["lean"] <= timemachine.DROP_LEAN:
+            dropped["timeMachine"] += 1
+            continue
+        if tm_ok:
+            # calibrate the AI's number with what the underlying actually did at this time of day
+            conf = max(1, min(99, round((conf + 100 * tm["targetShare"]) / 2)))
         if conf < p["confidenceWanted"] or m["marginPct"] < p["minProfitMargin"]:
             dropped["lowConfidence"] += 1
             continue
-        edge = expected_edge_pct(conf, m["marginPct"], m["stopPct"], m.get("costPct", 0.0))
+        if tm_ok:
+            edge = timemachine.edge_pct(tm, m["marginPct"], m["stopPct"], m.get("costPct", 0.0))
+        else:
+            edge = expected_edge_pct(conf, m["marginPct"], m["stopPct"], m.get("costPct", 0.0))
         if edge <= 0:
             dropped["lowEdge"] += 1
             continue
         reasons.append(f"Expected edge {edge:+.1f}% per trade after ~{m.get('costPct', 0)}% charges "
-                       f"(target +{m['marginPct']}%, stop -{m['stopPct']}%)")
+                       f"(target +{m['marginPct']}%, stop -{m['stopPct']}%"
+                       + (", from the Time Machine odds)" if tm_ok else ", from the confidence)"))
+        reasons.append(_sizing_note(m, float(p.get("riskPerTradeRs") or DEFAULT_RISK_PER_TRADE_RS), analysis))
+        if m.get("strikeMode") == "LOTTERY":
+            risks.insert(0, "Far out-of-the-money on expiry afternoon: the whole premium can go to zero")
         if not m.get("withTrend", True):
             names = [n.lower() for n in state.get("strategyNames", [])]
             cited = (pk.get("strategy") or "").lower()
@@ -333,7 +411,7 @@ async def validate(state: UnderlyingState) -> dict[str, Any]:
             risks.insert(0, f"Against the {state['bias'].lower()} trend")
         out.append({**m, "underlyingCode": state["code"], "confidence": conf,
                     "strategy": pk.get("strategy") or m.get("setup"), "reasons": reasons,
-                    "risks": risks, "bias": state["bias"], "edge": edge, "spot": spot,
+                    "risks": risks, "bias": state["bias"], "edge": edge, "spot": spot, "timeMachine": tm,
                     "source": "BASELINE" if state.get("usedBaseline") else "AI"})
     total = len(answer.get("picks", []))
     regime = analysis.get("regime")
@@ -347,13 +425,70 @@ async def validate(state: UnderlyingState) -> dict[str, Any]:
         note = f"{total} pick(s) rejected ({why}); confidence needed {p['confidenceWanted']} · {regime} · {setups_txt}"
     diag = {**(state.get("diag") or {}), "picks": total, "kept": len(out),
             "dropped": {k: n for k, n in dropped.items() if n},
-            "source": "BASELINE" if state.get("usedBaseline") else "AI", "confidenceWanted": p["confidenceWanted"]}
+            "source": "BASELINE" if state.get("usedBaseline") else "AI", "confidenceWanted": p["confidenceWanted"],
+            "timeMachine": {"ready": tm_ctx is not None, "picks": tm_seen}}
     if out:
         diag["result"] = "SAVED"
     else:
         diag["result"] = "DROPPED"
         diag["reason"] = note
     return {"candidates": out, "note": note, "diag": diag}
+
+
+DEFAULT_RISK_PER_TRADE_RS = 2000.0
+
+
+def _sizing_note(m: dict[str, Any], risk_rs: float, analysis: dict[str, Any]) -> str:
+    """Strike mode, exits and fixed-rupee sizing in one line a trader can act on."""
+    per_lot = float(m.get("riskPerLot") or 0)
+    lots = int(risk_rs // per_lot) if per_lot > 0 else 0
+    dt = (analysis.get("dayType") or {}).get("type") or "day type n/a"
+    size = (f"{lots} lot(s) for a Rs {risk_rs:,.0f} risk" if lots >= 1
+            else f"1 lot risks Rs {per_lot:,.0f}, above the Rs {risk_rs:,.0f} risk per trade")
+    tstop = f", exit if no new high in {m['timeStopMin']} min" if m.get("timeStopMin") else ""
+    return (f"{dt} day · strike mode {m.get('strikeMode') or 'ATM'} (delta {m.get('delta')}) · {m.get('exitMode')} exits"
+            f"{tstop} · risk Rs {per_lot:,.0f} per lot -> {size}")
+
+
+async def _time_machine_context(state: UnderlyingState) -> tuple[list, dict, int, int] | None:
+    """(sessions, pool, k, last) for this underlying, or None when the history or the clock does not allow it.
+    Index: the spot index's own 5-minute bars. Commodity: the near-month future the analysis already reads."""
+    cfg = get_config(state["code"])
+    bars5 = (state.get("analysis") or {}).get("bars5") or []
+    if not cfg or not bars5:
+        return None
+    key = state["market"].get("futuresKey") if cfg.type == "COMMODITY" else cfg.instrumentKey
+
+    async def fetch(k: str) -> list[dict[str, Any]]:
+        async with async_session_factory() as s:
+            return await market_data.candles_5m_history(k, s, timemachine.HISTORY_DAYS)
+
+    got = await timemachine.pool_for(key, cfg.open, fetch)
+    if not got:
+        return None
+    k, last = timemachine.horizon(cfg.open, cfg.close_today(), bars5[-1]["t"],
+                                  int(state["params"].get("validMinutes", 15)))
+    if last <= k:
+        return None
+    return got[0], got[1], k, last
+
+
+def _run_time_machine(ctx: tuple[list, dict, int, int] | None, m: dict[str, Any], spot: float) -> dict[str, Any] | None:
+    """Replay the pick's OWN premium target/stop, mapped onto the underlying through its delta (the levels the
+    outcome checker grades), from the current spot. Gamma and theta are ignored: a first-order map."""
+    if not ctx or not spot or not m.get("entry"):
+        return None
+    delta = abs(m.get("delta") or 0) or 0.5
+    up = m["side"] == "CE"
+    tgt_move = m["entry"] * m["marginPct"] / 100 / delta
+    stop_move = m["entry"] * m["stopPct"] / 100 / delta
+    target = spot + tgt_move if up else spot - tgt_move
+    stop = spot - stop_move if up else spot + stop_move
+    try:
+        return timemachine.evaluate(ctx[0], ctx[1], spot, stop, target, up, ctx[2], ctx[3])
+    except Exception as e:  # never let the odds step kill an iteration
+        logger.warning(f"[TIME_MACHINE] {m.get('id')}: {type(e).__name__}: {e}")
+        return None
 
 
 async def _live_prices(code: str, keys: list[str]) -> dict[str, float] | None:

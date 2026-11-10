@@ -9,19 +9,23 @@ Pure functions (no I/O) so every number can be unit-tested:
   volume       latest completed 5-minute futures bar vs the previous 12
   OI buildup   futures price change vs OI change over the last 3 completed 5-minute bars
   regime       TREND / RANGE / MIXED / VOLATILE
-  session      time window + hard no-entry windows (first 5 minutes, 12:00-13:30 chop, last 25 minutes)
+  session      time window + hard no-entry windows (first 5 minutes, 12:00-13:00 chop, last 20 minutes)
+               NSE 1-minute NIFTY data (Singh & Gangwar, MPRA 89689): 11:00-13:00 is the quiet stretch and
+               13:00-14:00 is MORE volatile than 10:00-11:00, so the lunch block ends at 13:00, not 13:30.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
+
+from app.modules.opportunities.service import day_type
 
 _IST = ZoneInfo("Asia/Kolkata")
 OPENING_RANGE_MINUTES = 15
 NO_ENTRY_AFTER_OPEN_MIN = 5
-CHOP_BLOCK_START = 12 * 60  # equity-hours lunch lull: no new entries 12:00-13:30 IST
-CHOP_BLOCK_END = 13 * 60 + 30
-NO_ENTRY_BEFORE_CLOSE_MIN = 25
+CHOP_BLOCK_START = 12 * 60  # equity-hours lunch lull: no new entries 12:00-13:00 IST
+CHOP_BLOCK_END = 13 * 60
+NO_ENTRY_BEFORE_CLOSE_MIN = 20  # entries until 15:10 on a 15:30 close: the last half hour often carries the day's push
 
 
 # ───────────────────────── helpers ─────────────────────────
@@ -126,6 +130,15 @@ def vwap(bars: list[dict[str, Any]]) -> float | None:
     return pv / vol if vol > 0 else None
 
 
+def vwap_sd(bars: list[dict[str, Any]], vw: float) -> float:
+    """Volume-weighted standard deviation of the typical price around VWAP (for the +/- 2 SD bands)."""
+    vol = sum(b["v"] for b in bars)
+    if vol <= 0:
+        return 0.0
+    var = sum(b["v"] * ((b["h"] + b["l"] + b["c"]) / 3 - vw) ** 2 for b in bars) / vol
+    return var ** 0.5
+
+
 def vwap_series(bars: list[dict[str, Any]]) -> list[float | None]:
     """Running (session-cumulative) VWAP as of each bar's close -- not the single current value `vwap()`
     returns, but what VWAP stood at, at that point in time. Needed to test how many of the bars so far
@@ -205,7 +218,7 @@ def session_info(open_hhmm: str, close_hhmm: str, now: datetime | None = None) -
         window = "OPENING"
     elif to_close <= 60:
         window = "CLOSING"
-    elif 11 * 60 + 30 <= m < 13 * 60 + 30 and _mins(close_hhmm) <= 16 * 60:
+    elif 11 * 60 + 30 <= m < 13 * 60 and _mins(close_hhmm) <= 16 * 60:
         window = "MIDDAY_CHOP"  # equity indices: the lunch lull, option buyers lose to theta here
     else:
         window = "ACTIVE"
@@ -215,7 +228,7 @@ def session_info(open_hhmm: str, close_hhmm: str, now: datetime | None = None) -
     elif to_close < NO_ENTRY_BEFORE_CLOSE_MIN:
         blocked = f"no new entries in the last {NO_ENTRY_BEFORE_CLOSE_MIN} minutes"
     elif CHOP_BLOCK_START <= m < CHOP_BLOCK_END and _mins(close_hhmm) <= 16 * 60:
-        blocked = "no new entries in the 12:00-13:30 midday chop"
+        blocked = "no new entries in the 12:00-13:00 midday chop"
     return {"nowMin": m, "minutesSinceOpen": since, "minutesToClose": to_close, "window": window, "blocked": blocked}
 
 
@@ -293,9 +306,14 @@ def analyze(cfg: Any, market: dict[str, Any], now: datetime | None = None) -> di
     fv = vwap([b for b in f1 if b["v"] > 0])
     if fv and f1:
         fl = f1[-1]["c"]
-        out["vwap"] = {"value": fv, "futLast": fl, "above": fl > fv, "distPct": round((fl - fv) / fv * 100, 3)}
+        out["vwap"] = {"value": fv, "futLast": fl, "above": fl > fv, "distPct": round((fl - fv) / fv * 100, 3),
+                       "sd": vwap_sd([b for b in f1 if b["v"] > 0], fv)}
     if f5d:
         out["vwapSeries5"] = vwap_series(f5d)
+        vs = [v for v in out["vwapSeries5"] if v is not None]
+        if len(vs) >= 7 and fv:
+            # VWAP drift over the last 30 minutes: near zero = a balanced (range) day, VWAP fades are valid
+            out["vwap"] = {**out.get("vwap", {}), "slopePct": round((vs[-1] - vs[-7]) / vs[-7] * 100, 3)}
 
     # volume (futures, completed 5-minute bars)
     if len(f5d) >= 4 and any(b["v"] for b in f5d):
@@ -345,12 +363,51 @@ def analyze(cfg: Any, market: dict[str, Any], now: datetime | None = None) -> di
         regime = "MIXED"
     out["regime"] = regime
 
+    _day_type(out, cfg, market, spot, p1, p5d, sess, now)
+
     # key levels sorted: candidate targets / stops for setups
     keys = {k: lv.get(k) for k in ("pdh", "pdl", "pdc", "r1", "s1", "tc", "bc", "orHigh", "orLow", "dayHigh", "dayLow")}
     if chains:
         keys["oiResistance"], keys["oiSupport"] = chains[0].get("resistance"), chains[0].get("support")
     out["keyLevels"] = sorted(((k, float(v)) for k, v in keys.items() if v), key=lambda x: x[1])
     return out
+
+
+def _day_type(out: dict[str, Any], cfg: Any, market: dict[str, Any], spot: float, p1: list[dict[str, Any]],
+              p5d: list[dict[str, Any]], sess: dict[str, Any], now: datetime | None) -> None:
+    """Noise area, round numbers, days to expiry, first-half-hour return and the day type (service/day_type.py)."""
+    lv = out["levels"]
+    out["spot"] = spot
+    step = getattr(cfg, "strikeStep", 0) or 0
+    if spot and step:
+        lv["roundBelow"], lv["roundAbove"] = day_type.round_levels(spot, 100.0 if step <= 50 else 500.0)
+    chains = market.get("chains") or []
+    if chains and chains[0].get("expiry"):
+        today = (now or datetime.now(_IST)).astimezone(_IST).date()
+        try:
+            out["dte"] = (date.fromisoformat(chains[0]["expiry"]) - today).days
+        except ValueError:
+            pass
+    day_o, pdc = lv.get("dayOpen"), lv.get("pdc")
+    open_m = _mins(cfg.open)
+    if p1 and pdc:
+        half = [b for b in p1 if _bar_min(b["t"]) < open_m + 30]
+        if half and sess["minutesSinceOpen"] >= 30:
+            out["firstHalfHourRetPct"] = round((half[-1]["c"] - pdc) / pdc * 100, 3)
+    if not day_o or not p5d:
+        out["dayType"] = day_type.classify(out)
+        return
+    slot = (p5d[-1]["start"] - open_m) // 5
+    sigma, source = day_type.noise_sigma(market.get("sessions5") or [], slot), "history"
+    if sigma is None:
+        close_m = _mins(cfg.close_today(now) if hasattr(cfg, "close_today") else cfg.close)
+        sigma = day_type.noise_proxy(out.get("dailyAtr") or 0, pdc or day_o, p5d[-1]["start"] + 5 - open_m, close_m - open_m)
+        source = "atr-proxy"
+    if sigma:
+        out["noise"] = {**day_type.noise_area(day_o, pdc, sigma, p5d[-1]["c"]), "source": source}
+        if len(p5d) >= 2:
+            out["noise"]["prevState"] = day_type.noise_area(day_o, pdc, sigma, p5d[-2]["c"])["state"]
+    out["dayType"] = day_type.classify(out)
 
 
 def next_level(analysis: dict[str, Any], price: float, up: bool, min_gap: float) -> tuple[str, float] | None:

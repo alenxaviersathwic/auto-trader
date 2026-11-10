@@ -21,7 +21,7 @@ def _row(outcome="PENDING"):
         id=1, masterId=1, iterationNo=1, ref="R", underlyingCode="NIFTY", underlyingType="INDEX", spot=24000,
         strike=24300, optionType="CE", expiry="2026-11-09", contractId="NIFTY-2026-11-09-24300-CE", confidence=70, rewardRisk=2, rank=1, riskLevel="MEDIUM",
         strategy="VWAP_PULLBACK", reasons=[], risks=[], createdAt=CREATED, validUntil=CREATED + timedelta(minutes=15),
-        entry=ENTRY, stop=STOP, target=TARGET, instrumentKey="K", outcome=outcome, resolvedAt=None,
+        entry=ENTRY, stop=STOP, target=TARGET, instrumentKey="K", outcome=outcome, resolvedAt=None, timeMachine=None,
     )
 
 

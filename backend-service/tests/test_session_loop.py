@@ -176,8 +176,7 @@ def test_only_this_sessions_underlyings_and_no_candidates_waits():
 
 
 @pytest.mark.parametrize("patch,state", [
-    ({"sessionType": "SEMI_AUTO"}, "UNSUPPORTED_TYPE"),
-    ({"sessionType": "FULL_AUTO"}, "UNSUPPORTED_TYPE"),
+    ({"sessionType": "UNKNOWN_TYPE"}, "UNSUPPORTED_TYPE"),
     ({"sessionStatus": "CLOSED"}, "SESSION_CLOSED"),
     ({"tradeDate": "2020-01-01"}, "SESSION_CLOSED"),
     ({"realizedPnl": -3000}, "HALTED"),

@@ -56,6 +56,27 @@ export interface IterateResult {
   saved: number;
 }
 
+/** Time Machine odds saved with a pick (backend service/timemachine.py). */
+export interface TimeMachineOdds {
+  replays: number;
+  seed: number;
+  barsAhead: number;
+  pTarget: number;
+  pStop: number;
+  pNeither: number;
+  avgR: number;
+  avgRNeither: number;
+  rAtTarget: number;
+  entry: number;
+  stop: number;
+  target: number;
+  lean: number | null;
+  targetShare: number | null;
+  breakEven: number | null;
+  verdict: string;
+  history: { sessions: number; target: number; stop: number; neither: number; avgR: number | null };
+}
+
 export interface Opportunity {
   id: number;
   ref: string;
@@ -86,6 +107,7 @@ export interface Opportunity {
   outcome: "PENDING" | "TARGET_HIT" | "STOP_HIT" | "EXPIRED";
   isLatest: boolean;
   createdAt: string;
+  timeMachine?: TimeMachineOdds | null;
 }
 
 export interface LatestOpportunities {

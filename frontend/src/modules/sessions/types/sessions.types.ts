@@ -111,6 +111,8 @@ export interface SessionPick {
   lockedAt: string | null;
   /** The item's live premium when Trade Lock was pressed (null if no quote came back in time). */
   lockedPrice: number | null;
+  /** ActiveTrade.id once entered into a Trader loop. */
+  tradeId?: number | null;
   /** Win probability the size was scaled by, and the share of free capital this pick uses. */
   winProbPct: number;
   usagePct: number;
@@ -130,6 +132,9 @@ export interface SessionCapital {
   committedRisk: number;
   remainingLossBudget: number;
   lockedTrades: number;
+  activeTradesCount?: number;
+  maxParallelTrades?: number;
+  activeTradeIds?: number[];
 }
 
 export type SessionLoopStateName =
@@ -147,6 +152,8 @@ export interface SessionLoop {
   message: string;
   /** Open offers, best first: the rows of the session table. Each stays open until its opportunity expires. */
   picks: SessionPick[];
+  /** Auto-locked or manually locked picks awaiting entry confirmation. */
+  lockedPicks?: SessionPick[];
   capital: SessionCapital;
   scanned: { candidates: number; excluded: Record<string, number> };
 }

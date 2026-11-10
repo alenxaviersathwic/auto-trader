@@ -18,6 +18,9 @@ import { OpportunityDetailPage } from "../../modules/opportunities/pages/Opportu
 import { OpportunitiesPage } from "../../modules/opportunities/pages/OpportunitiesPage";
 import { SessionsPage } from "../../modules/sessions/pages/SessionsPage";
 import { SessionDetailPage } from "../../modules/sessions/pages/SessionDetailPage";
+import { TradesPage } from "../../modules/trades/pages/TradesPage";
+import { TradeDetailPage } from "../../modules/trades/pages/TradeDetailPage";
+import { BacktestPage } from "../../modules/backtest/pages/BacktestPage";
 
 // Root Route housing AppLayout
 const rootRoute = createRootRoute({
@@ -123,6 +126,24 @@ const sessionDetailRoute = createRoute({
   component: SessionDetailPage,
 });
 
+const tradesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trades",
+  component: TradesPage,
+});
+
+const tradeDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trades/$tradeId",
+  component: TradeDetailPage,
+});
+
+const backtestRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/backtest",
+  component: BacktestPage,
+});
+
 const legacySuggestionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/suggestion",
@@ -152,6 +173,9 @@ const routeTree = rootRoute.addChildren([
   opportunityDetailRoute,
   sessionsRoute,
   sessionDetailRoute,
+  tradesRoute,
+  tradeDetailRoute,
+  backtestRoute,
   legacySuggestionRoute,
 ]);
 

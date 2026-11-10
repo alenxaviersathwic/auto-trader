@@ -60,7 +60,9 @@ def sess(**kw) -> TradingSession:
 
 def test_eligibility():
     assert SessionLoopRunner.eligible(sess())
-    assert not SessionLoopRunner.eligible(sess(sessionType="FULL_AUTO"))
+    assert SessionLoopRunner.eligible(sess(sessionType="SEMI_AUTO"))
+    assert SessionLoopRunner.eligible(sess(sessionType="FULL_AUTO"))
+    assert not SessionLoopRunner.eligible(sess(sessionType="UNKNOWN"))
     assert not SessionLoopRunner.eligible(sess(sessionStatus="CLOSED"))
     assert not SessionLoopRunner.eligible(sess(tradeDate="2020-01-01"))
 

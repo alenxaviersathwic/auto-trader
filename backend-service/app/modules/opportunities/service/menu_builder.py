@@ -5,7 +5,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.modules.opportunities.provider.underlying_config import UnderlyingConfig
-from app.modules.opportunities.service.costs import round_trip_cost_pct
+from app.modules.opportunities.service.costs import CHEAP_PREMIUM, TICK, round_trip_cost_pct, slippage_pct
 
 MAX_SPREAD_PCT = 1.5  # scalping: the spread must not eat a 5-10% target
 MIN_STOP_PCT = 2.5  # stops tighter than this get hit by normal option noise
@@ -17,8 +17,54 @@ MIN_OI = 1000
 MIN_OI_COMMODITY = 150
 MAX_SPREAD_PCT_COMMODITY = 3.0
 _IST = ZoneInfo("Asia/Kolkata")
-# G-EXP-GAMMA: no new positions in a same-day-expiring (0DTE) series after 13:30 IST.
+# G-EXP-GAMMA: after 13:30 IST a same-day-expiring (0DTE) series is ITM-only (|delta| >= 0.6): ATM gamma can turn a
+# 50-point move into a 35-45 point premium swing. The expiry date comes from the live chain, so a holiday-shifted
+# expiry (NIFTY on Monday 9 Nov 2026 because Tuesday was a holiday) is handled without a calendar.
 EXPIRY_GAMMA_CUTOFF = dtime(13, 30)
+EXPIRY_ITM_DELTA = 0.6
+# Point-based exits (`atr5` passed to build_menu): the chart stop is clamped to 0.5-1.25 x the 5-minute ATR and the
+# target to at most 3x that stop, then both are converted to premium through delta. A fixed 2.5-3% premium stop is
+# only ~5 NIFTY points at delta 0.5 -- inside one 5-minute bar's noise -- so it coin-flipped trades out.
+STOP_ATR_MIN, STOP_ATR_MAX, TARGET_MAX_R = 0.5, 1.25, 3.0
+MAX_PREMIUM_STOP_PCT = 25.0  # sanity cap on a point-based premium stop
+# 10 Nov 2026 review (last week's real-data backtest): REVERSAL-family setups (FAILED_BREAK_RECLAIM) are the one
+# family deliberately allowed to trade ATM against the day's trend/bias -- a reclaim is lower-conviction than a
+# trend-aligned break, but it was still getting the full 1.25x ATR stop, so a wrong reclaim in ordinary chop cost
+# 10-17% of premium. Capping its point stop tighter (and, since target is a multiple of the stop, its target with
+# it) keeps the setup but caps what a wrong read costs without touching TREND/RANGE sizing.
+STOP_ATR_MAX_REVERSAL = 0.8
+
+
+# Strike mode per side (strike_mode()): which strikes a setup may buy, and how the premium exits are set.
+#   ATM      ATM or one strike ITM, |delta| >= 0.45         reclaims / range setups / anything without expansion
+#   ITM      |delta| >= 0.6                                 expiry day after 13:30 (gamma risk)
+#   OTM      |delta| 0.20-0.35, premium exits -35% / +60%   TREND-family setup on a TREND/EXPANSION day, <= 1 day
+#                                                           to expiry: convexity without lottery-level odds
+#   LOTTERY  |delta| 0.08-0.20, premium exits -50% / +100%  EXPANSION day, expiry day after 13:30: sized as a bet that
+#                                                           can go to zero (risk per lot = the whole premium)
+# Boyer & Vorkink (JF 2014): cheap far-OTM options are overpriced on average, so OTM is never the default.
+DELTA_BANDS = {"ATM": (0.45, 1.0), "ITM": (0.6, 1.0), "OTM": (0.20, 0.35), "LOTTERY": (0.08, 0.20)}
+PREMIUM_EXITS = {"OTM": (35.0, 60.0), "LOTTERY": (50.0, 100.0)}  # (stop %, target %) of premium
+OTM_MIN_STOP_PCT = 20.0
+MIN_PREMIUM = 2.0  # below Rs 2 one tick is > 2.5% of the price
+TIME_STOP_MIN = {"OTM": 10, "LOTTERY": 10, "ATM": 20, "ITM": 20}  # no progress by this age: theta's, not ours
+STALL_PROGRESS_FRAC = 0.25  # "progress" = favourable premium move reaching this fraction of the target
+# 10 Nov 2026 review: NIFTY 9 Nov, 2 of 4 FAILED_BREAK_RECLAIM picks ran the full 45-min hold with -5%/-17% net
+# while going nowhere; a stall check (any mode) cuts dead trades well before theta and the daily cap do it for you.
+
+
+def strike_mode(analysis: dict[str, Any], setup: dict[str, Any] | None, now: datetime | None = None) -> str:
+    """ATM | ITM | OTM | LOTTERY for a confirmed setup on today's day type (see the table above)."""
+    now = (now or datetime.now(_IST)).astimezone(_IST)
+    dte = analysis.get("dte")
+    late_expiry = dte == 0 and now.time() >= EXPIRY_GAMMA_CUTOFF
+    kind = (analysis.get("dayType") or {}).get("type")
+    trend_setup = bool(setup) and setup.get("family", "TREND") == "TREND"
+    if kind in ("TREND", "EXPANSION") and trend_setup and dte is not None and dte <= 1:
+        if late_expiry:
+            return "LOTTERY" if kind == "EXPANSION" else "ITM"
+        return "OTM"
+    return "ITM" if late_expiry else "ATM"
 
 
 def _liquidity_thresholds(cfg: UnderlyingConfig) -> tuple[float, int]:
@@ -74,6 +120,22 @@ def buildup_adjustment(analysis: dict[str, Any], side: str) -> int:
         return -8
     if bu in (("LONG_BUILDUP", "SHORT_COVERING") if ce else ("SHORT_BUILDUP", "LONG_UNWINDING")):
         return 4
+    return 0
+
+
+PCR_BONUS = 3  # small on purpose -- see below
+# 10 Nov 2026 research review: PCR_SHIFT was demoted from its own setup to confluence-only (Jena, Tiwari &
+# Mitra, Economies 2019: NSE volume-PCR has no predictive power on returns intraday; OI-PCR only predicts at
+# 12+ days). It can still nudge confidence on whatever OTHER setup already fired on that side, at a third of
+# SETUP_BONUS -- weak corroboration, never a trigger of its own.
+def pcr_adjustment(analysis: dict[str, Any], side: str) -> int:
+    sh = analysis.get("oiShift")
+    if not sh:
+        return 0
+    if side == "CE" and sh["pcrChg"] >= 0.08 and sh["peOiChgPct"] > sh["ceOiChgPct"] + 1.0:
+        return PCR_BONUS
+    if side == "PE" and sh["pcrChg"] <= -0.08 and sh["ceOiChgPct"] > sh["peOiChgPct"] + 1.0:
+        return PCR_BONUS
     return 0
 
 
@@ -188,6 +250,8 @@ def build_menu(
     require_setup: bool = False,
     atm_itm_only: bool = False,
     min_delta: float = 0.0,
+    atr5: float | None = None,
+    strike_modes: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Code builds executable contracts.
 
@@ -198,6 +262,10 @@ def build_menu(
 
     With a coded setup on a side, the contract's premium target/stop come from the setup's chart levels
     (next key level / invalidation) through the contract delta. Without one, the OI walls give the room.
+    atr5           when given, a setup's exits are POINT-based (STOP_ATR_* / TARGET_MAX_R above) and the
+                   max_stop / max_margin percentage caps do not apply to it.
+    strike_modes   {"CE": mode, "PE": mode} from strike_mode(): replaces atm_itm_only / min_delta for that side
+                   and, for OTM / LOTTERY, sets premium-based exits (PREMIUM_EXITS) instead of chart points.
     If `reasons` is passed, it is filled with a count of why each candidate was dropped."""
     drop = reasons if reasons is not None else {}
     setups = setups or []
@@ -212,9 +280,7 @@ def build_menu(
     menu: list[dict[str, Any]] = []
     max_spread_pct, min_oi = _liquidity_thresholds(cfg)
     for ci, chain in enumerate(market.get("chains", [])):
-        if _is_0dte_blocked(chain["expiry"]):
-            _d("expiry-day after 13:30")
-            continue
+        itm_only_0dte = _is_0dte_blocked(chain["expiry"])
         res: float | None = chain.get("resistance")
         sup: float | None = chain.get("support")
         atm_rows = sorted(chain["strikes"], key=lambda s: abs(s["strike"] - spot))[:9]
@@ -225,11 +291,19 @@ def build_menu(
             i = next(k for k, r in enumerate(by_strike) if r["strike"] == atm_strike)
             allowed["CE"] = {atm_strike} | ({by_strike[i - 1]["strike"]} if i > 0 else set())
             allowed["PE"] = {atm_strike} | ({by_strike[i + 1]["strike"]} if i + 1 < len(by_strike) else set())
-        for row in atm_rows:
+        modes = strike_modes or {}
+        rows = by_strike if any(m in PREMIUM_EXITS for m in modes.values()) else atm_rows
+        for row in rows:
             for side in sides:
                 if require_setup and not best_setup[side]:
                     continue  # no validated setup on this side: nothing to rank
-                if atm_itm_only and row["strike"] not in allowed[side]:
+                mode = modes.get(side)
+                if mode in PREMIUM_EXITS:
+                    if row not in atm_rows and not ((row["strike"] > spot) == (side == "CE")):
+                        continue  # far strikes: out-of-the-money side only
+                elif (atm_itm_only or mode == "ATM") and row["strike"] not in allowed[side]:
+                    continue
+                elif row not in atm_rows:
                     continue
                 leg = row[side]
                 ltp, bid, ask = leg["ltp"], leg["bid"], leg["ask"]
@@ -243,13 +317,30 @@ def build_menu(
                     _d("no volume today")
                     continue
                 spread = ((ask - bid) / ltp * 100) if ask and bid else 0.0
-                if spread > max_spread_pct:
+                cheap = cfg.type == "INDEX" and ltp < CHEAP_PREMIUM
+                if cfg.type == "INDEX" and ltp < MIN_PREMIUM:
+                    _d(f"premium<Rs{MIN_PREMIUM:g}")
+                    continue
+                if cheap:
+                    if ask and bid and ask - bid > TICK + 1e-6:  # cheap options: the tick is the cost, not a %
+                        _d("spread>1 tick")
+                        continue
+                elif spread > max_spread_pct:
                     _d(f"spread>{max_spread_pct}%")
                     continue
-                if min_delta and leg["delta"] and abs(leg["delta"]) < min_delta:
+                if mode:
+                    lo_d, hi_d = DELTA_BANDS[mode]
+                    d_abs = abs(leg["delta"]) if leg["delta"] else (0.5 if mode == "ATM" else 0.0)  # ATM: missing = 0.5
+                    if not (lo_d <= d_abs <= hi_d):
+                        _d(f"delta outside {mode} band {lo_d}-{hi_d}")
+                        continue
+                elif min_delta and leg["delta"] and abs(leg["delta"]) < min_delta:
                     _d(f"delta<{min_delta}")
                     continue
                 delta = abs(leg["delta"]) or 0.5
+                if itm_only_0dte and delta < EXPIRY_ITM_DELTA and mode != "LOTTERY":
+                    _d("expiry-day after 13:30 needs ITM")
+                    continue
                 setup = best_setup[side]
                 if setup:
                     up = (setup["target"] - spot) if side == "CE" else (spot - setup["target"])
@@ -260,7 +351,21 @@ def build_menu(
                             _d("price ran past setup plan")
                             continue
                 min_stop_floor = min(MIN_STOP_PCT, max_stop)
-                if setup:
+                exit_mode = "PCT"
+                if setup and mode in PREMIUM_EXITS:
+                    # out-of-the-money buy: delta understates the move (gamma), so the exits live on the premium
+                    exit_mode = "PREMIUM"
+                    max_stop_pct, target_pct = PREMIUM_EXITS[mode]
+                    chart_pct = delta * down / ltp * 100
+                    stop_pct = max_stop_pct if mode == "LOTTERY" else max(OTM_MIN_STOP_PCT, min(max_stop_pct, chart_pct))
+                elif setup and atr5 and atr5 > 0:
+                    exit_mode = "POINTS"
+                    stop_atr_max = STOP_ATR_MAX_REVERSAL if setup.get("family") == "REVERSAL" else STOP_ATR_MAX
+                    stop_pts = min(max(down, STOP_ATR_MIN * atr5), stop_atr_max * atr5)
+                    target_pts = min(up, TARGET_MAX_R * stop_pts)
+                    stop_pct = min(MAX_PREMIUM_STOP_PCT, delta * stop_pts / ltp * 100)
+                    target_pct = delta * target_pts * 0.9 / ltp * 100
+                elif setup:
                     target_pct = min(max_margin, delta * up * 0.9 / ltp * 100)
                     # The chart invalidation is usually much wider than a 2.5-5% premium stop (5% of a Rs 120
                     # NIFTY option is ~12 index points). Strategy stop-loss % caps the premium risk; the chart level is reported.
@@ -283,13 +388,19 @@ def build_menu(
                 stop = round(ltp * (1 - stop_pct / 100), 2)
                 margin = (target - ltp) / ltp * 100
                 rr = target_pct / stop_pct
-                if spread > margin / 4:
+                if not cheap and spread > margin / 4:
                     _d("spread eats target")
+                    continue
+                if not cheap and spread > stop_pct / 2:
+                    # buying at the ask already puts the trade `spread`% down at the bid: a stop this close
+                    # to it is taken out by normal quote noise (Day Trader skill: "too tight to survive the spread")
+                    _d("spread eats stop")
                     continue
                 if rr < 1.2:
                     _d("reward:risk<1.2")
                     continue
-                cost = round_trip_cost_pct(ltp, lot, cfg.exchange, margin)
+                cost = round(round_trip_cost_pct(ltp, lot, cfg.exchange, margin) + slippage_pct(ltp), 2)
+                risk_lot = ltp * lot if mode == "LOTTERY" else (ltp - stop) * lot
                 menu.append(
                     {
                         "id": f"{cfg.code}-{chain['expiry']}-{int(row['strike'])}-{side}",
@@ -313,6 +424,11 @@ def build_menu(
                         "costPct": cost,
                         "delta": round(delta, 2),
                         "rewardRisk": round(rr, 2),
+                        "exitMode": exit_mode,
+                        "strikeMode": mode or ("ATM" if atm_itm_only else None),
+                        "timeStopMin": TIME_STOP_MIN.get(mode or "ATM"),
+                        "stallProgressFrac": STALL_PROGRESS_FRAC,
+                        "riskPerLot": round(risk_lot, 0),
                         "spreadPct": round(spread, 1),
                         "oi": int(leg["oi"]),
                         "lotUnits": lot,
