@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Activity, AlertTriangle, ArrowLeft, Ban, ExternalLink, Info, Play, Radio } from "lucide-react";
-import { useLockSessionPick, useSessionDetail, useSessionPicks } from "../hooks/useSessions";
+import { Activity, AlertTriangle, ArrowLeft, Ban, ExternalLink, Info, Play, Radio, Zap } from "lucide-react";
+import { useLockSessionPick, useSessionDetail, useSessionPicks, useUpdateSession } from "../hooks/useSessions";
 import { useSessionLoop } from "../hooks/useSessionLoop";
 import { sessionsQueryKeys } from "../queryKeys/sessionsQueryKeys";
 import { SessionCapitalStrip } from "../components/SessionCapitalStrip";
@@ -58,6 +58,7 @@ export const SessionDetailPage: React.FC = () => {
     sessionId,
   });
   const lockMutation = useLockSessionPick(sessionId);
+  const updateMutation = useUpdateSession();
 
   const [lockedPick, setLockedPick] = useState<SessionPick | null>(null);
   const [lockFailure, setLockFailure] = useState<string | null>(null);
@@ -145,7 +146,41 @@ export const SessionDetailPage: React.FC = () => {
             {underlyings.map((u) => `${u} (${UNDERLYING_NAMES[u] ?? u})`).join(", ") || "No underlyings"}
           </p>
         </div>
-        <div className="page-actions">
+        <div className="page-actions" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
+          <div style={{ display: "inline-flex", gap: 4 }}>
+            {(["MANUAL", "SEMI_AUTO", "FULL_AUTO"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={`toggle-chip ${session.sessionType === mode ? "toggle-chip--active" : ""}`}
+                onClick={() =>
+                  updateMutation.mutate({ id: session.id, payload: { sessionType: mode } })
+                }
+                disabled={updateMutation.isPending}
+                title={`Switch session mode to ${mode}`}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className={`upstox-switch-btn ${session.routeThroughUpstox ? "upstox-switch-btn--live" : ""}`}
+            onClick={() =>
+              updateMutation.mutate({
+                id: session.id,
+                payload: { routeThroughUpstox: !session.routeThroughUpstox },
+              })
+            }
+            disabled={updateMutation.isPending}
+            title="Toggle direct Upstox order API execution for this session"
+          >
+            <div className={`upstox-switch-track ${session.routeThroughUpstox ? "upstox-switch-track--on" : ""}`}>
+              <div className="upstox-switch-thumb" />
+            </div>
+            <Zap size={12} />
+            <span>{session.routeThroughUpstox ? "UPSTOX LIVE" : "SIMULATED"}</span>
+          </button>
           <span className={loopBadge.cls}>
             <Radio size={12} />
             <span>{loopBadge.label}</span>
