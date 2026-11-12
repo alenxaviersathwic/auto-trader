@@ -1,0 +1,15 @@
+{
+ "requests": 249,
+ "errors": [
+  "NSE_EQ|INE237A01028 2026-05-04..2026-06-01: 400 x.com/v3/historical-candle/NSE_EQ%7CINE237A01028/minutes/1/2026-06-01/2026-05-04: {\"status\":\"error\",\"errors\":[{\"errorCode\":\"UDAPI100011\",\"message\":\"Invalid Instrument key\",\"propertyPath\":null,\"invalidValue\":null,\"error_code\":\"UDAPI1",
+  "NSE_EQ|INE237A01028 2026-06-02..2026-06-30: 400 x.com/v3/historical-candle/NSE_EQ%7CINE237A01028/minutes/1/2026-06-30/2026-06-02: {\"status\":\"error\",\"errors\":[{\"errorCode\":\"UDAPI100011\",\"message\":\"Invalid Instrument key\",\"propertyPath\":null,\"invalidValue\":null,\"error_code\":\"UDAPI1",
+  "NSE_EQ|INE237A01028 2026-07-01..2026-07-29: 400 x.com/v3/historical-candle/NSE_EQ%7CINE237A01028/minutes/1/2026-07-29/2026-07-01: {\"status\":\"error\",\"errors\":[{\"errorCode\":\"UDAPI100011\",\"message\":\"Invalid Instrument key\",\"propertyPath\":null,\"invalidValue\":null,\"error_code\":\"UDAPI1",
+  "NSE_EQ|INE237A01028 2026-07-30..2026-08-27: 400 x.com/v3/historical-candle/NSE_EQ%7CINE237A01028/minutes/1/2026-08-27/2026-07-30: {\"status\":\"error\",\"errors\":[{\"errorCode\":\"UDAPI100011\",\"message\":\"Invalid Instrument key\",\"propertyPath\":null,\"invalidValue\":null,\"error_code\":\"UDAPI1",
+  "NSE_EQ|INE237A01028 2026-08-28..2026-09-25: 400 x.com/v3/historical-candle/NSE_EQ%7CINE237A01028/minutes/1/2026-09-25/2026-08-28: {\"status\":\"error\",\"errors\":[{\"errorCode\":\"UDAPI100011\",\"message\":\"Invalid Instrument key\",\"propertyPath\":null,\"invalidValue\":null,\"error_code\":\"UDAPI1",
+  "NSE_EQ|INE237A01028 2026-09-26..2026-10-24: 400 x.com/v3/historical-candle/NSE_EQ%7CINE237A01028/minutes/1/2026-10-24/2026-09-26: {\"status\":\"error\",\"errors\":[{\"errorCode\":\"UDAPI100011\",\"message\":\"Invalid Instrument key\",\"propertyPath\":null,\"invalidValue\":null,\"error_code\":\"UDAPI1",
+  "NSE_EQ|INE237A01028 2026-10-25..2026-11-12: 400 x.com/v3/historical-candle/NSE_EQ%7CINE237A01028/minutes/1/2026-11-12/2026-10-25: {\"status\":\"error\",\"errors\":[{\"errorCode\":\"UDAPI100011\",\"message\":\"Invalid Instrument key\",\"propertyPath\":null,\"invalidValue\":null,\"error_code\":\"UDAPI1"
+ ],
+ "files": 16,
+ "seconds": 67,
+ "finishedAt": "2026-11-12T06:44:30.905163"
+}

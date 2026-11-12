@@ -1,0 +1,592 @@
+{
+ "strategies": [
+  {
+   "code": "INST_VRP_EXPIRY_IRON_FLY",
+   "name": "VRP-gated expiry-day iron fly",
+   "description": "Defined-risk short premium on the underlying's own expiry day, only when implied vol exceeds forecast realised vol (volatility risk premium). Code: opportunities/service/iron_fly.py + iron_fly_paper.py (paper engine on live quotes).",
+   "category": "PREMIUM_SELLING",
+   "structure": "CUSTOM_MULTI_LEG",
+   "bias": "NEUTRAL",
+   "optionSide": "BOTH",
+   "markets": [
+    "INDEX_OPTIONS"
+   ],
+   "underlyingTypes": [
+    "INDEX"
+   ],
+   "exchange": "NSE,BSE",
+   "tradingModes": [
+    "PAPER"
+   ],
+   "executionModes": [
+    "AUTOMATED"
+   ],
+   "timeframe": "5m",
+   "definitionFormat": "SUMMARY",
+   "definition": {
+    "format": "SUMMARY",
+    "summary": {
+     "headline": "Sell ATM CE+PE, buy wings at ATM +- straddle price (rounded out) when IV/forecast RV >= 1.10 on expiry day.",
+     "entryRules": "Expiry day of the series (NIFTY Tue, SENSEX Thu), entry 09:45-10:45 IST. Gates: ATM IV / Yang-Zhang 20-day RV >= 1.10; India VIX 20th-85th percentile of 1 year and not rising; |gap| < 0.5%; price inside the noise area; no TREND/EXPANSION bias; no RBI/Budget/US CPI-FOMC event. Sell at bids, buy wings at asks; credit >= 25% of wing; charges <= 15% of credit.",
+     "exitRules": "Take profit at 35% of credit; stop at 50% of max loss or a 5-min spot close beyond a breakeven (ATM +- credit); time exit 14:45. Never held to expiry, no adjustments.",
+     "filters": "Positive-gamma or neutral regime only when GAMMA_ROUTER_ENABLED. Centred one strike toward FII bias when POSITIONING_OVERLAY_ENABLED."
+    }
+   },
+   "lifecycleStatus": "DRAFT",
+   "health": "HEALTHY",
+   "validationStatus": "UNTESTED",
+   "enabled": true,
+   "riskProfile": {
+    "level": "DEFINED_RISK_MEDIUM"
+   },
+   "references": [
+    {
+     "title": "SEBI FY25-FY26 F&O study (Aug 2026): prop/FPI algo entities earn 99% of profits; ~59% of index-option turnover is 0DTE",
+     "url": "https://www.sebi.gov.in/"
+    },
+    {
+     "title": "Agarwal (SSRN 2026): Nifty VRP positive on 74.9% of days, median net edge +1.131 vol pts, 1.975x left-tail asymmetry",
+     "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6530119"
+    },
+    {
+     "title": "Quantsapp NIFTY straddle-width iron fly, Oct 2025-Sep 2026 (vendor, before costs)",
+     "url": "https://www.quantsapp.com/backtesting/strategies"
+    }
+   ],
+   "riskNotes": [
+    "PAPER ONLY until edge_stats.promotion_verdict(): >= 200 out-of-sample trades and deflated Sharpe > 0.95 on real prices.",
+    "8 orders per round trip + 0.15% STT on sold premium: cost-sensitive; extra 2% ELM on short legs on expiry day.",
+    "Fat left tail: one bad session can erase weeks -- defined-risk wings are mandatory."
+   ],
+   "howItWorks": [
+    {
+     "title": "Gate",
+     "description": "VRP, VIX percentile, gap, noise area, event calendar"
+    },
+    {
+     "title": "Structure",
+     "description": "Straddle-width iron fly at bids/asks"
+    },
+    {
+     "title": "Exit",
+     "description": "35% credit / 50% max loss / breakeven close / 14:45"
+    }
+   ],
+   "tags": [
+    "expiry",
+    "vrp",
+    "defined-risk",
+    "premium-selling",
+    "institutional"
+   ],
+   "attributes": {
+    "evidenceGrade": "B",
+    "killCriteria": "after 30 live trades PF < 1.0 net, or single-day loss > 2% of equity",
+    "code": "opportunities/service/iron_fly.py"
+   },
+   "provenance": {
+    "source": "RESEARCH",
+    "taskId": "wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798",
+    "date": "2026-11-11"
+   }
+  },
+  {
+   "code": "INST_NOISE_MOMENTUM",
+   "name": "Noise-area intraday momentum (gamma-aware)",
+   "description": "Trades WITH dealer/leveraged hedging flows: buy in the direction of a 5-min close outside the time-of-day noise area. RANGE_BREAKOUT / VWAP_PULLBACK / GAP_GO are allowed only as extra entries inside an active breakout on the same side.",
+   "category": "MOMENTUM",
+   "structure": "SINGLE_LONG",
+   "bias": "DYNAMIC",
+   "optionSide": "BOTH",
+   "markets": [
+    "INDEX_OPTIONS"
+   ],
+   "underlyingTypes": [
+    "INDEX"
+   ],
+   "exchange": "NSE,BSE",
+   "tradingModes": [
+    "PAPER"
+   ],
+   "executionModes": [
+    "AUTOMATED"
+   ],
+   "timeframe": "5m",
+   "definitionFormat": "SUMMARY",
+   "definition": {
+    "format": "SUMMARY",
+    "summary": {
+     "headline": "5-min close outside max/min(open, prev close) x (1 +- 14-day average move from open at that time) -> buy ITM option (delta 0.6-0.8) of the next series.",
+     "entryRules": "NOISE_BREAKOUT setup (setups.py, SETUP_POLICY CORE); 15-min trend and 1-min chart must agree; no entries before 09:45. Strike mode MOMO: delta 0.60-0.80, never the expiring series.",
+     "exitRules": "Point stop 0.5-1.25 x ATR5 through delta; target 4R; live trader_brain runner mode trails past target; backtest: breakeven after +1R, trail best move by 1 x ATR5 from +1.5R; flat 10 min before close.",
+     "filters": "Unfilled >= 0.5% gap rule; correlated-index cap; fixed-fractional 0.5% risk. With GAMMA_ROUTER_ENABLED: PE (short) side blocked in positive-gamma regime."
+    }
+   },
+   "lifecycleStatus": "DRAFT",
+   "health": "HEALTHY",
+   "validationStatus": "UNTESTED",
+   "enabled": true,
+   "riskProfile": {
+    "level": "DIRECTIONAL_DEFINED_STOP"
+   },
+   "references": [
+    {
+     "title": "Baltussen, Da, Lammers & Martens, Hedging demand and market intraday momentum, JFE 2021",
+     "url": "https://econpapers.repec.org/RePEc:eee:jfinec:v:142:y:2021:i:1:p:377-403"
+    },
+    {
+     "title": "Zarattini, Aziz & Barbon, Beat the Market (noise area), 2024",
+     "url": "https://concretumgroup.com/beat-the-market-an-effective-intraday-momentum-strategy-for-sp500-etf-spy/"
+    }
+   ],
+   "riskNotes": [
+    "Short side evidence is weaker (Nasdaq out-of-sample Sharpe -0.21): treat PE signals with extra caution.",
+    "Hit rate ~43%: edge comes from large winners, so never cap targets at 5-10%."
+   ],
+   "howItWorks": [
+    {
+     "title": "Entry",
+     "description": "5-min close outside the noise area, trend agrees"
+    },
+    {
+     "title": "Instrument",
+     "description": "ITM next-series option, delta 0.6-0.8"
+    },
+    {
+     "title": "Exit",
+     "description": "4R target / trailing stop / flat before close"
+    }
+   ],
+   "tags": [
+    "momentum",
+    "noise-area",
+    "gamma",
+    "institutional"
+   ],
+   "attributes": {
+    "evidenceGrade": "A/B",
+    "killCriteria": "rolling 60-trade PF < 1.05 net or rolling 6-month Sharpe < 0",
+    "setups": [
+     "NOISE_BREAKOUT",
+     "RANGE_BREAKOUT",
+     "VWAP_PULLBACK",
+     "GAP_GO"
+    ]
+   },
+   "provenance": {
+    "source": "RESEARCH",
+    "taskId": "wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798",
+    "date": "2026-11-11"
+   }
+  },
+  {
+   "code": "INST_LATE_DAY_MOMENTUM",
+   "name": "Late-day momentum (first half-hour predicts last)",
+   "description": "When the first half-hour return and the day's return agree and price is outside the noise area, buy continuation into the close.",
+   "category": "MOMENTUM",
+   "structure": "SINGLE_LONG",
+   "bias": "DYNAMIC",
+   "optionSide": "BOTH",
+   "markets": [
+    "INDEX_OPTIONS"
+   ],
+   "underlyingTypes": [
+    "INDEX"
+   ],
+   "exchange": "NSE,BSE",
+   "tradingModes": [
+    "PAPER"
+   ],
+   "executionModes": [
+    "AUTOMATED"
+   ],
+   "timeframe": "5m",
+   "definitionFormat": "SUMMARY",
+   "definition": {
+    "format": "SUMMARY",
+    "summary": {
+     "headline": "14:30-15:05 IST: day and first-half-hour returns agree, price outside the noise area -> ITM next-series option in that direction.",
+     "entryRules": "LATE_DAY_MOMENTUM setup (SETUP_POLICY CORE), strike mode MOMO (delta 0.6-0.8, next series).",
+     "exitRules": "Same as INST_NOISE_MOMENTUM; hard flat 10 minutes before the close.",
+     "filters": "Whitelisted against the 14:45 no-new-entries rule; event-day nights excluded."
+    }
+   },
+   "lifecycleStatus": "DRAFT",
+   "health": "HEALTHY",
+   "validationStatus": "UNTESTED",
+   "enabled": true,
+   "riskProfile": {
+    "level": "DIRECTIONAL_DEFINED_STOP"
+   },
+   "references": [
+    {
+     "title": "Gao, Han, Li & Zhou, Market intraday momentum, JFE 2018",
+     "url": "https://www.researchgate.net/publication/325364670_Market_Intraday_Momentum"
+    }
+   ],
+   "riskNotes": [
+    "Must use the next series, not the expiring one."
+   ],
+   "howItWorks": [
+    {
+     "title": "Entry",
+     "description": "14:30-15:05 agreement of first-half-hour and day returns"
+    },
+    {
+     "title": "Exit",
+     "description": "Trailing / flat before close"
+    }
+   ],
+   "tags": [
+    "momentum",
+    "late-day",
+    "institutional"
+   ],
+   "attributes": {
+    "evidenceGrade": "A",
+    "setups": [
+     "LATE_DAY_MOMENTUM"
+    ]
+   },
+   "provenance": {
+    "source": "RESEARCH",
+    "taskId": "wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798",
+    "date": "2026-11-11"
+   }
+  },
+  {
+   "code": "INST_GAMMA_REGIME_ROUTER",
+   "name": "Dealer-gamma regime router (overlay)",
+   "description": "Net GEX proxy from the live chain (gamma x OI x S^2 x 1%, dealers assumed opposite of the NSE client option book). Positive tercile: short premium allowed, momentum shorts blocked. Negative tercile: momentum only, no short premium. Code: opportunities/service/gamma_regime.py.",
+   "category": "OI_BASED",
+   "structure": "MIXED",
+   "bias": "NEUTRAL",
+   "optionSide": "BOTH",
+   "markets": [
+    "INDEX_OPTIONS"
+   ],
+   "underlyingTypes": [
+    "INDEX"
+   ],
+   "exchange": "NSE,BSE",
+   "tradingModes": [
+    "PAPER"
+   ],
+   "executionModes": [
+    "AUTOMATED"
+   ],
+   "timeframe": "5m",
+   "definitionFormat": "SUMMARY",
+   "definition": {
+    "format": "SUMMARY",
+    "summary": {
+     "headline": "Overlay, not an entry: routes INST_VRP_EXPIRY_IRON_FLY and INST_NOISE_MOMENTUM by dealer-gamma tercile.",
+     "entryRules": "Computed every iteration and logged in diag.gamma; changes trading only when GAMMA_ROUTER_ENABLED=true.",
+     "exitRules": "n/a (overlay)",
+     "filters": "Enable only after scripts/validate_gamma_regime.py shows NEG-tercile continuation > POS with t > 2 over >= 12 months of snapshots."
+    }
+   },
+   "lifecycleStatus": "DRAFT",
+   "health": "HEALTHY",
+   "validationStatus": "UNTESTED",
+   "enabled": true,
+   "riskProfile": {
+    "level": "OVERLAY"
+   },
+   "references": [
+    {
+     "title": "Cboe, Much Ado About 0DTEs (net MM 0DTE gamma 0.04-0.17% of S&P futures liquidity)",
+     "url": "https://www.cboe.com/"
+    }
+   ],
+   "riskNotes": [
+    "India has no public dealer book: the sign convention is a heuristic until validated.",
+    "US effect is small: expect a tilt, not pins."
+   ],
+   "howItWorks": [
+    {
+     "title": "Compute",
+     "description": "GEX per strike from IV + OI"
+    },
+    {
+     "title": "Route",
+     "description": "tercile -> allow/block families"
+    }
+   ],
+   "tags": [
+    "gamma",
+    "gex",
+    "overlay",
+    "institutional"
+   ],
+   "attributes": {
+    "evidenceGrade": "A/B (US), unvalidated in India",
+    "flag": "GAMMA_ROUTER_ENABLED"
+   },
+   "provenance": {
+    "source": "RESEARCH",
+    "taskId": "wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798",
+    "date": "2026-11-11"
+   }
+  },
+  {
+   "code": "INST_FII_POSITIONING_OVERLAY",
+   "name": "FII index-futures positioning overlay",
+   "description": "NSE participant-wise OI: FII index-futures long ratio (5-day smoothed) and flips to net long tilt confidence and iron-fly centring. Never an entry on its own. Code: opportunities/service/positioning.py, job 19:30 IST.",
+   "category": "OI_BASED",
+   "structure": "MIXED",
+   "bias": "DYNAMIC",
+   "optionSide": "BOTH",
+   "markets": [
+    "INDEX_OPTIONS"
+   ],
+   "underlyingTypes": [
+    "INDEX"
+   ],
+   "exchange": "NSE,BSE",
+   "tradingModes": [
+    "PAPER"
+   ],
+   "executionModes": [
+    "AUTOMATED"
+   ],
+   "timeframe": "5m",
+   "definitionFormat": "SUMMARY",
+   "definition": {
+    "format": "SUMMARY",
+    "summary": {
+     "headline": "Bias +1 when the FII long ratio is rising above 25% or FII flips net long; -1 when falling below 15%.",
+     "entryRules": "Tilt only: +-5 confidence on trades with/against the bias; iron fly centred one strike toward it (when POSITIONING_OVERLAY_ENABLED).",
+     "exitRules": "n/a (overlay)",
+     "filters": "Remove if the tilted engine does not beat the untilted one over 100 trades."
+    }
+   },
+   "lifecycleStatus": "DRAFT",
+   "health": "HEALTHY",
+   "validationStatus": "UNTESTED",
+   "enabled": true,
+   "riskProfile": {
+    "level": "OVERLAY"
+   },
+   "references": [
+    {
+     "title": "MarketCalls: 10 years of NSE participant OI, NIFTY after FII net-long vs net-short days",
+     "url": "https://www.marketcalls.in/futures-and-options/what-do-we-actually-know-about-fii-index-futures-shorts.html"
+    }
+   ],
+   "riskNotes": [
+    "Vendor stand-alone FII signals lost money (L/S extreme -65.5k): filter only."
+   ],
+   "howItWorks": [
+    {
+     "title": "Data",
+     "description": "fao_participant_oi CSV after the close"
+    },
+    {
+     "title": "Use",
+     "description": "confidence tilt + fly centring"
+    }
+   ],
+   "tags": [
+    "fii",
+    "positioning",
+    "overlay",
+    "institutional"
+   ],
+   "attributes": {
+    "evidenceGrade": "C",
+    "flag": "POSITIONING_OVERLAY_ENABLED"
+   },
+   "provenance": {
+    "source": "RESEARCH",
+    "taskId": "wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798",
+    "date": "2026-11-11"
+   }
+  },
+  {
+   "code": "INST_EVENT_VOL_GUARD",
+   "name": "Scheduled-event volatility guard",
+   "description": "No short premium on RBI MPC / Union Budget days or the India session after a US CPI / FOMC night. Code: opportunities/service/event_calendar.py (dates verified 11 Nov 2026; refresh quarterly).",
+   "category": "EVENT",
+   "structure": "MIXED",
+   "bias": "NEUTRAL",
+   "optionSide": "BOTH",
+   "markets": [
+    "INDEX_OPTIONS"
+   ],
+   "underlyingTypes": [
+    "INDEX"
+   ],
+   "exchange": "NSE,BSE",
+   "tradingModes": [
+    "PAPER"
+   ],
+   "executionModes": [
+    "AUTOMATED"
+   ],
+   "timeframe": "5m",
+   "definitionFormat": "SUMMARY",
+   "definition": {
+    "format": "SUMMARY",
+    "summary": {
+     "headline": "Blocks short premium on scheduled macro event sessions.",
+     "entryRules": "event_tags(date) feeds day_context tags; iron fly eligibility rejects any EVENT_* tag.",
+     "exitRules": "n/a (guard)",
+     "filters": "Optional long-straddle event module NOT implemented (vendor evidence only, tiny samples)."
+    }
+   },
+   "lifecycleStatus": "ACTIVE",
+   "health": "HEALTHY",
+   "validationStatus": "UNTESTED",
+   "enabled": true,
+   "riskProfile": {
+    "level": "GUARD"
+   },
+   "references": [
+    {
+     "title": "RBI MPC FY27 schedule",
+     "url": "https://upstox.com/news/market-news/latest-updates/rbi-releases-mpc-calendar-for-fy-27-check-next-monetary-policy-date-and-full-schedule/article-191134/"
+    }
+   ],
+   "riskNotes": [
+    "An event missing from the calendar is not blocked: re-verify dates every quarter."
+   ],
+   "howItWorks": [
+    {
+     "title": "Block",
+     "description": "EVENT_* tags stop short premium"
+    }
+   ],
+   "tags": [
+    "event",
+    "guard",
+    "institutional"
+   ],
+   "attributes": {
+    "evidenceGrade": "C"
+   },
+   "provenance": {
+    "source": "RESEARCH",
+    "taskId": "wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798",
+    "date": "2026-11-11"
+   }
+  }
+ ],
+ "rules": [
+  {
+   "code": "G-SETUP-POLICY",
+   "name": "Only institutional momentum setups are option buys",
+   "ruleKind": "GUARDRAIL",
+   "ruleType": "OTHER",
+   "action": "BLOCK",
+   "priority": "HIGH",
+   "appliesTo": {
+    "markets": [
+     "INDEX_OPTIONS"
+    ]
+   },
+   "conditionText": "setups.SETUP_POLICY: CORE (NOISE_BREAKOUT, LATE_DAY_MOMENTUM) trade; MERGED (RANGE_BREAKOUT, VWAP_PULLBACK, GAP_GO) only inside an active same-side noise breakout; SHORT_PREMIUM_ONLY (FAILED_BREAK_RECLAIM, VWAP_BAND_REVERT, OI_WALL_REJECT) never bought; everything else DROPPED.",
+   "content": {
+    "policy": "setups.SETUP_POLICY"
+   },
+   "evidence": {
+    "grade": "B/C",
+    "note": "Vendor NIFTY backtests of the retail versions mostly negative before costs; own replays."
+   },
+   "executable": true,
+   "provenance": {
+    "source": "RESEARCH",
+    "taskId": "wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798",
+    "date": "2026-11-11"
+   },
+   "enabled": true
+  },
+  {
+   "code": "G-VRP-GATE",
+   "name": "Sell premium only with a positive volatility risk premium",
+   "ruleKind": "GUARDRAIL",
+   "ruleType": "OTHER",
+   "action": "BLOCK",
+   "priority": "HIGH",
+   "appliesTo": {
+    "markets": [
+     "INDEX_OPTIONS"
+    ]
+   },
+   "conditionText": "Short premium requires ATM IV / Yang-Zhang 20-day realised vol >= 1.10 and India VIX between its 20th and 85th 1-year percentile.",
+   "content": {
+    "minVrpRatio": 1.1,
+    "vixPctile": [
+     20,
+     85
+    ]
+   },
+   "evidence": {
+    "grade": "B",
+    "note": "Agarwal SSRN 2026 Nifty VRP study."
+   },
+   "executable": true,
+   "provenance": {
+    "source": "RESEARCH",
+    "taskId": "wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798",
+    "date": "2026-11-11"
+   },
+   "enabled": true
+  },
+  {
+   "code": "G-EVENT-CAL",
+   "name": "No short premium on scheduled macro event sessions",
+   "ruleKind": "GUARDRAIL",
+   "ruleType": "OTHER",
+   "action": "BLOCK",
+   "priority": "HIGH",
+   "appliesTo": {
+    "markets": [
+     "INDEX_OPTIONS"
+    ]
+   },
+   "conditionText": "RBI MPC announcement, Union Budget, or the India session after a US CPI / FOMC night.",
+   "content": {
+    "calendar": "opportunities/service/event_calendar.py"
+   },
+   "evidence": {
+    "grade": "C"
+   },
+   "executable": true,
+   "provenance": {
+    "source": "RESEARCH",
+    "taskId": "wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798",
+    "date": "2026-11-11"
+   },
+   "enabled": true
+  },
+  {
+   "code": "G-GAMMA-ROUTER",
+   "name": "Dealer-gamma regime routes short premium vs momentum",
+   "ruleKind": "GUARDRAIL",
+   "ruleType": "OTHER",
+   "action": "BLOCK",
+   "priority": "MEDIUM",
+   "appliesTo": {
+    "markets": [
+     "INDEX_OPTIONS"
+    ]
+   },
+   "conditionText": "When GAMMA_ROUTER_ENABLED: positive-gamma tercile blocks momentum shorts; negative-gamma tercile blocks short premium.",
+   "content": {
+    "flag": "GAMMA_ROUTER_ENABLED",
+    "validation": "scripts/validate_gamma_regime.py t > 2"
+   },
+   "evidence": {
+    "grade": "A/B (US)"
+   },
+   "executable": true,
+   "provenance": {
+    "source": "RESEARCH",
+    "taskId": "wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798",
+    "date": "2026-11-11"
+   },
+   "enabled": false
+  }
+ ]
+}

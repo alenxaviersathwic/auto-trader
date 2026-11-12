@@ -7,7 +7,10 @@ from zoneinfo import ZoneInfo
 from app.modules.opportunities.provider.underlying_config import UnderlyingConfig
 from app.modules.opportunities.service.costs import CHEAP_PREMIUM, TICK, round_trip_cost_pct, slippage_pct
 
-MAX_SPREAD_PCT = 1.5  # scalping: the spread must not eat a 5-10% target
+# 11 Nov 2026 research review (gap 5): at ~1% round-trip charges a 1.5% spread made a +5% target need a ~65% win
+# rate. Index ATM/ITM quotes are normally 0.1-0.5% wide, so anything above 0.75% is a liquidity problem, not a price.
+MAX_SPREAD_PCT = 0.75
+MIN_TOUCH_LOTS = 3  # at least this many lots on the ask (entry side) when the feed reports quantities
 MIN_STOP_PCT = 2.5  # stops tighter than this get hit by normal option noise
 VOLUME_BONUS = 6
 SETUP_BONUS = 4  # confidence points per setup strength step above 2
@@ -43,11 +46,22 @@ STOP_ATR_MAX_REVERSAL = 0.8
 #   LOTTERY  |delta| 0.08-0.20, premium exits -50% / +100%  EXPANSION day, expiry day after 13:30: sized as a bet that
 #                                                           can go to zero (risk per lot = the whole premium)
 # Boyer & Vorkink (JF 2014): cheap far-OTM options are overpriced on average, so OTM is never the default.
-DELTA_BANDS = {"ATM": (0.45, 1.0), "ITM": (0.6, 1.0), "OTM": (0.20, 0.35), "LOTTERY": (0.08, 0.20)}
+#   MOMO     |delta| 0.60-0.80, NEXT expiry (never 0DTE)   the institutional momentum engine (setups.SETUP_POLICY CORE /
+#                                                           MERGED): trade WITH hedging flows, convex payoff -- wider
+#                                                           R target, longer time stop; the live trader_brain runner
+#                                                           mode keeps trailing past the target
+DELTA_BANDS = {"ATM": (0.45, 1.0), "ITM": (0.6, 1.0), "OTM": (0.20, 0.35), "LOTTERY": (0.08, 0.20),
+               "MOMO": (0.60, 0.80)}
+# 12 Nov 2026 month replay on REAL Upstox option prices (12 Oct-11 Nov, 3 indices): ~Rs 230 of charges + spread per
+# trade means the momentum engine must let winners run. No fixed target, breakeven after +1.5R, then trail 2R under
+# the best price: +Rs 71.9k vs +Rs 58.4k with a 4R target, fewer trades (68 vs 97), better in BOTH halves of the month.
+# The live trader (trader_brain momentum_trail) and the replays (scripts/backtest_day.py) both read this.
+MOMO_EXIT = {"beR": 1.5, "fromR": 2.0, "trailR": 2.0}
+TARGET_MAX_R_MOMO = 4.0  # Zarattini & Aziz: ORB-style momentum earns from rare large winners, not frequent small ones
 PREMIUM_EXITS = {"OTM": (35.0, 60.0), "LOTTERY": (50.0, 100.0)}  # (stop %, target %) of premium
 OTM_MIN_STOP_PCT = 20.0
 MIN_PREMIUM = 2.0  # below Rs 2 one tick is > 2.5% of the price
-TIME_STOP_MIN = {"OTM": 10, "LOTTERY": 10, "ATM": 20, "ITM": 20}  # no progress by this age: theta's, not ours
+TIME_STOP_MIN = {"OTM": 10, "LOTTERY": 10, "ATM": 20, "ITM": 20, "MOMO": 45}  # no progress by this age: theta's, not ours
 STALL_PROGRESS_FRAC = 0.25  # "progress" = favourable premium move reaching this fraction of the target
 # 10 Nov 2026 review: NIFTY 9 Nov, 2 of 4 FAILED_BREAK_RECLAIM picks ran the full 45-min hold with -5%/-17% net
 # while going nowhere; a stall check (any mode) cuts dead trades well before theta and the daily cap do it for you.
@@ -60,11 +74,19 @@ def strike_mode(analysis: dict[str, Any], setup: dict[str, Any] | None, now: dat
     late_expiry = dte == 0 and now.time() >= EXPIRY_GAMMA_CUTOFF
     kind = (analysis.get("dayType") or {}).get("type")
     trend_setup = bool(setup) and setup.get("family", "TREND") == "TREND"
-    if kind in ("TREND", "EXPANSION") and trend_setup and dte is not None and dte <= 1:
-        if late_expiry:
-            return "LOTTERY" if kind == "EXPANSION" else "ITM"
-        return "OTM"
-    return "ITM" if late_expiry else "ATM"
+    # 11 Nov 2026 research review (gap 1/6): cheap OTM / LOTTERY buys are the documented retail-loss profile
+    # (Agarwal et al. 2026 on NSE accounts: cost pressure pushed traders into cheaper OTM, short-dated options and
+    # losses rose; Boyer & Vorkink 2014). Trend-day buying is ATM / slightly ITM only; OTM / LOTTERY stay defined in
+    # DELTA_BANDS for research replays but are never chosen live. `trend_setup` and `kind` kept for the ITM rule.
+    from app.modules.opportunities.service.setups import SETUP_POLICY  # lazy: setups imports market_analysis
+
+    if setup and SETUP_POLICY.get(setup.get("name", "")) in ("CORE", "MERGED"):
+        return "MOMO"
+    if late_expiry:
+        return "ITM"
+    if kind == "EXPANSION" and trend_setup and dte is not None and dte <= 1:
+        return "ITM"  # 0-1 DTE expansion: more delta per rupee of theta than ATM
+    return "ATM"
 
 
 def _liquidity_thresholds(cfg: UnderlyingConfig) -> tuple[float, int]:
@@ -279,8 +301,10 @@ def build_menu(
     best_setup = {side: next((s for s in setups if s["side"] == side and not s.get("conflict")), None) for side in sides}
     menu: list[dict[str, Any]] = []
     max_spread_pct, min_oi = _liquidity_thresholds(cfg)
+    today_ist = datetime.now(_IST).strftime("%Y-%m-%d")
     for ci, chain in enumerate(market.get("chains", [])):
         itm_only_0dte = _is_0dte_blocked(chain["expiry"])
+        momo_0dte = chain["expiry"] == today_ist  # MOMO never buys the expiring series (theta + gamma)
         res: float | None = chain.get("resistance")
         sup: float | None = chain.get("support")
         atm_rows = sorted(chain["strikes"], key=lambda s: abs(s["strike"] - spot))[:9]
@@ -298,11 +322,16 @@ def build_menu(
                 if require_setup and not best_setup[side]:
                     continue  # no validated setup on this side: nothing to rank
                 mode = modes.get(side)
+                if mode == "MOMO" and momo_0dte:
+                    _d("MOMO: expiring series skipped")
+                    continue
                 if mode in PREMIUM_EXITS:
                     if row not in atm_rows and not ((row["strike"] > spot) == (side == "CE")):
                         continue  # far strikes: out-of-the-money side only
                 elif (atm_itm_only or mode == "ATM") and row["strike"] not in allowed[side]:
                     continue
+                elif mode == "MOMO" and not ((row["strike"] <= spot) == (side == "CE")) and row["strike"] != atm_strike:
+                    continue  # MOMO: in-the-money side (or ATM) only; the delta band does the rest
                 elif row not in atm_rows:
                     continue
                 leg = row[side]
@@ -316,7 +345,15 @@ def build_menu(
                 if leg["volume"] <= 0:
                     _d("no volume today")
                     continue
-                spread = ((ask - bid) / ltp * 100) if ask and bid else 0.0
+                if not (bid > 0 and ask > 0 and ask >= bid):
+                    # a missing side used to read as a 0% spread and PASS -- no two-sided quote = no trade
+                    _d("no two-sided quote")
+                    continue
+                spread = (ask - bid) / ltp * 100
+                ask_qty = leg.get("askQty") or 0
+                if ask_qty and ask_qty < MIN_TOUCH_LOTS * lot:
+                    _d(f"ask depth<{MIN_TOUCH_LOTS} lots")
+                    continue
                 cheap = cfg.type == "INDEX" and ltp < CHEAP_PREMIUM
                 if cfg.type == "INDEX" and ltp < MIN_PREMIUM:
                     _d(f"premium<Rs{MIN_PREMIUM:g}")
@@ -362,7 +399,8 @@ def build_menu(
                     exit_mode = "POINTS"
                     stop_atr_max = STOP_ATR_MAX_REVERSAL if setup.get("family") == "REVERSAL" else STOP_ATR_MAX
                     stop_pts = min(max(down, STOP_ATR_MIN * atr5), stop_atr_max * atr5)
-                    target_pts = min(up, TARGET_MAX_R * stop_pts)
+                    target_pts = (TARGET_MAX_R_MOMO * stop_pts if mode == "MOMO"  # momentum: no "next level" cap
+                                  else min(up, TARGET_MAX_R * stop_pts))
                     stop_pct = min(MAX_PREMIUM_STOP_PCT, delta * stop_pts / ltp * 100)
                     target_pct = delta * target_pts * 0.9 / ltp * 100
                 elif setup:
@@ -417,6 +455,7 @@ def build_menu(
                         "expiry": chain["expiry"],
                         "expiryRank": "CURRENT" if ci == 0 else "NEXT",
                         "entry": round(ltp, 2),
+                        "limitPrice": round(round((bid + ask) / 2 / TICK) * TICK, 2),  # place at mid, chase <= 2 ticks
                         "stop": stop,
                         "target": target,
                         "marginPct": round(margin, 1),

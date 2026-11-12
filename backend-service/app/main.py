@@ -129,6 +129,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Session picks archive setup failed: {e}")
 
+    # 3c. Real option price history for backtests (research gap 2): daily after the close + weekly expired backfill
+    try:
+        from app.modules.backtest.job import register_option_history_jobs
+
+        register_option_history_jobs()
+    except Exception as e:
+        logger.error(f"Option history job setup failed: {e}")
+
+    # 3d. Expiry-day iron fly, PAPER only (research gap 6A) -- builds a live-quote track record, never sends orders
+    try:
+        from app.modules.opportunities.job import register_iron_fly_paper_job, register_positioning_job
+
+        register_iron_fly_paper_job()
+        register_positioning_job()  # NSE participant-wise OI -> positioning overlay + gamma sign convention
+    except Exception as e:
+        logger.error(f"Iron fly paper job setup failed: {e}")
+
     # 4. Start scheduler
     start_scheduler()
     logger.info(f"{BRIGHT_YELLOW}APScheduler started with timezone {settings.SCHEDULER_TIMEZONE}.{RESET}")
@@ -240,6 +257,7 @@ def create_application() -> FastAPI:
     from app.modules.sessions.controller import session_pick_router, session_router
     from app.modules.trades.controller import trade_router
     from app.modules.backtest.controller import backtest_router
+    from app.modules.system.controller import system_router
 
     app.include_router(user_router, prefix=settings.API_V1_PREFIX)
     app.include_router(oauth_router, prefix=settings.API_V1_PREFIX)
@@ -253,6 +271,7 @@ def create_application() -> FastAPI:
     app.include_router(session_pick_router, prefix=settings.API_V1_PREFIX)
     app.include_router(trade_router, prefix=settings.API_V1_PREFIX)
     app.include_router(backtest_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(system_router, prefix=settings.API_V1_PREFIX)  # System Status + engine registry (was never mounted)
 
     app.include_router(strategy_mcp_router)
     app.include_router(research_mcp_router)

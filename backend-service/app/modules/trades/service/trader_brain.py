@@ -148,6 +148,7 @@ def evaluate_tick(
     candles_1m: list[dict[str, Any]] | None = None,
     now: datetime | None = None,
     close_at: datetime | None = None,
+    momentum_trail: dict[str, float] | None = None,
 ) -> BrainDecision:
     """
     Evaluates the live option price (`ltp`) and 1-minute option premium candles (`candles_1m`)
@@ -208,6 +209,33 @@ def evaluate_tick(
     new_stop = current_stop
     new_target = current_target
     reasons: list[str] = []
+
+    # 2b. Momentum engine (setups.SETUP_POLICY CORE / MERGED): NO target exit -- the edge is the rare big winner.
+    # Breakeven (+~1% for charges) once the peak is beR x R up, then trail trailR x R under the peak from fromR x R.
+    # R = entry - initial stop (premium). Validated on the 12 Nov 2026 real-price month replay (menu_builder.MOMO_EXIT).
+    if momentum_trail:
+        r = max(TICK, entry_at - initial_stop)
+        gain = peak - entry_at
+        if gain >= momentum_trail["beR"] * r:
+            be = round_tick(entry_at * 1.01)
+            if be > new_stop and be < ltp:
+                new_stop = be
+                reasons.append(f"+{momentum_trail['beR']:g}R reached (peak ₹{peak:.2f}) → SL to breakeven ₹{be:.2f}")
+        if gain >= momentum_trail["fromR"] * r:
+            tr = round_tick(peak - momentum_trail["trailR"] * r)
+            if tr > new_stop and tr < ltp:
+                new_stop = tr
+                reasons.append(f"trailing {momentum_trail['trailR']:g}R under peak ₹{peak:.2f} → SL ₹{new_stop:.2f}")
+        new_stop = max(current_stop, new_stop)
+        far = round_tick(max(current_target, ltp + 3 * r))  # keep a visible "next" level, never an exit
+        return BrainDecision(
+            action="TRAIL_BOTH" if new_stop > current_stop + 1e-4 and far > current_target + 1e-4
+            else "TRAIL_SL" if new_stop > current_stop + 1e-4 else "TRAIL_TARGET" if far > current_target + 1e-4
+            else "HOLD",
+            newStop=new_stop, newTarget=far, exitReason=None, exitPrice=None,
+            reason="; ".join(reasons) if reasons else "Momentum runner: holding with R-trail (no fixed target)",
+            telemetry={**telemetry, "momentumTrail": True},
+        )
 
     # 3. Target Reached or Exceeded (`ltp >= current_target`)
     if ltp >= current_target:

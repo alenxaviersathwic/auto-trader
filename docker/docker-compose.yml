@@ -45,6 +45,8 @@ services:
       - "8000:8000"
     volumes:
       - ../logs:/app/logs
+      # real option price history (option_history_job) must survive container rebuilds
+      - ../backend-service/backtest_data:/app/backtest_data
 
   frontend:
     build:

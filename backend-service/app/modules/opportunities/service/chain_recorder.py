@@ -7,14 +7,18 @@ from app.core.db.session import async_session_factory
 from app.core.logging.logger import logger
 from app.modules.opportunities.entity.opportunity_entity import OptionChainSnapshot
 
-SNAPSHOT_EVERY_S = 55.0
+# 11 Nov 2026 research review (gap 2): this table becomes the proprietary fill / spread dataset, so record densely.
+# ~15 s x 6 underlyings x 2 expiries is ~25-30 MB/day of JSONB; prune or archive monthly.
+SNAPSHOT_EVERY_S = 15.0
 _LEG = ("ltp", "oi", "volume", "bid", "ask", "delta", "iv")
+_QTY = ("bidQty", "askQty")  # appended AFTER the 15 original columns so older readers keep working
 _last: dict[str, float] = {}
 
 
 def pack(chain: dict[str, Any]) -> list[list[float]]:
     """Chain strikes -> compact rows (column order documented on the entity)."""
-    return [[s["strike"]] + [s[side].get(k) or 0 for side in ("CE", "PE") for k in _LEG] for s in chain.get("strikes") or []]
+    return [[s["strike"]] + [s[side].get(k) or 0 for side in ("CE", "PE") for k in _LEG]
+            + [s[side].get(k) or 0 for side in ("CE", "PE") for k in _QTY] for s in chain.get("strikes") or []]
 
 
 def due(code: str, now: float | None = None) -> bool:

@@ -97,24 +97,34 @@ def test_entry_ceiling_keeps_min_reward_risk():
     assert sz.entry_ceiling(100.0, 99.99, 100.01) == 100.0  # never below the entry itself
 
 
-def test_usage_follows_win_probability_from_minimum_to_maximum():
-    cap = sz.capital_state(100000, 3, 0, [])  # loss budget 3000 -> 13 lots by risk, 15 by cash: max 13 lots
-    sizes = {c: sz.size_candidate(opp(confidence=c), cap)[0] for c in (40, 50, 65, 78, 90, 100)}
-    assert sizes[40].lots == 1 and sizes[50].lots == 1  # a coin-flip or worse: minimum quantity / money
-    assert sizes[100].lots == 13  # 100% sure: the most the loss budget (and cash) allow
-    lots = [sizes[c].lots for c in (40, 50, 65, 78, 90, 100)]
-    assert lots == sorted(lots) and len(set(lots)) >= 5  # monotonic: more sure -> more money
-    assert sizes[100].capitalRequired > sizes[65].capitalRequired > sizes[50].capitalRequired
-    assert sizes[78].winProbPct == 78.0 and 0 < sizes[78].usagePct < sizes[100].usagePct
-    assert sizes[78].riskAmount == sizes[78].lots * 65 * 3.5
+def test_size_is_fixed_fractional_and_ignores_confidence():
+    # 11 Nov 2026 research review (gap 9): risk <= 0.5% of capital per trade; confidence is not calibrated
+    cap = sz.capital_state(100000, 3, 0, [])  # 0.5% of 100000 = 500 -> 2 lots at 227.5 risk per lot
+    sizes = {c: sz.size_candidate(opp(confidence=c), cap)[0] for c in (60, 78, 90, 100)}
+    assert {z.lots for z in sizes.values()} == {2}
+    assert all(z.riskAmount <= 100000 * sz.RISK_PER_TRADE_PCT / 100 for z in sizes.values())
+    assert sizes[78].riskAmount == 2 * 65 * 3.5 and sizes[78].winProbPct == 78.0
 
+
+def test_one_lot_allowed_up_to_one_percent_risk_then_refused():
+    small = sz.capital_state(30000, 3, 0, [])  # 0.5% = 150 < 227.5 per lot, but 1% = 300 >= 227.5: one lot
+    assert sz.size_candidate(opp(confidence=90), small)[0].lots == 1
+    tiny = sz.capital_state(20000, 3, 0, [])  # 1% = 200 < 227.5: refused
+    z, why = sz.size_candidate(opp(confidence=90), tiny)
+    assert z is None and "risks more than" in why
+
+
+def test_correlated_index_book_counts_as_one_bet():
+    assert sz.correlated_block("BANKNIFTY", "CE", [("NIFTY", "CE")])
+    assert sz.correlated_block("SENSEX", "PE", [("NIFTY", "CE")]) is None
+    assert sz.correlated_block("CRUDEOIL", "CE", [("NIFTY", "CE")]) is None
 
 def test_sizing_is_capped_by_free_cash_and_by_the_loss_budget_never_by_a_trade_count():
     full = sz.size_candidate(opp(confidence=100), sz.capital_state(100000, 3, 0, []))[0]
     assert full.riskAmount <= 3000
-    cash_poor = sz.capital_state(100000, 30, 0, [type("P", (), {"capitalRequired": 80000, "riskAmount": 10})()])
-    z, _ = sz.size_candidate(opp(confidence=100), cash_poor)  # 20000 free -> 3 lots at 6500
-    assert z.lots == 3 and z.capitalRequired <= 20000
+    cash_poor = sz.capital_state(100000, 30, 0, [type("P", (), {"capitalRequired": 88000, "riskAmount": 10})()])
+    z, _ = sz.size_candidate(opp(confidence=100), cash_poor)  # 12000 free -> 1 lot at 6500 (risk would allow 2)
+    assert z.lots == 1 and z.capitalRequired <= 12000
     broke = sz.capital_state(100000, 3, 0, [type("P", (), {"capitalRequired": 95000, "riskAmount": 100})()])
     z2, why2 = sz.size_candidate(opp(), broke)
     assert z2 is None and why2 == "not enough free capital"
@@ -191,10 +201,11 @@ def test_session_gates(patch, state):
 
 # ───────────────────────── trade lock ─────────────────────────
 def test_locking_one_row_refits_the_other_open_rows_to_the_money_left():
-    svc, _, picks = make([opp(1, confidence=90), opp(2, confidence=70)])
+    # opposite sides so the correlated-index cap (one same-direction bet) does not drop the second row
+    svc, _, picks = make([opp(1, confidence=90), opp(2, confidence=70, optionType="PE")])
     r0 = run(svc.tick(FakeDb(), 7))
     first, second = r0.picks
-    assert first.opportunityId == 1 and second.lots > 1
+    assert first.opportunityId == 1 and second.lots >= 1
     locked = run(svc.lock(FakeDb(), 7, first.id))
     assert locked.pickState == "LOCKED" and locked.lockedAt is not None and locked.secondsLeft == 0
     assert locked.lockedPrice == 101.5  # the item's current price at the moment of the lock
@@ -205,7 +216,7 @@ def test_locking_one_row_refits_the_other_open_rows_to_the_money_left():
     assert r.capital.remainingLossBudget == 3000 - first.riskAmount
     assert [p.opportunityId for p in r.picks] == [2]  # the locked row left the table; the other stays open
     refit = r.picks[0]
-    assert refit.lots < second.lots and refit.capitalRequired <= r.capital.availableCapital
+    assert refit.lots <= second.lots and refit.capitalRequired <= r.capital.availableCapital
     assert refit.riskAmount <= r.capital.remainingLossBudget and refit.id == second.id
 
 
@@ -242,22 +253,14 @@ def test_lock_survives_a_missing_live_price():
     assert locked.pickState == "LOCKED" and locked.lockedPrice is None
 
 
-def test_no_trade_limit_loss_budget_is_the_only_stop():
-    # 12 minimum-size (50% sure) picks, all one strategy: no 6-per-session or 2-per-strategy cap any more
-    svc, _, _ = make([opp(i, confidence=50) for i in range(1, 30)])
-    for _ in range(12):
-        r = run(svc.tick(FakeDb(), 7))
-        assert r.state == "PICK_READY"
-        pk = r.picks[0]
-        assert pk.lots == 1
-        run(svc.lock(FakeDb(), 7, pk.id))
+def test_no_trade_count_limit_but_one_correlated_bet_per_direction():
+    # no 6-per-session / 2-per-strategy count cap; the correlated-index cap is what limits same-direction stacking
+    svc, _, _ = make([opp(i, confidence=50) for i in range(1, 6)] + [opp(10, optionType="PE", confidence=50)])
     r = run(svc.tick(FakeDb(), 7))
-    assert r.capital.lockedTrades == 12 and r.state == "PICK_READY"  # 12 x 227.5 = 2730 of 3000 used
-    run(svc.lock(FakeDb(), 7, r.picks[0].id))  # 13th: 2957.5 used
-    r = run(svc.tick(FakeDb(), 7))  # 42.5 left: not even one lot -> only now does the money stop it
-    assert r.state == "WAITING" and r.picks == [] and r.capital.remainingLossBudget == 42.5
-    assert "loss budget below 1 lot" in r.scanned["excluded"]
-
+    ce = next(p for p in r.picks if p.optionType == "CE")
+    run(svc.lock(FakeDb(), 7, ce.id))
+    r = run(svc.tick(FakeDb(), 7))
+    assert [p.optionType for p in r.picks] == ["PE"]
 
 def test_only_opportunities_from_the_last_30_seconds_are_read():
     svc, _, _ = make()
@@ -339,3 +342,16 @@ def test_lock_is_refused_after_the_close_time():
     with pytest.raises(ConflictException) as e:
         run(svc.lock(FakeDb(), 7, p.id))
     assert e.value.error["code"] == "SESSION_HOURS_OVER"
+
+
+def test_momentum_short_half_size_and_positioning_overlay():
+    assert sz.size_multiplier("NOISE_BREAKOUT", "CE") == 1.0
+    assert sz.size_multiplier("NOISE_BREAKOUT", "PE") == 0.5  # weaker short-side evidence
+    assert sz.size_multiplier("FAILED_BREAK_RECLAIM", "PE") == 1.0  # not the momentum engine
+    assert sz.size_multiplier("NOISE_BREAKOUT", "CE", positioning_bias=1, overlay_enabled=True) == 1.5
+    assert sz.size_multiplier("NOISE_BREAKOUT", "CE", positioning_bias=-1, overlay_enabled=True) == 0.5
+    assert sz.size_multiplier("NOISE_BREAKOUT", "CE", positioning_bias=1, overlay_enabled=False) == 1.0
+    cap = sz.capital_state(200000, 3, 0, [])  # 0.5% = 1000 -> 4 lots at 227.5; half size -> 2 (1000*0.5//227.5)
+    full = sz.size_candidate(opp(strategy="NOISE_BREAKOUT"), cap)[0]
+    half = sz.size_candidate(opp(strategy="NOISE_BREAKOUT", optionType="PE", sizeMult=0.5), cap)[0]
+    assert full.lots == 4 and half.lots == 2

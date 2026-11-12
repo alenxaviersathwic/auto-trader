@@ -95,7 +95,8 @@ async def _one(code: str, day: str, session: AsyncSession) -> dict[str, Any]:
         raw = setup_detector.detect(a, cfg)
         if raw:
             cands.append({"k": k, "m": m, "raw": raw, "trend15": a.get("trend15"), "atr5": a.get("atr5") or 0.0,
-                          "bars1": a["bars1"][-30:], "dayType": a.get("dayType"), "dayBias": bias_state.get("bias")})
+                          "bars1": a["bars1"][-30:], "dayType": a.get("dayType"), "dayBias": bias_state.get("bias"),
+                          "levels": dict(a.get("levels") or {})})
 
     trades: list[dict[str, Any]] = []
     rows: list[_Row] = []
@@ -106,7 +107,7 @@ async def _one(code: str, day: str, session: AsyncSession) -> dict[str, Any]:
         if k <= busy:
             continue
         a_gate = {"trend15": cd["trend15"], "bars1": cd["bars1"], "atr5": cd["atr5"], "dayType": cd["dayType"],
-                  "dayBias": cd["dayBias"]}
+                  "dayBias": cd["dayBias"], "levels": cd.get("levels")}
         ok, _rejected = setup_detector.confirm_timeframes(a_gate, cd["raw"])
         if not ok:
             continue

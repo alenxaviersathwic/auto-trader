@@ -59,7 +59,12 @@ class SeedService:
         # 5. Seed Oct-2026 research registry (intraday index-option / MCX strategies + guardrails)
         res_strat_count, res_rule_count = await self._seed_research_data(session)
 
+        # 6. Seed Nov-2026 institutional-strategy registry (VRP iron fly, gamma-aware momentum, overlays, guards)
+        inst_strat_count, inst_rule_count = await self._seed_institutional_data(session)
+
         return {
+            "institutionalStrategiesSeeded": inst_strat_count,
+            "institutionalRulesSeeded": inst_rule_count,
             "registriesSeeded": reg_count,
             "healthPoliciesSeeded": hp_count,
             "textbookStrategiesSeeded": tb_count,
@@ -69,12 +74,25 @@ class SeedService:
             "researchRulesSeeded": res_rule_count,
         }
 
-    async def _seed_research_data(self, session: AsyncSession) -> Tuple[int, int]:
+    async def _seed_institutional_data(self, session: AsyncSession) -> Tuple[int, int]:
+        """Seeds the 11 Nov 2026 institutional-strategy registry (task wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798):
+        VRP-gated expiry iron fly, gamma-aware noise momentum, late-day momentum, gamma router, FII positioning
+        overlay, event guard + their guardrail rules. Idempotent by code (same loader as the Oct-2026 research seed)."""
+        return await self._seed_research_data(session, "institutional_strategies_seed.json",
+                                              "Seeded from Nov-2026 institutional-strategy review "
+                                              "(task wf-31ecc9ed-bea0-896b-8e8c-a372f3a15798)")
+
+    async def _seed_research_data(
+        self,
+        session: AsyncSession,
+        file_name: str = "research_strategies_seed.json",
+        change_note: str = "Seeded from Oct-2026 research run (task wf-73cd02ba-57fd-81e6-bc87-e3915505046a)",
+    ) -> Tuple[int, int]:
         """Seeds the strategy registry and guardrail rules from the Oct-2026 Claude research run
         (task wf-73cd02ba-57fd-81e6-bc87-e3915505046a): intraday index-option / MCX commodity
         strategies and the Section-4 guardrail rules. Idempotent by code, same pattern as
         _seed_legacy_data."""
-        seed_path = os.path.join(os.path.dirname(__file__), "data", "research_strategies_seed.json")
+        seed_path = os.path.join(os.path.dirname(__file__), "data", file_name)
         if not os.path.exists(seed_path):
             logger.warning(f"Research seed file not found at {seed_path}")
             return 0, 0
@@ -131,7 +149,7 @@ class SeedService:
                 schemaVersion=2,
                 definition=definition,
                 contentHash=ch,
-                changeNote="Seeded from Oct-2026 research run (task wf-73cd02ba-57fd-81e6-bc87-e3915505046a)",
+                changeNote=change_note,
             )
             await self.strategy_repo.save_version(session, v1)
             saved_s.currentVersionId = v1.id
@@ -163,7 +181,7 @@ class SeedService:
                 ruleId=saved_r.id,
                 versionNo=1,
                 content=r.get("content", {}),
-                changeNote="Seeded from Oct-2026 research run (task wf-73cd02ba-57fd-81e6-bc87-e3915505046a)",
+                changeNote=change_note,
             )
             await self.rule_repo.save_version(session, v1r)
             saved_r.currentVersionId = v1r.id

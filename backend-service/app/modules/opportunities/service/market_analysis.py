@@ -251,7 +251,8 @@ def analyze(cfg: Any, market: dict[str, Any], now: datetime | None = None) -> di
 
     # completed 1-minute bars (the minute still forming is excluded): the entry-timing timeframe
     p1d = [b for b in p1 if _bar_min(b["t"]) < now_min]
-    out: dict[str, Any] = {"session": sess, "bars5": p5d, "futBars5": f5d, "bars1": p1d, "bars15": p15d}
+    out: dict[str, Any] = {"session": sess, "bars5": p5d, "futBars5": f5d, "bars1": p1d, "bars15": p15d,
+                           "code": getattr(cfg, "code", None)}
 
     # levels
     lv: dict[str, Any] = {}
@@ -267,9 +268,19 @@ def analyze(cfg: Any, market: dict[str, Any], now: datetime | None = None) -> di
             lv["cprNarrow"] = rank <= 0.3  # narrowest 30% of the last 20 days: trend-day candidate
             lv["cprWide"] = rank >= 0.7  # widest 30%: range-day candidate
         out["dailyAtr"] = atr(daily, 14)
+        closes = [d["c"] for d in daily]
+        out["trendDays"] = {n: ("UP" if closes[-1] > closes[-1 - n] else "DOWN")
+                            for n in (5, 20) if len(closes) > n}
+        if len(closes) > 10:  # Kaufman efficiency ratio over 10 sessions: trend >= 0.35, range <= 0.20
+            path = sum(abs(closes[i] - closes[i - 1]) for i in range(len(closes) - 10, len(closes)))
+            out["er10"] = round(abs(closes[-1] - closes[-11]) / path, 3) if path else None
     if p1:
         day_o = p1[0]["o"]
         lv.update({"dayOpen": day_o, "dayHigh": max(b["h"] for b in p1), "dayLow": min(b["l"] for b in p1)})
+        ib = [b for b in p1 if _bar_min(b["t"]) < _mins(cfg.open) + 120]  # initial balance 09:15-11:15
+        if ib:
+            lv.update({"ibHigh": max(b["h"] for b in ib), "ibLow": min(b["l"] for b in ib),
+                       "ibDone": now_min >= _mins(cfg.open) + 120})
         if "pdc" in lv and lv["pdc"]:
             lv["gapPct"] = round((day_o - lv["pdc"]) / lv["pdc"] * 100, 2)
         or_bars = [b for b in p1 if _bar_min(b["t"]) < _mins(cfg.open) + OPENING_RANGE_MINUTES]

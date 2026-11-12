@@ -397,18 +397,25 @@ def _extra_setups(a: dict[str, Any], bars: list[dict[str, Any]], lv: dict[str, A
 
     # 16. Noise-area breakout: the first 5-min close outside the band (the previous close was inside).
     noise = a.get("noise") or {}
+    # Zarattini et al. entry: outside the noise band AND on the right side of VWAP (no VWAP read = no veto)
+    vw_side = (a.get("vwap") or {}).get("above")
+    vw_ok_ce, vw_ok_pe = vw_side is not False, vw_side is not True
     if noise.get("prevState") == "INSIDE" and noise.get("state") in ("ABOVE", "BELOW"):
-        if noise["state"] == "ABOVE" and green:
+        if noise["state"] == "ABOVE" and green and vw_ok_ce:
             add("NOISE_BREAKOUT", "CE", min(last["l"], noise["upper"]) - tick, 3 + spike,
                 f"5-min close {last['c']:.1f} above the noise area {noise['upper']:.1f} (move is no longer noise)")
-        if noise["state"] == "BELOW" and red:
+        if noise["state"] == "BELOW" and red and vw_ok_pe:
             add("NOISE_BREAKOUT", "PE", max(last["h"], noise["lower"]) + tick, 3 + spike,
                 f"5-min close {last['c']:.1f} below the noise area {noise['lower']:.1f} (move is no longer noise)")
 
     # 17. Late-day momentum: first half hour and the whole day point the same way, price outside the noise area.
     sess = a.get("session") or {}
     fh, pdc2 = a.get("firstHalfHourRetPct"), lv.get("pdc")
-    if fh is not None and pdc2 and LATE_MOMO_MIN_TO_CLOSE[0] <= sess.get("minutesToClose", 0) <= LATE_MOMO_MIN_TO_CLOSE[1]:
+    from app.core.config.settings import settings as _st
+    from app.modules.opportunities.service.institutional_filters import enabled as _inst_on
+
+    lo_m, hi_m = LATE_MOMO_LAST_WINDOW if "LATE_WINDOW_LAST" in _inst_on(_st.INSTITUTIONAL_FILTERS) else LATE_MOMO_MIN_TO_CLOSE
+    if fh is not None and pdc2 and lo_m <= sess.get("minutesToClose", 0) <= hi_m:
         day_ret = (last["c"] - pdc2) / pdc2 * 100
         recent = bars[-3:]
         if fh > 0 and day_ret > 0 and noise.get("state") == "ABOVE" and green:
@@ -424,6 +431,7 @@ def _extra_setups(a: dict[str, Any], bars: list[dict[str, Any]], lv: dict[str, A
 RANGE_SETUPS = {"PDH_PDL_RETEST", "OI_WALL_REJECT", "VWAP_BAND_REVERT"}  # PCR_SHIFT demoted 10 Nov 2026
 REVERSAL_SETUPS = {"FAILED_BREAK_RECLAIM"}
 LATE_MOMO_MIN_TO_CLOSE = (35, 70)  # 14:30-15:05 on a 15:40 close
+LATE_MOMO_LAST_WINDOW = (12, 50)  # institutional filter LATE_WINDOW_LAST: 14:50-15:28 on a 15:40 close
 
 
 def day_type_block(a: dict[str, Any], s: dict[str, Any]) -> str | None:
@@ -439,9 +447,12 @@ def day_type_block(a: dict[str, Any], s: dict[str, Any]) -> str | None:
     bias = a.get("dayBias") or {}
     if bias.get("type") == "EXPANSION" and bias.get("side") and s["side"] != bias["side"]:
         return f"EXPANSION bias ({bias['side']}) still in force for the session: no trades against it"
+    fam = family(s["name"])
+    gap_block = unfilled_gap_block(a.get("levels") or {}, fam)
+    if gap_block:
+        return gap_block
     if not kind:
         return None
-    fam = family(s["name"])
     if kind in ("PIN", "RANGE"):
         if fam == "TREND":
             return f"{kind} day (price inside the noise area): trend/breakout setups are not traded"
@@ -451,6 +462,78 @@ def day_type_block(a: dict[str, Any], s: dict[str, Any]) -> str | None:
     if fam == "TREND" and dt.get("side") and s["side"] != dt["side"]:
         return f"{kind} day is on the {dt['side']} side"
     return None
+
+
+# 11 Nov 2026 research review (gap 4): gap size is a regime signal. 148 NIFTY expiries (Quintal Mind, 2026):
+# gaps < 0.1% filled 89% of the time, gaps > 0.5% only 25% -- "the big gaps are the trend days". 11 Nov 2026 gapped
+# +1.1% and never filled; the classifier read the pullback as RANGE and FAILED_BREAK_RECLAIM lost on 4 of 5 fires.
+# Rule: while a gap of BIG_GAP_PCT or more is still unfilled, no mean-reversion family (REVERSAL / RANGE) trades.
+BIG_GAP_PCT = 0.5
+
+
+def unfilled_gap_block(lv: dict[str, Any], fam: str) -> str | None:
+    gap, pdc = lv.get("gapPct"), lv.get("pdc")
+    hi, lo = lv.get("dayHigh"), lv.get("dayLow")
+    if fam == "TREND" or gap is None or not pdc or hi is None or lo is None or abs(gap) < BIG_GAP_PCT:
+        return None
+    filled = lo <= pdc if gap > 0 else hi >= pdc
+    if filled:
+        return None
+    return (f"unfilled {gap:+.2f}% gap (>= {BIG_GAP_PCT}%): trend-day odds, no {fam.lower()} setups "
+            f"until price trades back to the previous close {pdc:.1f}")
+
+
+# ───────────────────────── setup policy (11 Nov 2026 institutional-strategy review) ─────────────────────────
+# Institutions earn from short-dated premium (VRP) and from trading WITH hedging flows (intraday momentum), not from
+# chart patterns. Vendor backtests of the retail versions on NIFTY (Oct 2025-Sep 2026) were mostly negative even before
+# costs (ORB option buying -70.5k, inside bar -2.68L, PDH/PDL breakout -24.6k, VWAP band fade -91.4k, max-OI strike
+# -54.2k), and FAILED_BREAK_RECLAIM / PDH_PDL_RETEST were the most-stopped setups in our own replays.
+#   CORE                 the directional engine: noise-area breakout + late-day momentum (Baltussen et al. JFE 2021,
+#                        Zarattini et al. 2024, Gao et al. JFE 2018)
+#   MERGED               only as an extra entry INSIDE an active noise breakout on the same side (day type / sticky
+#                        bias TREND or EXPANSION on that side); never on its own
+#   SHORT_PREMIUM_ONLY   mean-reversion reads: not bought as options any more; they only inform where a defined-risk
+#                        short-premium structure is centred (iron_fly.py), and only in a positive-gamma regime
+#   DROPPED              no entry at all (kept detectable for research replays / the funnel report)
+SETUP_POLICY: dict[str, str] = {
+    "NOISE_BREAKOUT": "CORE", "LATE_DAY_MOMENTUM": "CORE",
+    "RANGE_BREAKOUT": "MERGED", "VWAP_PULLBACK": "MERGED", "GAP_GO": "MERGED",
+    "FAILED_BREAK_RECLAIM": "SHORT_PREMIUM_ONLY", "VWAP_BAND_REVERT": "SHORT_PREMIUM_ONLY",
+    "OI_WALL_REJECT": "SHORT_PREMIUM_ONLY",
+    # 12 Nov 2026 price-action study (6 months, v3 gates, MOMO trail): INSIDE_BAR alone 14 trades PF 14.7, both halves +;
+    # on top of the core set +1.1k, H1 unchanged. Scalp (fixed 1R / 1.5R) exits lost after costs on every setup tested.
+    "INSIDE_BAR": "CORE",
+    "ORB": "DROPPED", "EMA_CROSS_RETEST": "DROPPED", "PDH_PDL_RETEST": "DROPPED",
+    "MOMENTUM_FLAG": "DROPPED", "SHORT_COVERING_SPIKE": "DROPPED", "SUPERTREND_FLIP": "DROPPED",
+    "SUPERTREND_RETEST": "DROPPED", "CPR_BREAKOUT": "DROPPED",
+}
+
+
+def policy_block(a: dict[str, Any], s: dict[str, Any]) -> str | None:
+    """Why the setup policy does not allow this signal as an OPTION BUY, or None."""
+    pol = SETUP_POLICY.get(s["name"], "DROPPED")  # unknown / new setups must be classified before they trade
+    g = a.get("gamma") or {}
+    if g.get("enabled") and pol in ("CORE", "MERGED"):
+        r = g.get("route") or {}
+        if s["side"] == "PE" and r.get("momentumShort") is False:
+            return f"dealer gamma {g.get('regime')}: momentum shorts blocked (mean-reverting tape)"
+        if s["side"] == "CE" and r.get("momentumLong") is False:
+            return f"dealer gamma {g.get('regime')}: momentum longs blocked"
+    from app.core.config.settings import settings  # lazy: keeps this module importable without app config
+    from app.modules.opportunities.service import institutional_filters as inst
+
+    extra = inst.block(a, s, a.get("code") or "", inst.enabled(settings.INSTITUTIONAL_FILTERS))
+    if extra:
+        return extra
+    if pol == "CORE":
+        return None
+    if pol == "DROPPED":
+        return f"{s['name']} dropped (no evidence of edge after costs)"
+    if pol == "SHORT_PREMIUM_ONLY":
+        return f"{s['name']} is a mean-reversion read: short-premium placement only, never an option buy"
+    dt, bias = a.get("dayType") or {}, a.get("dayBias") or {}
+    aligned = any(x.get("type") in ("TREND", "EXPANSION") and x.get("side") == s["side"] for x in (dt, bias))
+    return None if aligned else f"{s['name']} only inside an active {s['side']} noise breakout"
 
 
 def family(name: str) -> str:
@@ -522,7 +605,7 @@ def confirm_timeframes(a: dict[str, Any], found: list[dict[str, Any]]) -> tuple[
         info: dict[str, Any] = {}
         want = "UP" if ce else "DOWN"
         fam = family(s["name"])
-        block = day_type_block(a, s)
+        block = policy_block(a, s) or day_type_block(a, s)
         if block:
             reason = block
         elif fam == "TREND" and trend != want:

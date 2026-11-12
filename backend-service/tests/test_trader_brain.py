@@ -193,3 +193,17 @@ def test_session_close_exits_trade():
     )
     assert d.action == "EXIT" and d.exitReason == "SESSION_CLOSE"
 
+
+
+def test_momentum_trail_never_exits_at_target_and_trails_in_r():
+    from app.modules.opportunities.service.menu_builder import MOMO_EXIT
+    from app.modules.trades.service import trader_brain as tb
+
+    kw = dict(entry_at=100.0, initial_stop=90.0, initial_target=140.0, current_stop=90.0, current_target=140.0,
+              trader_profile="STEP_GUARD", momentum_trail=MOMO_EXIT)
+    d = tb.evaluate_tick(peak_price=150.0, ltp=150.0, **kw)  # past the "target": a momentum runner keeps going
+    assert d.action != "EXIT" and d.newStop == 130.0  # trail 2R (20) under the 150 peak
+    d2 = tb.evaluate_tick(peak_price=116.0, ltp=115.0, **kw)  # +1.6R: breakeven + ~1% for charges
+    assert d2.newStop == 101.0
+    d3 = tb.evaluate_tick(peak_price=150.0, ltp=129.0, **{**kw, "current_stop": 130.0})
+    assert d3.action == "EXIT" and d3.exitReason == "TRAILING_STOP_HIT"

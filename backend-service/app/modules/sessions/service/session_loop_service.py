@@ -6,6 +6,9 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config.settings import settings
+from app.modules.opportunities.service import positioning
+
 from app.core.exception.app_exceptions import ConflictException, NotFoundException
 from app.core.pagination.page_result import PageResult
 from app.modules.opportunities.service.run_service import opportunity_run_service
@@ -25,12 +28,15 @@ from app.modules.sessions.service.session_sizing import (
     MIN_PICK_WINDOW_SECONDS,
     CapitalState,
     capital_state,
+    correlated_block,
+    size_multiplier,
     lots_for,
     rank_key,
     size_candidate,
 )
 
 _IST = ZoneInfo("Asia/Kolkata")
+WEEKLY_MAX_LOSS_PCT = 4.0  # research gap 9: stop for the week once realised losses reach 4% of session capital
 MAX_PARALLEL_TRADES = 3
 
 
@@ -266,11 +272,33 @@ class SessionLoopService:
                     locked_picks=pending_locked, active_trade_ids=active_ids, pick_to_trade=pick_to_trade,
                 )
 
+            try:
+                week_net = await _trade_service().week_net_pnl(db, s.userId, now)
+            except Exception:
+                week_net = 0.0
+            if week_net <= -float(s.capital) * WEEKLY_MAX_LOSS_PCT / 100.0:
+                if s.haltedAt is None:
+                    s.haltReason, s.haltedAt = "WEEKLY_LOSS", now
+                    await db.flush()
+                return self._loop_response(
+                    s, now, cap, "HALTED",
+                    f"Weekly loss limit reached (Rs {week_net:,.0f}, max {WEEKLY_MAX_LOSS_PCT:g}% of capital): "
+                    "review before trading again",
+                    locked_picks=pending_locked, active_trade_ids=active_ids, pick_to_trade=pick_to_trade,
+                )
+
+            try:
+                exposure = await _trade_service().open_exposure(db, s.id)
+            except Exception:
+                exposure = []
+            exposure += [(p.underlyingCode, p.optionType) for p in pending_locked]
+
             # Open offers stay on the table until their opportunity expires, re-fitted to the capital free right now
+            # (and dropped once a lock elsewhere makes them a second same-direction bet on the correlated index book)
             live = [p for p in open_picks if p.pickState == "OFFERED"]
             for p in list(live):
                 lots, _ = lots_for(float(p.entry), float(p.stop), p.lotUnits, p.confidence, cap)
-                if lots is None:
+                if lots is None or correlated_block(p.underlyingCode, p.optionType, exposure):
                     p.pickState = "EXPIRED"
                     live.remove(p)
                 elif lots != p.lots:
@@ -285,13 +313,26 @@ class SessionLoopService:
             def drop(reason: str) -> None:
                 excluded[reason] = excluded.get(reason, 0) + 1
 
+            overlay_on = settings.POSITIONING_OVERLAY_ENABLED
+            pos_bias = 0
+            if overlay_on:
+                try:
+                    pos_bias = int((positioning.snapshot() or {}).get("bias") or 0)
+                except Exception:  # noqa: BLE001 -- no participant file yet: neutral
+                    pos_bias = 0
+
             ranked: list[tuple[tuple, dict[str, Any], Any]] = []
             for opp in candidates:
+                opp["sizeMult"] = size_multiplier(opp.get("strategy"), opp["optionType"], pos_bias, overlay_on)
                 if int(opp["id"]) in seen:
                     drop("already offered")
                     continue
                 if (_utc(datetime.fromisoformat(opp["validUntil"])) - now).total_seconds() < MIN_PICK_WINDOW_SECONDS:
                     drop("expires too soon")
+                    continue
+                corr = correlated_block(opp["underlyingCode"], opp["optionType"], exposure)
+                if corr:
+                    drop(corr)
                     continue
                 sized, why = size_candidate(opp, cap)
                 if sized is None:

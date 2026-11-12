@@ -74,9 +74,24 @@ class FakeOrderClient:
             "quantity": quantity,
             "transactionType": transaction_type,
             "price": price,
+            "orderType": order_type,
             "orderId": order_id,
         })
         return {"ok": True, "orderId": order_id, "status": "PLACED", "error": None}
+
+    fill_status = "complete"
+    filled_qty = None
+    cancelled: list = []
+
+    async def fetch_fill(self, session, user_id, order_id):
+        return {"status": self.fill_status, "averagePrice": None, "filledQty": self.filled_qty}
+
+    async def wait_for_fill(self, session, user_id, order_id, timeout_s, poll_s=0.5):
+        return await self.fetch_fill(session, user_id, order_id)
+
+    async def cancel_order(self, session, user_id, order_id):
+        self.cancelled.append(order_id)
+        return True
 
 
 class FakeSessions:
@@ -184,6 +199,9 @@ def test_preview_sizing_and_max_3_parallel_trades_and_upstox_orders(monkeypatch)
 
         monkeypatch.setattr(sls_mod, "session_loop_service", loop_svc)
         monkeypatch.setattr(ts_mod, "trade_service", t_svc)
+        # this test is about the parallel-trade cap and broker calls, not the correlated-index cap (tested below)
+        monkeypatch.setattr(ts_mod, "correlated_block", lambda *a, **k: None)
+        monkeypatch.setattr(sls_mod, "correlated_block", lambda *a, **k: None)
         monkeypatch.setattr(pilot_mod, "start", lambda tid: None)
         monkeypatch.setattr(pilot_mod, "stop", lambda tid: None)
         monkeypatch.setattr(pilot_mod, "publish_snapshot", lambda tid, snap: None)
@@ -218,6 +236,8 @@ def test_preview_sizing_and_max_3_parallel_trades_and_upstox_orders(monkeypatch)
         t3 = await t_svc.enter_trade(FakeDb(), TradeCreateRequest(sessionId=10, pickId=snap.picks[2].id, entryAt=20.0, lots=1))
         assert t1.entryOrderId == "ORD-BUY-1" and t1.brokerStatus == "PLACED"
         assert len(order_client.calls) == 3
+        # entries are marketable LIMITs capped at ENTRY_LIMIT_BUFFER_TICKS ticks above the planned price
+        assert all(c["orderType"] == "LIMIT" and c["price"] == 20.1 for c in order_client.calls)
 
         # 4. Attempting a 4th parallel trade is blocked with MAX_PARALLEL_TRADES (409)
         with pytest.raises(ConflictException) as exc:
@@ -297,5 +317,132 @@ def test_semi_auto_and_full_auto_session_modes(monkeypatch):
         r_full = await loop_full.tick(FakeDb(), 22)
         assert r_full.capital.activeTradesCount == 1
         assert len(r_full.capital.activeTradeIds) == 1
+
+    asyncio.run(go())
+
+
+def test_order_client_protects_market_orders_and_tags_the_algo(monkeypatch):
+    from app.modules.trades.service import upstox_order_client as oc
+
+    sent: dict = {}
+
+    class FakeResp:
+        status_code = 200
+        content = b"1"
+
+        @staticmethod
+        def json():
+            return {"status": "success", "data": {"order_id": "X1"}}
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json, headers):
+            sent.update({"json": json, "headers": headers})
+            return FakeResp()
+
+    async def fake_token(self, session, user_id):
+        return "tok"
+
+    monkeypatch.setattr(oc.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(oc.UpstoxOrderClient, "_resolve_token", fake_token)
+    client = oc.UpstoxOrderClient()
+    res = asyncio.run(client.place_order(None, 1, "NSE_FO|1", 65, "SELL", order_type="MARKET"))
+    assert res["ok"] and res["latencyMs"] is not None
+    assert sent["json"]["market_protection"] == -1 and sent["headers"]["X-Algo-Name"]
+    asyncio.run(client.place_order(None, 1, "NSE_FO|1", 65, "BUY", order_type="LIMIT", price=20.1))
+    assert "market_protection" not in sent["json"] and sent["json"]["price"] == 20.1
+    assert oc.limit_price(20.0, "BUY", 2) == 20.1 and oc.limit_price(20.0, "SELL", 2) == 19.9
+
+
+def test_exit_never_sells_more_than_the_entry_filled():
+    from types import SimpleNamespace
+
+    from app.modules.trades.service.trade_service import TradeService
+
+    class Orders(FakeOrderClient):
+        def __init__(self, filled):
+            super().__init__()
+            self.filled = filled
+
+        async def fetch_fill(self, session, user_id, order_id):
+            return {"status": "complete" if self.filled else "open", "averagePrice": None, "filledQty": self.filled}
+
+    def qty(filled, status="PLACED", order_id="ORD-BUY-1"):
+        svc = TradeService(repo=FakeTradeRepo(), order_client=Orders(filled))
+        t = SimpleNamespace(entryOrderId=order_id, brokerStatus=status, quantity=130, userId=1)
+        return asyncio.run(svc._exit_quantity(None, t))
+
+    assert qty(0) == 0  # LIMIT entry never filled: no SELL (would be a naked short)
+    assert qty(65) == 65  # partial fill: sell only what was bought
+    assert qty(None) == 130  # broker did not report: planned quantity
+    assert qty(130, status="REJECTED") == 0 and qty(130, order_id=None) == 0
+
+
+def _entry_env(monkeypatch, order_client):
+    import sys
+
+    from app.modules.opportunities.service import run_service as opp_run_mod
+    from app.modules.trades.engine import trade_pilot_runner as pilot_mod
+    import app.modules.sessions.service.session_loop_service  # noqa: F401
+    import app.modules.trades.service.trade_service  # noqa: F401
+
+    sls_mod = sys.modules["app.modules.sessions.service.session_loop_service"]
+    ts_mod = sys.modules["app.modules.trades.service.trade_service"]
+    s = TradingSession(name="Live", tradeDate=TODAY(), userId=1, capital=200000, maxLossPercentage=5, scope="INDEX",
+                       underlyings=["NIFTY"], commodityItems=[], sessionType="MANUAL", routeThroughUpstox=True,
+                       sessionStatus="ACTIVE", realizedPnl=0, startAt=NOW() - timedelta(hours=1),
+                       closeAt=NOW() + timedelta(hours=4))
+    s.id = 10
+    opps = FakeOpps([make_opp(1)], price=20.0)
+    loop_svc = SessionLoopService(FakeSessions(s), FakePicks(), opps)
+    t_svc = TradeService(repo=FakeTradeRepo(), order_client=order_client)
+    monkeypatch.setattr(sls_mod, "session_loop_service", loop_svc)
+    monkeypatch.setattr(ts_mod, "trade_service", t_svc)
+    monkeypatch.setattr(pilot_mod, "start", lambda tid: None)
+
+    async def px(session, key, timeout=1.5):
+        return 20.0
+
+    async def wr(session, code, strat, conf):
+        return 60.0
+
+    monkeypatch.setattr(opp_run_mod.opportunity_run_service, "live_premium", px)
+    monkeypatch.setattr(opp_run_mod.opportunity_run_service, "resolve_win_rate_pct", wr)
+    return loop_svc, t_svc
+
+
+def test_unfilled_entry_limit_is_cancelled_and_no_trade_is_created(monkeypatch):
+    oc = FakeOrderClient()
+    oc.fill_status, oc.filled_qty, oc.cancelled = "open", 0, []
+    loop_svc, t_svc = _entry_env(monkeypatch, oc)
+
+    async def go():
+        snap = await loop_svc.tick(FakeDb(), 10)
+        with pytest.raises(ConflictException) as exc:
+            await t_svc.enter_trade(FakeDb(), TradeCreateRequest(sessionId=10, pickId=snap.picks[0].id, entryAt=20.0,
+                                                                 lots=2))
+        assert exc.value.error["code"] == "ENTRY_NOT_FILLED" and oc.cancelled == ["ORD-BUY-1"]
+
+    asyncio.run(go())
+
+
+def test_partial_entry_fill_keeps_only_whole_lots_bought(monkeypatch):
+    oc = FakeOrderClient()
+    oc.fill_status, oc.filled_qty, oc.cancelled = "open", 70, []  # 1 whole lot of 65 (+5 odd units ignored)
+    loop_svc, t_svc = _entry_env(monkeypatch, oc)
+
+    async def go():
+        snap = await loop_svc.tick(FakeDb(), 10)
+        t = await t_svc.enter_trade(FakeDb(), TradeCreateRequest(sessionId=10, pickId=snap.picks[0].id, entryAt=20.0,
+                                                                 lots=2))
+        assert t.quantity == 65 and t.lots == 1 and oc.cancelled == ["ORD-BUY-1"]
 
     asyncio.run(go())

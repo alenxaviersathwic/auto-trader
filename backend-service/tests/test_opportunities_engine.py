@@ -10,7 +10,7 @@ from app.modules.opportunities.service.menu_builder import build_menu, direction
 
 
 def _leg(key, ltp, delta):
-    return {"key": key, "ltp": ltp, "oi": 50000, "volume": 900, "bid": ltp - 0.5, "ask": ltp + 0.5, "delta": delta}
+    return {"key": key, "ltp": ltp, "oi": 50000, "volume": 900, "bid": ltp - 0.1, "ask": ltp + 0.1, "delta": delta}  # realistic ATM index quote (~0.2% wide)
 
 
 def _market():
@@ -79,6 +79,8 @@ def patched(monkeypatch):
         return None
 
     monkeypatch.setattr(nodes, "_time_machine_context", no_time_machine)
+    # these tests exercise the LLM selection path; production default is the CODE ranker with the LLM in shadow
+    monkeypatch.setattr(nodes.settings, "OPPORTUNITY_RANKER", "LLM")
     nodes._last_answer.clear()
 
 
@@ -327,3 +329,21 @@ async def test_time_machine_drops_the_side_history_runs_against(patched, monkeyp
     assert pe["timeMachine"]["lean"] > 0
     assert any(r.startswith("Time Machine") for r in pe["reasons"])
     assert any("from the Time Machine odds" in r for r in pe["reasons"])
+
+
+@pytest.mark.asyncio
+async def test_code_ranker_is_default_and_llm_only_shadows(patched, monkeypatch):
+    monkeypatch.setattr(nodes.settings, "OPPORTUNITY_RANKER", "CODE")
+    monkeypatch.setattr(nodes.settings, "OPPORTUNITY_LLM_SHADOW", False)
+    called = []
+
+    async def fake_ai(*a, **k):
+        called.append(1)
+        raise AssertionError("LLM must not decide in CODE mode")
+
+    monkeypatch.setattr(nodes._llm, "generate_structured", fake_ai)
+    menu = [{"id": "A", "side": "CE", "setupStrength": 3, "rewardRisk": 2.5, "marginPct": 12, "withTrend": True,
+             "volumeConfirmed": True, "delta": 0.5, "spreadPct": 0.2, "setup": "GAP_GO"}]
+    out = await nodes.ai_select({"menu": menu, "bias": "BULLISH", "code": "NIFTY", "briefHash": "h"})
+    assert out["usedBaseline"] and out["answer"]["picks"][0]["id"] == "A" and not called
+    assert "NIFTY" not in nodes._last_answer or nodes._last_answer["NIFTY"]["hash"] != "h"

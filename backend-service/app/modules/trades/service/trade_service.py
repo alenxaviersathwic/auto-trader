@@ -1,16 +1,28 @@
 import asyncio
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exception.app_exceptions import BadRequestException, ConflictException, NotFoundException
+from app.core.config.settings import settings
+from app.core.exception.app_exceptions import (
+    BadRequestException,
+    ConflictException,
+    NotFoundException,
+)
 from app.core.pagination.page_result import PageResult
 from app.modules.opportunities.service.costs import round_trip_cost_pct
+from app.modules.opportunities.service.menu_builder import MOMO_EXIT
+from app.modules.opportunities.service.setups import SETUP_POLICY
 from app.modules.opportunities.service.run_service import opportunity_run_service
-from app.modules.sessions.service.session_sizing import entry_ceiling, usage_fraction
+from app.modules.sessions.service.session_sizing import (
+    MAX_ONE_LOT_RISK_PCT,
+    RISK_PER_TRADE_PCT,
+    correlated_block,
+    entry_ceiling,
+)
 from app.modules.trades.entity.trade_entity import ActiveTrade
 from app.modules.trades.repository.trade_repository import TradeRepository, trade_repository
 from app.modules.trades.schema.trade_schema import (
@@ -23,7 +35,11 @@ from app.modules.trades.schema.trade_schema import (
     TradeSearchFilter,
 )
 from app.modules.trades.service import trader_brain
-from app.modules.trades.service.upstox_order_client import UpstoxOrderClient, upstox_order_client
+from app.modules.trades.service.upstox_order_client import (
+    UpstoxOrderClient,
+    limit_price,
+    upstox_order_client,
+)
 
 _IST = ZoneInfo("Asia/Kolkata")
 MAX_PARALLEL_TRADES = 3
@@ -195,10 +211,12 @@ class TradeService:
         max_affordable = max(0, min(max_by_risk, max_by_cash))
 
         win_prob = max(0.0, min(1.0, int(pick.confidence) / 100.0))
-        if max_affordable >= 1:
-            suggested = max(1, min(max_affordable, round(1 + usage_fraction(win_prob) * (max_affordable - 1))))
-        else:
-            suggested = 1
+        # fixed-fractional (research gap 9): size from the stop distance, never from the uncalibrated confidence
+        lots_by_trade = int((float(s.capital) * RISK_PER_TRADE_PCT / 100.0) // risk_per_lot)
+        one_lot_too_risky = lots_by_trade < 1 and risk_per_lot > float(s.capital) * MAX_ONE_LOT_RISK_PCT / 100.0
+        suggested = max(1, min(max_affordable, max(1, lots_by_trade))) if max_affordable >= 1 else 1
+        corr = correlated_block(pick.underlyingCode, pick.optionType,
+                                [(t.underlyingCode, t.optionType) for t in running])
 
         qty = suggested * lot_units
         cap_req = round(qty * px, 2)
@@ -216,6 +234,10 @@ class TradeService:
             block_reason = "Not enough free capital for 1 lot at this entry price"
         elif max_by_risk < 1:
             block_reason = "Risk per lot exceeds remaining session loss budget"
+        elif one_lot_too_risky:
+            block_reason = f"1 lot risks more than {MAX_ONE_LOT_RISK_PCT:g}% of session capital"
+        elif corr:
+            block_reason = corr
 
         return LotSuggestionResponse(
             sessionId=session_id,
@@ -265,6 +287,10 @@ class TradeService:
             )
 
         pick = await _session_loop_service().get_pick_entity(db, request.sessionId, request.pickId)
+        corr = correlated_block(pick.underlyingCode, pick.optionType,
+                                [(t.underlyingCode, t.optionType) for t in running])
+        if corr:
+            raise ConflictException(message=corr, error={"code": "CORRELATED_EXPOSURE"})
         if pick.pickState == "OFFERED":
             pick.pickState = "LOCKED"
             pick.lockedAt = now
@@ -308,20 +334,50 @@ class TradeService:
         entry_order_id: str | None = None
         broker_status = "SIMULATED"
         broker_error: str | None = None
+        execution: dict[str, Any] = {"plannedEntry": float(pick.entry), "requestedEntry": entry_at,
+                                     "orderType": "SIMULATED"}
         if s.routeThroughUpstox:
+            # Marketable LIMIT, not MARKET: caps the chase at ENTRY_LIMIT_BUFFER_TICKS (research gap 5).
+            px = limit_price(entry_at, "BUY", settings.ENTRY_LIMIT_BUFFER_TICKS)
             order_res = await self.orders.place_order(
                 db,
                 user_id=s.userId,
                 instrument_key=pick.instrumentKey,
                 quantity=quantity,
                 transaction_type="BUY",
-                order_type="MARKET",
-                price=entry_at,
+                order_type="LIMIT",
+                price=px,
                 tag=f"ENTRY-S{s.id}-P{pick.id}",
             )
             entry_order_id = order_res["orderId"]
             broker_status = order_res["status"]
             broker_error = order_res["error"]
+            if not order_res["ok"]:
+                raise ConflictException(message=f"Upstox rejected the entry order: {order_res['error']}",
+                                        error={"code": "BROKER_REJECTED"})
+            fill = await self.orders.wait_for_fill(db, s.userId, entry_order_id, settings.ENTRY_FILL_TIMEOUT_S)
+            filled = fill.get("filledQty")
+            complete = (fill.get("status") or "").lower() == "complete"
+            if not complete:
+                # no chasing: whatever did not fill in ENTRY_FILL_TIMEOUT_S is cancelled
+                await self.orders.cancel_order(db, s.userId, entry_order_id)
+                filled_qty = int(filled or 0) - int(filled or 0) % lot_units
+                if filled_qty <= 0:
+                    raise ConflictException(
+                        message=(f"Entry LIMIT ₹{px:.2f} not filled within {settings.ENTRY_FILL_TIMEOUT_S:g}s: "
+                                 "order cancelled, nothing bought (price moved away -- do not chase)"),
+                        error={"code": "ENTRY_NOT_FILLED", "orderId": entry_order_id},
+                    )
+                quantity, lots = filled_qty, filled_qty // lot_units  # partial fill: keep only what was bought
+                capital_used = round(quantity * entry_at, 2)
+            avg = fill.get("averagePrice")
+            execution.update({"orderType": "LIMIT", "limitPrice": px, "sentAt": order_res.get("sentAt"),
+                              "latencyMs": order_res.get("latencyMs"), "fillStatus": fill.get("status"),
+                              "fillPrice": avg, "filledQty": quantity})
+            if avg:
+                # implementation shortfall vs the price the engine planned on (positive = paid more)
+                execution["slippagePct"] = round((avg - float(pick.entry)) / float(pick.entry) * 100, 3)
+                entry_at = round(float(avg), 2)
 
         gross, charges, net, pnl_pct = self._compute_pnl(
             entry_at, entry_at, quantity, lot_units, pick.underlyingCode
@@ -394,12 +450,23 @@ class TradeService:
                 "liveProgressPct": 0.0,
                 "rrNow": round((initial_target - entry_at) / max(0.05, entry_at - initial_stop), 2),
                 "inRunnerMode": False,
+                "execution": execution,
             },
         )
         saved = await self.repo.save(db, entity)
         await db.commit()
         _pilot_runner().start(saved.id)
         return self.to_response(saved)
+
+    async def open_exposure(self, db: AsyncSession, session_id: int) -> list[tuple[str, str]]:
+        """(underlyingCode, optionType) of this session's RUNNING trades -- for the correlated-exposure cap."""
+        return [(t.underlyingCode, t.optionType) for t in await self.repo.running_for_session(db, session_id)]
+
+    async def week_net_pnl(self, db: AsyncSession, user_id: int, now: datetime | None = None) -> float:
+        """Realised net P&L of this user's trades since Monday 00:00 IST of the current week."""
+        now_ist = (now or datetime.now(UTC)).astimezone(_IST)
+        monday = (now_ist - timedelta(days=now_ist.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        return await self.repo.net_pnl_exited_since(db, user_id, monday.astimezone(UTC))
 
     async def get_by_id(self, db: AsyncSession, trade_id: int) -> TradeResponse:
         entity = await self.repo.get_by_id(db, trade_id)
@@ -428,6 +495,17 @@ class TradeService:
         self._candle_cache[t.id] = (now_mono, bars)
         return bars
 
+    async def _exit_quantity(self, db: AsyncSession, t: ActiveTrade) -> int:
+        """Quantity the broker exit may SELL. Never more than the entry actually bought: an intraday SELL with no
+        long position would open a NAKED SHORT option. Unfilled / rejected entries -> 0 (no exit order at all)."""
+        if not t.entryOrderId or t.brokerStatus in ("REJECTED", "ERROR"):
+            return 0
+        qty = int(t.quantity)
+        fill = await self.orders.fetch_fill(db, t.userId, t.entryOrderId)
+        if fill.get("filledQty") is not None:
+            qty = min(qty, int(fill["filledQty"] or 0))
+        return qty
+
     async def _finalize_exit(
         self,
         db: AsyncSession,
@@ -442,20 +520,24 @@ class TradeService:
             float(t.entryAt), exit_price, int(t.quantity), int(t.lotUnits), t.underlyingCode
         )
         if t.routeThroughUpstox:
-            order_res = await self.orders.place_order(
-                db,
-                user_id=t.userId,
-                instrument_key=t.instrumentKey,
-                quantity=int(t.quantity),
-                transaction_type="SELL",
-                order_type="MARKET",
-                price=exit_price,
-                tag=f"EXIT-T{t.id}",
-            )
-            t.exitOrderId = order_res["orderId"]
-            t.brokerStatus = order_res["status"]
-            if order_res["error"]:
-                t.brokerError = order_res["error"]
+            sell_qty = await self._exit_quantity(db, t)
+            if sell_qty <= 0:
+                t.brokerError = "Entry not filled at the broker: no exit order sent (cancel any open entry order)"
+            else:
+                order_res = await self.orders.place_order(
+                    db,
+                    user_id=t.userId,
+                    instrument_key=t.instrumentKey,
+                    quantity=sell_qty,
+                    transaction_type="SELL",
+                    order_type="MARKET",  # carries market_protection (see UpstoxOrderClient)
+                    price=exit_price,
+                    tag=f"EXIT-T{t.id}",
+                )
+                t.exitOrderId = order_res["orderId"]
+                t.brokerStatus = order_res["status"]
+                if order_res["error"]:
+                    t.brokerError = order_res["error"]
 
         t.tradeState = "EXITED"
         t.exitReason = exit_reason
@@ -527,8 +609,10 @@ class TradeService:
                 candles_1m=candles,
                 now=now,
                 close_at=_utc(s.closeAt) if s.closeAt else None,
+                momentum_trail=MOMO_EXIT if SETUP_POLICY.get(t.strategy or "") in ("CORE", "MERGED") else None,
             )
-            t.marketTelemetry = decision.telemetry
+            # keep the entry's execution record (fill, slippage) across ticks
+            t.marketTelemetry = {**decision.telemetry, "execution": (t.marketTelemetry or {}).get("execution")}
 
             if decision.action == "EXIT":
                 await self._finalize_exit(

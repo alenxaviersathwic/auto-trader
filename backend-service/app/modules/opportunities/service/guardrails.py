@@ -30,6 +30,8 @@ keep working unchanged.
 from datetime import datetime, timedelta
 from typing import Any
 
+from app.modules.backtest.service.edge_stats import kill_verdict
+
 MAX_PER_DAY = 4  # SEBI FY26: traders active on most days carry most of the losses; few, selective trades
 MAX_PER_SETUP = 2  # a losing read repeated a 3rd/4th time is not a new opportunity
 LOSS_PAUSE_MIN = 30
@@ -57,6 +59,10 @@ def _demoted_setups(recent: list[Any]) -> set[tuple[str, str]]:
     for key, pnls in by_key.items():
         window = pnls[-SETUP_DEMOTE_LOOKBACK:]
         if len(window) >= SETUP_DEMOTE_MIN_N and sum(window) <= 0:
+            demoted.add(key)
+        elif kill_verdict(pnls)[0]:
+            # 11 Nov 2026 research review (gap 3): the statistical kill -- last 50 trades' expectancy below zero
+            # at 90% one-sided confidence -- catches a slow bleed the 10-trade heuristic can miss
             demoted.add(key)
     return demoted
 

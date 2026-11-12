@@ -2,9 +2,10 @@ import asyncio
 import time
 from collections import deque
 from datetime import datetime
-from zoneinfo import ZoneInfo
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from app.core.config.settings import settings
 from app.core.db.session import async_session_factory
 from app.core.logging.logger import logger
 from app.modules.master.llm.ollama_client import OllamaClient
@@ -13,7 +14,16 @@ from app.modules.opportunities.graph.state import UnderlyingState
 from app.modules.opportunities.provider.underlying_config import get_config, is_market_open
 from app.modules.opportunities.provider.upstox_market_data import market_data
 from app.modules.opportunities.schema.opportunity_schema import AiAnswer
-from app.modules.opportunities.service import chain_recorder, day_type, memory_service, setups as setup_detector, timemachine
+from app.modules.opportunities.service import (
+    chain_recorder,
+    day_type,
+    gamma_regime,
+    memory_service,
+    positioning,
+    timemachine,
+)
+from app.modules.opportunities.service import setups as setup_detector
+from app.modules.opportunities.service.day_context import compute_calendar_tags, compute_expiry_tags
 from app.modules.opportunities.service.market_analysis import analyze, oi_shift
 from app.modules.opportunities.service.menu_builder import (
     baseline_pick,
@@ -32,11 +42,46 @@ from app.modules.opportunities.service.menu_builder import (
     volume_confirms,
 )
 from app.modules.strategies.service.strategy_service import StrategyService
-from app.modules.opportunities.service.day_context import compute_calendar_tags, compute_expiry_tags
 
 MAX_DATA_AGE_SECONDS = 120
 REPRICE_TOLERANCE_PCT = 3.0  # after a slow AI step: keep a pick only if its premium moved less than this
 _last_answer: dict[str, dict[str, Any]] = {}  # code -> {"hash": str, "answer": dict}
+_last_noise: dict[str, dict[str, Any]] = {}
+_gex_hist: dict[str, deque[float]] = {}  # code -> recent net GEX readings (tercile reference); single process
+_positioning: dict[str, Any] = {"date": None, "state": {}}
+_last_gamma: dict[str, dict[str, Any]] = {}  # code -> latest gamma read (iron fly paper engine reads it)
+_IST_TZ = ZoneInfo("Asia/Kolkata")
+POSITIONING_ADJ = 5  # confidence points; stands in for the review's x1.5 / x0.5 size tilt
+
+
+def _positioning_state() -> dict[str, Any]:
+    today = datetime.now(_IST_TZ).date()
+    if _positioning["date"] != today:
+        try:
+            state = positioning.snapshot(today)
+        except Exception:  # noqa: BLE001
+            state = {}
+        _positioning.update(date=today, state=state)
+    return _positioning["state"]
+
+
+def _gamma_state(code: str, market: dict[str, Any], pos: dict[str, Any]) -> dict[str, Any]:
+    """Net GEX of the nearest chain, its tercile regime vs this process's recent history, and the router verdict."""
+    chains = [c for c in market.get("chains") or [] if c.get("strikes") and c.get("expiry")]
+    if not chains or not market.get("spot"):
+        return {}
+    call_s, put_s = gamma_regime.participant_signs(pos.get("client"))
+    try:
+        gex = gamma_regime.net_gex(chains[0], market["spot"], datetime.now(_IST_TZ), call_s, put_s)
+    except Exception:  # noqa: BLE001 -- a malformed chain must not stop the iteration
+        return {}
+    hist = _gex_hist.setdefault(code, deque(maxlen=3000))
+    reg = gamma_regime.regime(gex, list(hist))
+    hist.append(gex)
+    out = {"gex": round(gex / 1e7, 2), "unit": "Rs crore per 1%", "regime": reg, "route": gamma_regime.route(reg),
+           "signs": {"call": call_s, "put": put_s}, "enabled": settings.GAMMA_ROUTER_ENABLED}
+    _last_gamma[code] = out
+    return out  # code -> latest noise-area read (iron fly paper engine reads it)
 _day_bias: dict[str, dict[str, Any]] = {}  # code -> {"date": date, "bias": day_type.apply_bias() dict}; reset daily
 _strategy_service = StrategyService()
 _llm = OllamaClient()
@@ -96,10 +141,17 @@ async def gather(state: UnderlyingState) -> dict[str, Any]:
     market["sessions5"] = await _noise_sessions(cfg, market)
     analysis = analyze(cfg, market)
     analysis["dayBias"] = _session_day_bias(code, analysis.get("dayType"))
+    if analysis.get("noise"):
+        _last_noise[code] = analysis["noise"]
+    pos = _positioning_state()
+    analysis["positioning"] = {k: pos.get(k) for k in ("asOf", "fiiLongRatio", "ratio5", "bias")} if pos else {}
+    analysis["gamma"] = _gamma_state(code, market, pos)
     _attach_oi_shift(code, analysis)
+    await _attach_institutional_inputs(cfg, analysis)
     raw = setup_detector.detect(analysis, cfg)
     found, rejected = setup_detector.confirm_timeframes(analysis, raw)
     diag = {"regime": analysis.get("regime"), "dayType": analysis.get("dayType"), "dayBias": analysis.get("dayBias"),
+            "gamma": analysis.get("gamma"), "positioning": analysis.get("positioning"),
             "noise": analysis.get("noise"),
             "dte": analysis.get("dte"), "window": analysis["session"].get("window"),
             "trend15": analysis.get("trend15"), "trend15Source": analysis.get("trend15Source"),
@@ -149,6 +201,46 @@ async def _noise_sessions(cfg: Any, market: dict[str, Any]) -> list:
         logger.warning(f"[DAY_TYPE] {cfg.code} history unavailable: {type(e).__name__}: {e}")
         return []
     return got[0] if got else []
+
+
+HEAVY_KEYS = {"HDFCBANK": "NSE_EQ|INE040A01034", "ICICIBANK": "NSE_EQ|INE090A01021", "RELIANCE": "NSE_EQ|INE002A01018",
+              "INFY": "NSE_EQ|INE009A01021", "BHARTIARTL": "NSE_EQ|INE397D01024", "SBIN": "NSE_EQ|INE062A01020",
+              "AXISBANK": "NSE_EQ|INE238A01034", "KOTAKBANK": "NSE_EQ|INE237A01028"}
+_inst_cache: dict[str, tuple[float, Any]] = {}
+
+
+async def _attach_institutional_inputs(cfg: Any, analysis: dict[str, Any]) -> None:
+    """Live inputs for the institutional filters that need extra data -- fetched only when that filter is on:
+    OI_BUILDUP (yesterday's near-month futures price / OI change, cached per day) and HEAVYWEIGHTS (5 stocks'
+    1-minute bars vs their VWAP, cached 60 s). India VIX is already in the analysis (market fetch)."""
+    from app.modules.opportunities.service import institutional_filters as inst
+
+    on = inst.enabled(settings.INSTITUTIONAL_FILTERS)
+    code = cfg.code
+    try:
+        if "OI_BUILDUP" in on:
+            key = f"oi:{code}:{datetime.now(_IST_TZ).date()}"
+            if key not in _inst_cache:
+                async with async_session_factory() as s:
+                    fd = await market_data.futures_daily(cfg, s)
+                today = datetime.now(_IST_TZ).date().isoformat()
+                prev = [b for b in fd if str(b.get("t", ""))[:10] < today][-2:]
+                st = inst.buildup_state(prev[1]["c"] - prev[0]["c"], (prev[1].get("oi") or 0) - (prev[0].get("oi") or 0)) \
+                    if len(prev) == 2 else None
+                _inst_cache[key] = (time.monotonic(), st)
+            analysis["oiBuildupDaily"] = _inst_cache[key][1]
+        if "HEAVYWEIGHTS" in on and code in inst.HEAVYWEIGHTS:
+            key = f"hw:{code}"
+            hit = _inst_cache.get(key)
+            if not hit or time.monotonic() - hit[0] > 60:
+                names = inst.HEAVYWEIGHTS[code]
+                async with async_session_factory() as s:
+                    raw = await market_data.intraday_1m([HEAVY_KEYS[n] for n in names], s)
+                hit = (time.monotonic(), inst.heavyweight_state({n: raw.get(HEAVY_KEYS[n]) or [] for n in names}))
+                _inst_cache[key] = hit
+            analysis["heavyweights"] = hit[1]
+    except Exception as e:  # noqa: BLE001 -- missing inputs never veto (filters treat them as unknown)
+        logger.warning(f"[INST_INPUTS] {code}: {type(e).__name__}: {e}")
 
 
 def _attach_oi_shift(code: str, analysis: dict[str, Any]) -> None:
@@ -238,7 +330,38 @@ def route_after_menu(state: UnderlyingState) -> str:
     return "validate" if state.get("reused") else "ai_select"
 
 
+_shadow_tasks: set[asyncio.Task] = set()
+
+
 async def ai_select(state: UnderlyingState) -> dict[str, Any]:
+    """11 Nov 2026 research review (gap 7): there is no evidence the LLM ranker adds edge (FINSABER 2025, StockBench,
+    LiveOption; the 75-84 confidence bucket won 0% on 4 Nov). With OPPORTUNITY_RANKER=CODE (default) the code
+    baseline decides immediately -- no 60-180 s model wait on a 20-second trade -- and the LLM runs in SHADOW in the
+    background: its pick is logged next to the baseline's ([AI_SHADOW]) so the two can be A/B'd on outcomes.
+    The LLM goes back in charge only if it beats the baseline by >= 0.05R on >= 200 matched shadow trades."""
+    if (settings.OPPORTUNITY_RANKER or "CODE").upper() != "LLM":
+        base = baseline_pick(state["menu"], state["bias"])
+        for b in base:
+            b["risks"] = [r for r in b.get("risks", []) if "AI unavailable" not in r] + ["code ranking (LLM in shadow)"]
+        if settings.OPPORTUNITY_LLM_SHADOW and state["menu"]:
+            task = asyncio.create_task(_shadow(state, [b["id"] for b in base[:3]]))
+            _shadow_tasks.add(task)
+            task.add_done_callback(_shadow_tasks.discard)
+        return {"answer": {"picks": base}, "usedBaseline": True}
+    return await _llm_select(state)
+
+
+async def _shadow(state: UnderlyingState, baseline_ids: list[str]) -> None:
+    try:
+        res = await _llm_select(state)
+        picks = [(p.get("id"), p.get("confidence")) for p in (res.get("answer") or {}).get("picks", [])][:3]
+        logger.info(f"[AI_SHADOW] {state['code']} hash={state.get('briefHash')} baseline={baseline_ids} "
+                    f"llm={picks} llmFellBack={bool(res.get('usedBaseline'))}")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[AI_SHADOW] {state['code']}: {type(e).__name__}: {e}")
+
+
+async def _llm_select(state: UnderlyingState) -> dict[str, Any]:
     menu_for_ai = [{k: m.get(k) for k in _MENU_FIELDS_FOR_AI} for m in state["menu"]]
     user = (
         f"BRIEF:\n{state['brief']}\n\nSTRATEGY RULES:\n{state.get('strategies') or 'none'}\n\n"
@@ -274,7 +397,9 @@ async def ai_select(state: UnderlyingState) -> dict[str, Any]:
     if answer is None:
         return {"answer": {"picks": baseline_pick(state["menu"], state["bias"])}, "usedBaseline": True}
     dumped = answer.model_dump()
-    _last_answer[state["code"]] = {"hash": state["briefHash"], "answer": dumped}
+    if (settings.OPPORTUNITY_RANKER or "CODE").upper() == "LLM":
+        # only a LIVE LLM answer may be reused for an unchanged brief; a shadow answer must never reach validate()
+        _last_answer[state["code"]] = {"hash": state["briefHash"], "answer": dumped}
     return {"answer": dumped}
 
 
@@ -366,6 +491,13 @@ async def validate(state: UnderlyingState) -> dict[str, Any]:
         if analysis.get("session", {}).get("window") == "MIDDAY_CHOP" and not m.get("setup"):
             conf -= 5
             risks.append("Midday chop window")
+        pos_bias = (analysis.get("positioning") or {}).get("bias") or 0
+        if settings.POSITIONING_OVERLAY_ENABLED and pos_bias:
+            # institutional review Strategy 4: FII positioning tilts, never decides (stand-alone versions lost)
+            with_fii = (m["side"] == "CE") == (pos_bias > 0)
+            conf += POSITIONING_ADJ if with_fii else -POSITIONING_ADJ
+            reasons.append(f"FII index-futures positioning {'agrees' if with_fii else 'disagrees'} "
+                           f"(long ratio {analysis['positioning'].get('ratio5')})")
         conf = max(1, min(99, conf))
         # out-of-the-money premium exits cannot be mapped onto the underlying through delta (gamma): no replay
         tm = _run_time_machine(tm_ctx, m, spot) if m.get("exitMode") != "PREMIUM" else None

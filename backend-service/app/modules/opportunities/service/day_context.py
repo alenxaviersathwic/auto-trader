@@ -100,6 +100,9 @@ def compute_calendar_tags(now: datetime | None = None, exchange: str = "NSE") ->
     # MONTH_END: no more trading days left in this calendar month after today.
     if next_trading_day(today, exchange).month != today.month:
         tags.append("MONTH_END")
+    from app.modules.opportunities.service.event_calendar import event_tags  # scheduled macro events
+
+    tags += event_tags(today)
     return tags
 
 

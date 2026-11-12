@@ -128,16 +128,20 @@ def test_late_day_momentum_needs_both_halves_and_the_noise_side():
 
 
 def test_strike_mode_table():
-    trend = {"name": "NOISE_BREAKOUT", "family": "TREND"}
+    trend = {"name": "SUPERTREND_FLIP", "family": "TREND"}  # a non-policy trend setup: table below
+    momo = {"name": "NOISE_BREAKOUT", "family": "TREND"}
     reclaim = {"name": "FAILED_BREAK_RECLAIM", "family": "REVERSAL"}
     am, pm = datetime(2026, 11, 9, 10, 30, tzinfo=IST), datetime(2026, 11, 9, 14, 0, tzinfo=IST)
     exp0 = {"dayType": {"type": "EXPANSION"}, "dte": 0}
-    assert mb.strike_mode(exp0, trend, am) == "OTM"
-    assert mb.strike_mode(exp0, trend, pm) == "LOTTERY"
+    # 11 Nov 2026 research review: OTM / LOTTERY are never chosen live -- expansion buys go ITM, the rest ATM
+    assert mb.strike_mode(exp0, trend, am) == "ITM"
+    assert mb.strike_mode(exp0, trend, pm) == "ITM"
     assert mb.strike_mode({"dayType": {"type": "TREND"}, "dte": 0}, trend, pm) == "ITM"
     assert mb.strike_mode(exp0, reclaim, am) == "ATM"
     assert mb.strike_mode({"dayType": {"type": "RANGE"}, "dte": 0}, trend, am) == "ATM"
     assert mb.strike_mode({"dayType": {"type": "EXPANSION"}, "dte": 3}, trend, am) == "ATM"
+    # institutional momentum engine (setups.SETUP_POLICY CORE/MERGED): ITM 0.6-0.8 delta, next expiry
+    assert mb.strike_mode(exp0, momo, pm) == "MOMO" and mb.strike_mode({"dayType": {}, "dte": 3}, momo, am) == "MOMO"
 
 
 def _leg(key, ltp, delta, spread):
@@ -152,8 +156,8 @@ def _market(spot=25000.0):
         d = max(0.03, min(0.97, 0.5 - (s - spot) / 300))
         ce = max(1.0, 110 - (s - spot) * 0.5) if s <= spot else max(1.0, 110 * (d / 0.5) ** 2)
         pe = max(1.0, 110 + (s - spot) * 0.5) if s >= spot else max(1.0, 110 * ((1 - d) / 0.5) ** 2)
-        rows.append({"strike": s, "CE": _leg(f"CE{s}", round(ce, 2), d, 0.05 if ce < 20 else 0.4),
-                     "PE": _leg(f"PE{s}", round(pe, 2), -(1 - d), 0.05 if pe < 20 else 0.4)})
+        rows.append({"strike": s, "CE": _leg(f"CE{s}", round(ce, 2), d, 0.05 if ce < 20 else 0.2),
+                     "PE": _leg(f"PE{s}", round(pe, 2), -(1 - d), 0.05 if pe < 20 else 0.2)})
     return {"spot": spot, "chains": [{"expiry": "2026-11-09", "spot": spot, "strikes": rows, "resistance": None, "support": None}]}
 
 
@@ -209,6 +213,25 @@ def test_slippage_is_a_tick_per_side_on_cheap_options():
 
 def test_chain_recorder_packs_rows_and_throttles():
     rows = chain_recorder.pack(_market()["chains"][0])
-    assert len(rows) == 17 and len(rows[0]) == 15 and rows[0][0] == 24600
+    assert len(rows) == 17 and len(rows[0]) == 19 and rows[0][0] == 24600  # 15 + bid/ask quantities
     chain_recorder._last["X"] = 100.0
-    assert not chain_recorder.due("X", 120.0) and chain_recorder.due("X", 160.0) and chain_recorder.due("NEW", 0.0)
+    assert not chain_recorder.due("X", 110.0) and chain_recorder.due("X", 116.0) and chain_recorder.due("NEW", 0.0)
+
+
+def test_momo_mode_buys_itm_on_a_non_expiring_series_with_a_wide_r_target(monkeypatch):
+    from datetime import datetime as _dt
+
+    cfg = get_config("NIFTY")
+    mk = _market()
+    menu = mb.build_menu(cfg, mk, "BULLISH", 5.0, setups=[_setup()], require_setup=True, atr5=20.0,
+                         strike_modes={"CE": "MOMO", "PE": "ATM"})
+    assert menu and all(m["strikeMode"] == "MOMO" and 0.6 <= m["delta"] <= 0.8 and m["strike"] <= 25000 for m in menu)
+    m = menu[0]
+    assert m["exitMode"] == "POINTS" and m["timeStopMin"] == 45
+    assert m["marginPct"] / m["stopPct"] > mb.TARGET_MAX_R  # 4R target through delta (x0.9 haircut)
+    today = _dt.now(mb._IST).strftime("%Y-%m-%d")
+    mk["chains"][0]["expiry"] = today
+    reasons: dict = {}
+    assert mb.build_menu(cfg, mk, "BULLISH", 5.0, setups=[_setup()], require_setup=True, atr5=20.0,
+                         strike_modes={"CE": "MOMO", "PE": "ATM"}, reasons=reasons) == []
+    assert reasons.get("MOMO: expiring series skipped")

@@ -90,7 +90,7 @@ def scan(code: str, spot_days: dict[str, list[dict[str, Any]]], fut_days: dict[s
          warmup: int, proxy: bool, seed_daily: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     cfg = get_config(code)
     assert cfg is not None
-    open_m, close_m = _mins(cfg.open), _mins(cfg.close)
+    open_m = _mins(cfg.open)
     daily: list[dict[str, Any]] = list(seed_daily or [])
     cands: list[dict[str, Any]] = []
     seen_days = 0
@@ -106,6 +106,7 @@ def scan(code: str, spot_days: dict[str, list[dict[str, Any]]], fut_days: dict[s
             mins = [_bar_min(b["t"]) for b in bars]
             fmins = [_bar_min(b["t"]) for b in fut]
             y, mo, dd = int(d[:4]), int(d[5:7]), int(d[8:10])
+            close_m = _mins(cfg.close_today(datetime(y, mo, dd, 12, 0, tzinfo=IST)))  # 15:30 before 3 Aug 2026
             bias_state: dict[str, Any] = {}  # sticky day-type call for THIS day only (day_type.apply_bias())
             for k in range(1, len(bars)):
                 m = mins[k]
@@ -126,7 +127,7 @@ def scan(code: str, spot_days: dict[str, list[dict[str, Any]]], fut_days: dict[s
                                   "atr5": a.get("atr5") or 0.0, "bars1": a["bars1"][-30:],
                                   "sig5": a["bars5"][-1]["start"], "regime": a.get("regime"),
                                   "window": a["session"]["window"], "src": src, "dayType": a.get("dayType"), "noise": a.get("noise"),
-                                  "dayBias": bias_state.get("bias"),
+                                  "dayBias": bias_state.get("bias"), "levels": dict(a.get("levels") or {}),
                                   "dtrend": None if len(daily) < lookback else ("UP" if daily[-1]["c"] > daily[-lookback]["c"] else "DOWN")})
         daily.append(day_bar(bars))
         seen_days += 1
@@ -177,7 +178,8 @@ def gate_ok(cd: dict[str, Any], s: dict[str, Any], c: SimCfg) -> bool:
         l1, p1 = b1[-1], b1[-2]
         return (l1["c"] > l1["o"] and l1["c"] >= p1["c"]) if ce else (l1["c"] < l1["o"] and l1["c"] <= p1["c"])
     ok, _ = setup_detector.confirm_timeframes({"trend15": cd["trend15"], "bars1": b1, "atr5": cd["atr5"],
-                                               "dayType": cd.get("dayType"), "dayBias": cd.get("dayBias")}, [s])
+                                               "dayType": cd.get("dayType"), "dayBias": cd.get("dayBias"),
+                                               "levels": cd.get("levels")}, [s])
     return bool(ok)
 
 

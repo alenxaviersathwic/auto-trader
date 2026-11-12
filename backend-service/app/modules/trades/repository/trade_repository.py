@@ -59,6 +59,17 @@ class TradeRepository:
         )
         return [int(x) for x in res.scalars().all()]
 
+    async def net_pnl_exited_since(self, session: AsyncSession, user_id: int, since: datetime) -> float:
+        """Sum of netPnl of this user's EXITED trades with exitedAt >= since (all sessions)."""
+        res = await session.execute(
+            select(func.coalesce(func.sum(ActiveTrade.netPnl), 0))
+            .where(ActiveTrade.userId == user_id)
+            .where(ActiveTrade.tradeState == "EXITED")
+            .where(ActiveTrade.exitedAt >= since)
+            .where(ActiveTrade.status == EntityStatus.ACTIVE)
+        )
+        return float(res.scalar_one() or 0)
+
     async def save(self, session: AsyncSession, entity: ActiveTrade) -> ActiveTrade:
         session.add(entity)
         await session.flush()

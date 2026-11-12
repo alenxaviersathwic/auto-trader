@@ -27,6 +27,10 @@ class UnderlyingConfig:
     def close_today(self, now: datetime | None = None) -> str:
         """MCX follows US trading hours: it closes 23:55 IST while US daylight saving is on, 23:30 otherwise."""
         if self.exchange != "MCX":
+            # NSE F&O close moved 15:30 -> 15:40 from 3 Aug 2026 (NSE circular 30 May 2026); replays of older dates
+            # must use the old close or every time-of-day rule is shifted by 10 minutes
+            if self.exchange == "NSE" and self.close == "15:40" and now is not None and now.date().isoformat() < "2026-08-03":
+                return "15:30"
             return self.close
         now = now or datetime.now(ZoneInfo("Asia/Kolkata"))
         ny = now.astimezone(ZoneInfo("America/New_York"))

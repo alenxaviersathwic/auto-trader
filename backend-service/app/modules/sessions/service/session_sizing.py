@@ -6,9 +6,14 @@ Pure rules a MANUAL session loop applies to an already-created opportunity (no I
   usage_fraction()  how much of the affordable size to use, from the win probability
   size_candidate()  lots = 1 .. max affordable, scaled by win probability
 
-There is NO trade-count limit. The only caps are the money ones: free cash and the session loss budget
-(maxLossPercentage of capital, G-RISK-DAY). Within them the size follows the win probability: a 50% (or lower)
-chance gets the minimum (1 lot), a 100% sure chance gets the maximum the cash and loss budget allow.
+There is NO trade-count limit. The caps are the money ones: free cash, the session loss budget
+(maxLossPercentage of capital, G-RISK-DAY) and -- since the 11 Nov 2026 research review (gap 9) -- a FIXED-FRACTIONAL
+per-trade risk: at most RISK_PER_TRADE_PCT of capital between entry and stop. Size no longer scales with the
+model's "confidence": that number is not calibrated (the 75-84 bucket won 0% on 4 Nov), and Kelly-style sizing on an
+unproven edge with n < 200 trades is guesswork. One lot is still allowed when it risks <= MAX_ONE_LOT_RISK_PCT.
+
+correlated_block() treats NIFTY / BANKNIFTY / FINNIFTY / MIDCPNIFTY / SENSEX / BANKEX as ONE bet: they move together
+intraday, so a CE on NIFTY and a CE on BANKNIFTY is the same long position twice.
 """
 import math
 from dataclasses import asdict, dataclass
@@ -23,6 +28,10 @@ MAX_OPEN_OFFERS = 10              # rows shown at once in the session table (a d
 MIN_WIN_PROB = 0.5                # at or below this win probability only the minimum size (1 lot) is used
 MIN_RR_AT_ENTRY = 1.2             # same reward:risk floor the opportunity menu uses
 TICK = 0.05                       # option price tick
+RISK_PER_TRADE_PCT = 0.5          # fixed-fractional: rupees between entry and stop, as % of session capital
+MAX_ONE_LOT_RISK_PCT = 1.0        # a single lot may risk up to this much when RISK_PER_TRADE_PCT buys < 1 lot
+CORRELATED_INDEX_GROUP = frozenset({"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX"})
+MAX_SAME_DIRECTION_CORRELATED = 1  # open same-direction positions across the group (CE = long, PE = short)
 
 
 @dataclass(frozen=True)
@@ -86,19 +95,59 @@ def usage_fraction(win_prob: float) -> float:
     return max(0.0, min(1.0, (win_prob - MIN_WIN_PROB) / (1.0 - MIN_WIN_PROB)))
 
 
-def lots_for(entry: float, stop: float, lot_units: int, confidence: int, cap: CapitalState) -> tuple[int | None, str | None]:
-    """Lots to take: 1 at <=50% win chance up to the most free cash and the loss budget allow at 100%."""
+MOMENTUM_SHORT_MULT = 0.5      # institutional review: noise-area momentum SHORT side evidence is weaker -> half size
+OVERLAY_WITH_MULT, OVERLAY_AGAINST_MULT = 1.5, 0.5  # FII positioning overlay (only when the setting is on)
+
+
+def size_multiplier(strategy: str | None, option_type: str, positioning_bias: int = 0,
+                    overlay_enabled: bool = False) -> float:
+    """Risk multiplier for one candidate (11 Nov 2026 institutional review, Strategies 2 and 4). Only the momentum
+    engine (setups.SETUP_POLICY CORE / MERGED) is scaled; everything else stays 1.0."""
+    from app.modules.opportunities.service.setups import SETUP_POLICY  # lazy: avoids a heavy import at module load
+
+    if not strategy or SETUP_POLICY.get(strategy) not in ("CORE", "MERGED"):
+        return 1.0
+    m = MOMENTUM_SHORT_MULT if option_type == "PE" else 1.0
+    if overlay_enabled and positioning_bias:
+        with_bias = (option_type == "CE") == (positioning_bias > 0)
+        m *= OVERLAY_WITH_MULT if with_bias else OVERLAY_AGAINST_MULT
+    return m
+
+
+def lots_for(entry: float, stop: float, lot_units: int, confidence: int, cap: CapitalState,
+             size_mult: float = 1.0) -> tuple[int | None, str | None]:
+    """Fixed-fractional lots: risk <= RISK_PER_TRADE_PCT x size_mult of capital, within free cash and the loss
+    budget. `confidence` is accepted for call compatibility but no longer changes the size (see module docstring)."""
+    del confidence
     risk_per_lot = (entry - stop) * lot_units
     premium_per_lot = entry * lot_units
-    lots_by_risk = int(cap.remainingLossBudget // risk_per_lot) if risk_per_lot > 0 else 0
-    lots_by_cash = int(cap.availableCapital // premium_per_lot) if premium_per_lot > 0 else 0
-    if lots_by_risk < 1:
+    if risk_per_lot <= 0 or premium_per_lot <= 0:
+        return None, "invalid levels"
+    lots_by_budget = int(cap.remainingLossBudget // risk_per_lot)
+    lots_by_cash = int(cap.availableCapital // premium_per_lot)
+    if lots_by_budget < 1:
         return None, "loss budget below 1 lot"
     if lots_by_cash < 1:
         return None, "not enough free capital"
-    lots_max = min(lots_by_risk, lots_by_cash)
-    win_prob = max(0.0, min(1.0, int(confidence) / 100.0))
-    return max(1, min(lots_max, round(1 + usage_fraction(win_prob) * (lots_max - 1)))), None
+    lots_by_trade = int((cap.capital * RISK_PER_TRADE_PCT * max(0.0, size_mult) / 100.0) // risk_per_lot)
+    if lots_by_trade < 1:
+        if risk_per_lot > cap.capital * MAX_ONE_LOT_RISK_PCT / 100.0:
+            return None, f"1 lot risks more than {MAX_ONE_LOT_RISK_PCT:g}% of capital"
+        lots_by_trade = 1
+    return min(lots_by_trade, lots_by_budget, lots_by_cash), None
+
+
+def correlated_block(underlying: str, option_type: str, open_positions: list[tuple[str, str]],
+                     max_same: int = MAX_SAME_DIRECTION_CORRELATED) -> str | None:
+    """Why this candidate would over-concentrate the correlated index book, or None. `open_positions` =
+    (underlyingCode, optionType) of RUNNING trades and LOCKED picks (plus anything already offered this pass)."""
+    if underlying not in CORRELATED_INDEX_GROUP:
+        return None
+    same = sum(1 for u, t in open_positions if u in CORRELATED_INDEX_GROUP and t == option_type)
+    if same >= max_same:
+        side = "long (CE)" if option_type == "CE" else "short (PE)"
+        return f"correlated index exposure: already {same} {side} position(s) across the index group"
+    return None
 
 
 def size_candidate(opp: dict[str, Any], cap: CapitalState) -> tuple[SizedCandidate | None, str | None]:
@@ -109,7 +158,7 @@ def size_candidate(opp: dict[str, Any], cap: CapitalState) -> tuple[SizedCandida
     lot_units = int(opp.get("lotUnits") or 0)
     if lot_units <= 0:
         return None, "unknown lot size"
-    lots, why = lots_for(entry, stop, lot_units, int(opp["confidence"]), cap)
+    lots, why = lots_for(entry, stop, lot_units, int(opp["confidence"]), cap, float(opp.get("sizeMult") or 1.0))
     if lots is None:
         return None, why
     qty = lots * lot_units

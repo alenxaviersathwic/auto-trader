@@ -157,7 +157,8 @@ class OptionChainSnapshot(BaseEntity):
     pcr: Mapped[float | None] = mapped_column("pcr", Numeric(8, 3), nullable=True)
     atmStraddle: Mapped[float | None] = mapped_column("atm_straddle", Numeric(12, 2), nullable=True)
     vix: Mapped[float | None] = mapped_column("vix", Numeric(8, 2), nullable=True)
-    # rows of [strike, ceLtp, ceOi, ceVol, ceBid, ceAsk, ceDelta, ceIv, peLtp, peOi, peVol, peBid, peAsk, peDelta, peIv]
+    # rows of [strike, ceLtp, ceOi, ceVol, ceBid, ceAsk, ceDelta, ceIv, peLtp, peOi, peVol, peBid, peAsk, peDelta, peIv,
+    #          ceBidQty, ceAskQty, peBidQty, peAskQty]   (the last 4 from 11 Nov 2026; older rows have 15 columns)
     strikes: Mapped[list[Any]] = mapped_column("strikes", JSONB, nullable=False, default=list)
 
     __table_args__ = (Index("ix_option_chain_snapshots_code_time", "underlying_code", "created_at"),)

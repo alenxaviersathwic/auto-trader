@@ -192,8 +192,8 @@ def _a(**kw):
 
 
 def test_timeframes_must_agree():
-    ce = {"name": "ORB", "side": "CE", "strength": 3, "entry": 103.0, "stop": 95.0, "target": 120.0}
-    pe = {"name": "ORB", "side": "PE", "strength": 3, "entry": 103.0, "stop": 110.0, "target": 90.0}
+    ce = {"name": "NOISE_BREAKOUT", "side": "CE", "strength": 3, "entry": 103.0, "stop": 95.0, "target": 120.0}
+    pe = {"name": "NOISE_BREAKOUT", "side": "PE", "strength": 3, "entry": 103.0, "stop": 110.0, "target": 90.0}
     ok, rej = setup_detector.confirm_timeframes(_a(), [ce, pe])
     assert [s["side"] for s in ok] == ["CE"] and "15-min trend" in rej[0]["reason"]
     assert ok[0]["timeframes"]["1m"] == "confirmed" and ok[0]["trigger1m"] > ok[0]["entry1m"]
@@ -206,7 +206,7 @@ def test_timeframes_must_agree():
 
 
 def test_one_minute_chart_always_checked():
-    ce = {"name": "ORB", "side": "CE", "strength": 3, "entry": 103.0, "stop": 95.0, "target": 120.0}
+    ce = {"name": "NOISE_BREAKOUT", "side": "CE", "strength": 3, "entry": 103.0, "stop": 95.0, "target": 120.0}
     # below the 1-min EMA9: a long run of falling bars, then one small green bar
     falling = [bar(590 + i, 110 - i, 110.2 - i, 108.9 - i, 109 - i) for i in range(10)]
     falling.append(bar(600, 100.0, 100.4, 99.8, 100.3))
@@ -305,7 +305,9 @@ if __name__ == "__main__":
     raise SystemExit(fails)
 
 
-def test_flat_15m_trend_vetoes_trend_setups_only():
+def test_flat_15m_trend_vetoes_trend_setups_only(monkeypatch):
+    # family mechanics (still in the code for research replays): policy opened up for this test only
+    monkeypatch.setattr(setup_detector, "policy_block", lambda a, s: None)
     ce = {"name": "ORB", "side": "CE", "strength": 3, "entry": 103.0, "stop": 95.0, "target": 120.0}
     rng = {**ce, "name": "PDH_PDL_RETEST"}
     rev = {**ce, "name": "FAILED_BREAK_RECLAIM"}
@@ -391,3 +393,17 @@ def test_vwap_band_fade_on_a_flat_vwap_day():
     assert fade[0]["target"] == 25000.0 and fade[0]["stop"] > 25062
     a["vwap"]["slopePct"] = 0.2  # trending VWAP: no fade
     assert not [s for s in setup_detector.detect(a, get_config("NIFTY")) if s["name"] == "VWAP_BAND_REVERT"]
+
+
+def test_setup_policy_keeps_only_institutional_momentum_as_option_buys():
+    base = {"side": "CE", "strength": 3, "entry": 103.0, "stop": 95.0, "target": 120.0}
+    names = ["NOISE_BREAKOUT", "ORB", "PDH_PDL_RETEST", "FAILED_BREAK_RECLAIM", "RANGE_BREAKOUT", "BRAND_NEW_SETUP"]
+    ok, rej = setup_detector.confirm_timeframes(_a(), [{**base, "name": n} for n in names])
+    assert [s["name"] for s in ok] == ["NOISE_BREAKOUT"]
+    why = {r["name"]: r["reason"] for r in rej}
+    assert "dropped" in why["ORB"] and "dropped" in why["PDH_PDL_RETEST"] and "dropped" in why["BRAND_NEW_SETUP"]
+    assert "short-premium placement only" in why["FAILED_BREAK_RECLAIM"]
+    assert "only inside an active CE noise breakout" in why["RANGE_BREAKOUT"]
+    ok, _ = setup_detector.confirm_timeframes(_a(dayType={"type": "EXPANSION", "side": "CE"}),
+                                              [{**base, "name": "RANGE_BREAKOUT"}])
+    assert [s["name"] for s in ok] == ["RANGE_BREAKOUT"]

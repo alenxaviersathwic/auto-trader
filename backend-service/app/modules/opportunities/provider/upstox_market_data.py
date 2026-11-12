@@ -122,6 +122,26 @@ class UpstoxMarketData:
             return await self._with_token(session, lambda t: self._fetch_mcx(cfg, t))
         return await self._with_token(session, lambda t: self._fetch_index(cfg, t))
 
+    async def vix_history(self, session: AsyncSession, days: int = 365) -> list[float]:
+        """India VIX daily closes over the last `days` calendar days (oldest first), cached for the IST day --
+        for the iron fly's VIX-percentile gate."""
+        today = datetime.now(_IST).date()
+        cached = getattr(self, "_vix_hist", None)
+        if cached and cached[0] == today:
+            return cached[1]
+
+        async def run(token: str) -> list[float]:
+            async with self._client(token) as c:
+                k = VIX_KEY.replace("|", "%7C")
+                frm = today - timedelta(days=days)
+                r = await self._get(c, f"{BASE}/v3/historical-candle/{k}/days/1/{today.isoformat()}/{frm.isoformat()}",
+                                    "India VIX history")
+                return [b["c"] for b in _bars((r.json().get("data") or {}).get("candles", []))]
+
+        closes = await self._with_token(session, run)
+        self._vix_hist = (today, closes)
+        return closes
+
     async def historical_daily(self, cfg: UnderlyingConfig, session: AsyncSession, years: int = 20) -> list[dict[str, Any]]:
         """Long daily-candle history for the strategy backtester. Upstox's own retention for day+
         intervals is far shorter than `years` (community answers say ~5 years) -- and unlike the
@@ -236,6 +256,31 @@ class UpstoxMarketData:
 
         return await self._with_token(session, run)
 
+    async def futures_daily(self, cfg: UnderlyingConfig, session: AsyncSession) -> list[dict[str, Any]]:
+        """Near-month future's daily candles (with OI), last ~45 days -- for the daily OI build-up state."""
+        fut = await instrument_catalog.near_future(cfg.exchange, cfg.code, roll_on_expiry_day=False)
+        if not fut:
+            return []
+        return await self._with_token(session, lambda t: self._daily_with(t, fut.key))
+
+    async def _daily_with(self, token: str, key: str) -> list[dict[str, Any]]:
+        async with self._client(token) as c:
+            return await self._daily(c, key)
+
+    async def intraday_1m(self, keys: list[str], session: AsyncSession) -> dict[str, list[dict[str, Any]]]:
+        """Today's 1-minute candles for several instruments (heavyweight stocks)."""
+        async def run(token: str) -> dict[str, list[dict[str, Any]]]:
+            out: dict[str, list[dict[str, Any]]] = {}
+            async with self._client(token) as c:
+                for k in keys:
+                    try:
+                        out[k] = await self._intraday(c, k)
+                    except MarketDataUnavailable:
+                        out[k] = []
+            return out
+
+        return await self._with_token(session, run)
+
     # ───────────────────────── index ─────────────────────────
     async def _fetch_index(self, cfg: UnderlyingConfig, token: str) -> dict[str, Any]:
         spot_key = cfg.instrumentKey
@@ -297,7 +342,8 @@ class UpstoxMarketData:
                 o = row.get(k) or {}
                 md, gk = o.get("market_data") or {}, o.get("option_greeks") or {}
                 leg[side] = _leg(o.get("instrument_key"), md.get("ltp"), md.get("oi"), md.get("volume"),
-                                 md.get("bid_price"), md.get("ask_price"), gk.get("delta"), gk.get("iv"))
+                                 md.get("bid_price"), md.get("ask_price"), gk.get("delta"), gk.get("iv"),
+                                 md.get("bid_qty"), md.get("ask_qty"))
             strikes.append(leg)
         return _chain(expiry, spot, strikes)
 
@@ -365,10 +411,11 @@ class UpstoxMarketData:
                     leg[side] = _leg(con.key if con else None, 0, 0, 0, 0, 0, 0, 0)
                     continue
                 depth = q.get("depth") or {}
-                bid = ((depth.get("buy") or [{}])[0] or {}).get("price")
-                ask = ((depth.get("sell") or [{}])[0] or {}).get("price")
-                leg[side] = _leg(con.key, q.get("last_price"), q.get("oi"), q.get("volume"), bid, ask,
-                                 (g or {}).get("delta"), (g or {}).get("iv"))
+                top_b = (depth.get("buy") or [{}])[0] or {}
+                top_a = (depth.get("sell") or [{}])[0] or {}
+                leg[side] = _leg(con.key, q.get("last_price"), q.get("oi"), q.get("volume"),
+                                 top_b.get("price"), top_a.get("price"),
+                                 (g or {}).get("delta"), (g or {}).get("iv"), top_b.get("quantity"), top_a.get("quantity"))
             strikes.append(leg)
         return _chain(expiry, spot, strikes)
 
@@ -468,9 +515,9 @@ def _f(v: Any) -> float:
         return 0.0
 
 
-def _leg(key, ltp, oi, volume, bid, ask, delta, iv) -> dict[str, Any]:
+def _leg(key, ltp, oi, volume, bid, ask, delta, iv, bid_qty=None, ask_qty=None) -> dict[str, Any]:
     return {"key": key, "ltp": _f(ltp), "oi": _f(oi), "volume": _f(volume), "bid": _f(bid), "ask": _f(ask),
-            "delta": _f(delta), "iv": _f(iv)}
+            "delta": _f(delta), "iv": _f(iv), "bidQty": _f(bid_qty), "askQty": _f(ask_qty)}
 
 
 def _chain(expiry: str, spot: float, strikes: list[dict[str, Any]]) -> dict[str, Any]:
