@@ -52,3 +52,6 @@ backup/autotrader_backup_*
 # Backtest cache + output (large, regenerate with scripts/backtest_setups.py)
 backend-service/data/backtest/
 backend-service/backtest_out/
+
+# real option price history (backfill_expired_options.py / fetch_day_option_candles.py)
+backend-service/backtest_data/
