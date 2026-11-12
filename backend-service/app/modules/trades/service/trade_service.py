@@ -15,13 +15,13 @@ from app.core.exception.app_exceptions import (
 from app.core.pagination.page_result import PageResult
 from app.modules.opportunities.service.costs import round_trip_cost_pct
 from app.modules.opportunities.service.menu_builder import MOMO_EXIT
-from app.modules.opportunities.service.setups import SETUP_POLICY
 from app.modules.opportunities.service.run_service import opportunity_run_service
+from app.modules.opportunities.service.setups import SETUP_POLICY
 from app.modules.sessions.service.session_sizing import (
-    MAX_ONE_LOT_RISK_PCT,
     RISK_PER_TRADE_PCT,
     correlated_block,
     entry_ceiling,
+    one_lot_risk_pct,
 )
 from app.modules.trades.entity.trade_entity import ActiveTrade
 from app.modules.trades.repository.trade_repository import TradeRepository, trade_repository
@@ -60,6 +60,15 @@ def _session_loop_service():
 
 def _utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def _trade_close_at(strategy: str | None, session_close: datetime | None, now: datetime) -> datetime | None:
+    """Session close, pulled earlier when the strategy has a mandatory time exit (FII_OPEN_DRIVE: 10:30 IST)."""
+    from app.modules.opportunities.service import fii_open
+
+    close = _utc(session_close) if session_close else None
+    ex = fii_open.exit_at(strategy, now.astimezone(fii_open.IST).date())
+    return min(close, ex) if close and ex else (ex or close)
 
 
 class TradeService:
@@ -213,7 +222,7 @@ class TradeService:
         win_prob = max(0.0, min(1.0, int(pick.confidence) / 100.0))
         # fixed-fractional (research gap 9): size from the stop distance, never from the uncalibrated confidence
         lots_by_trade = int((float(s.capital) * RISK_PER_TRADE_PCT / 100.0) // risk_per_lot)
-        one_lot_too_risky = lots_by_trade < 1 and risk_per_lot > float(s.capital) * MAX_ONE_LOT_RISK_PCT / 100.0
+        one_lot_too_risky = lots_by_trade < 1 and risk_per_lot > float(s.capital) * one_lot_risk_pct() / 100.0
         suggested = max(1, min(max_affordable, max(1, lots_by_trade))) if max_affordable >= 1 else 1
         corr = correlated_block(pick.underlyingCode, pick.optionType,
                                 [(t.underlyingCode, t.optionType) for t in running])
@@ -235,7 +244,7 @@ class TradeService:
         elif max_by_risk < 1:
             block_reason = "Risk per lot exceeds remaining session loss budget"
         elif one_lot_too_risky:
-            block_reason = f"1 lot risks more than {MAX_ONE_LOT_RISK_PCT:g}% of session capital"
+            block_reason = f"1 lot risks more than {one_lot_risk_pct():g}% of session capital"
         elif corr:
             block_reason = corr
 
@@ -608,7 +617,7 @@ class TradeService:
                 trader_profile=t.traderProfile,
                 candles_1m=candles,
                 now=now,
-                close_at=_utc(s.closeAt) if s.closeAt else None,
+                close_at=_trade_close_at(t.strategy, s.closeAt, now),
                 momentum_trail=MOMO_EXIT if SETUP_POLICY.get(t.strategy or "") in ("CORE", "MERGED") else None,
             )
             # keep the entry's execution record (fill, slippage) across ticks

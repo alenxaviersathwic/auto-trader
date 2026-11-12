@@ -1,4 +1,4 @@
-"""Mon-Fri 19:30 IST: save NSE participant-wise OI for the day (plus any missed days of the last week)."""
+"""Mon-Fri 19:30 IST (+ 08:50 catch-up, + once at boot): save NSE participant-wise OI for the day (plus any missed days of the last week)."""
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -33,4 +33,10 @@ async def _run() -> None:
 def register_positioning_job() -> None:
     get_scheduler().add_job(_run, CronTrigger(day_of_week="mon-fri", hour=19, minute=30, timezone=_IST), id=JOB_ID,
                             replace_existing=True, coalesce=True, max_instances=1, misfire_grace_time=12 * 3600)
-    logger.info("Registered participant OI job (Mon-Fri 19:30 IST).")
+    # FII_OPEN_DRIVE reads yesterday's file at 09:20: catch up before the open and once at boot, in case the
+    # backend was not running at 19:30 the evening before
+    get_scheduler().add_job(_run, CronTrigger(day_of_week="mon-fri", hour=8, minute=50, timezone=_IST),
+                            id=JOB_ID + ".morning", replace_existing=True, coalesce=True, max_instances=1,
+                            misfire_grace_time=1800)
+    get_scheduler().add_job(_run, id=JOB_ID + ".boot", replace_existing=True, max_instances=1)
+    logger.info("Registered participant OI job (Mon-Fri 19:30 + 08:50 IST, and once at boot).")

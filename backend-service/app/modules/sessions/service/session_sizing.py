@@ -30,6 +30,16 @@ MIN_RR_AT_ENTRY = 1.2             # same reward:risk floor the opportunity menu 
 TICK = 0.05                       # option price tick
 RISK_PER_TRADE_PCT = 0.5          # fixed-fractional: rupees between entry and stop, as % of session capital
 MAX_ONE_LOT_RISK_PCT = 1.0        # a single lot may risk up to this much when RISK_PER_TRADE_PCT buys < 1 lot
+
+
+def one_lot_risk_pct() -> float:
+    """settings.MAX_ONE_LOT_RISK_PCT when configured (small accounts), else MAX_ONE_LOT_RISK_PCT."""
+    try:
+        from app.core.config.settings import settings
+
+        return float(getattr(settings, "MAX_ONE_LOT_RISK_PCT", MAX_ONE_LOT_RISK_PCT))
+    except Exception:  # noqa: BLE001
+        return MAX_ONE_LOT_RISK_PCT
 CORRELATED_INDEX_GROUP = frozenset({"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX"})
 MAX_SAME_DIRECTION_CORRELATED = 1  # open same-direction positions across the group (CE = long, PE = short)
 
@@ -103,7 +113,9 @@ def size_multiplier(strategy: str | None, option_type: str, positioning_bias: in
                     overlay_enabled: bool = False) -> float:
     """Risk multiplier for one candidate (11 Nov 2026 institutional review, Strategies 2 and 4). Only the momentum
     engine (setups.SETUP_POLICY CORE / MERGED) is scaled; everything else stays 1.0."""
-    from app.modules.opportunities.service.setups import SETUP_POLICY  # lazy: avoids a heavy import at module load
+    from app.modules.opportunities.service.setups import (
+        SETUP_POLICY,  # lazy: avoids a heavy import at module load
+    )
 
     if not strategy or SETUP_POLICY.get(strategy) not in ("CORE", "MERGED"):
         return 1.0
@@ -131,8 +143,8 @@ def lots_for(entry: float, stop: float, lot_units: int, confidence: int, cap: Ca
         return None, "not enough free capital"
     lots_by_trade = int((cap.capital * RISK_PER_TRADE_PCT * max(0.0, size_mult) / 100.0) // risk_per_lot)
     if lots_by_trade < 1:
-        if risk_per_lot > cap.capital * MAX_ONE_LOT_RISK_PCT / 100.0:
-            return None, f"1 lot risks more than {MAX_ONE_LOT_RISK_PCT:g}% of capital"
+        if risk_per_lot > cap.capital * one_lot_risk_pct() / 100.0:
+            return None, f"1 lot risks more than {one_lot_risk_pct():g}% of capital"
         lots_by_trade = 1
     return min(lots_by_trade, lots_by_budget, lots_by_cash), None
 

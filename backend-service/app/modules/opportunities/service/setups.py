@@ -503,6 +503,7 @@ SETUP_POLICY: dict[str, str] = {
     # 12 Nov 2026 price-action study (6 months, v3 gates, MOMO trail): INSIDE_BAR alone 14 trades PF 14.7, both halves +;
     # on top of the core set +1.1k, H1 unchanged. Scalp (fixed 1R / 1.5R) exits lost after costs on every setup tested.
     "INSIDE_BAR": "CORE",
+    "FII_OPEN_DRIVE": "CORE",  # opening CE on prior-day FII futures buying (fii_open.py); off unless FII_OPEN_CODES
     "ORB": "DROPPED", "EMA_CROSS_RETEST": "DROPPED", "PDH_PDL_RETEST": "DROPPED",
     "MOMENTUM_FLAG": "DROPPED", "SHORT_COVERING_SPIKE": "DROPPED", "SUPERTREND_FLIP": "DROPPED",
     "SUPERTREND_RETEST": "DROPPED", "CPR_BREAKOUT": "DROPPED",

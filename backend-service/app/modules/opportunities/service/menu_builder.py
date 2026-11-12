@@ -398,7 +398,7 @@ def build_menu(
                 elif setup and atr5 and atr5 > 0:
                     exit_mode = "POINTS"
                     stop_atr_max = STOP_ATR_MAX_REVERSAL if setup.get("family") == "REVERSAL" else STOP_ATR_MAX
-                    stop_pts = min(max(down, STOP_ATR_MIN * atr5), stop_atr_max * atr5)
+                    stop_pts = down if setup.get("fixedStop") else min(max(down, STOP_ATR_MIN * atr5), stop_atr_max * atr5)
                     target_pts = (TARGET_MAX_R_MOMO * stop_pts if mode == "MOMO"  # momentum: no "next level" cap
                                   else min(up, TARGET_MAX_R * stop_pts))
                     stop_pct = min(MAX_PREMIUM_STOP_PCT, delta * stop_pts / ltp * 100)

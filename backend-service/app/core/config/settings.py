@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     #   max drawdown 1.08L -> 15.6k, total losses 4.1L -> 0.79L; better in BOTH halves (May-Aug16 -108k -> -14.6k,
     #   Aug17-Nov +18.9k -> +44.7k). ENTRY_10_1430 also keeps LATE_DAY_MOMENTUM (net negative over 6 months) out.
     INSTITUTIONAL_FILTERS: str = "NIFTY_NOISE_STRICT,TREND_5_20,NO_VWAP_PULLBACK,ENTRY_10_1430,IB_GATE,PE_EXTRA"
+    FII_OPEN_CODES: str = "NIFTY"  # FII_OPEN_DRIVE opening trade (fii_open.py); "" = off
+    MAX_ONE_LOT_RISK_PCT: float = 1.0  # one lot may risk up to this % of session capital when 0.5% buys < 1 lot
 
     # Logging
     LOG_LEVEL: str = "INFO"

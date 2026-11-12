@@ -17,6 +17,7 @@ from app.modules.opportunities.schema.opportunity_schema import AiAnswer
 from app.modules.opportunities.service import (
     chain_recorder,
     day_type,
+    fii_open,
     gamma_regime,
     memory_service,
     positioning,
@@ -150,6 +151,10 @@ async def gather(state: UnderlyingState) -> dict[str, Any]:
     await _attach_institutional_inputs(cfg, analysis)
     raw = setup_detector.detect(analysis, cfg)
     found, rejected = setup_detector.confirm_timeframes(analysis, raw)
+    fo = fii_open.signal(code, analysis.get("spot") or market.get("spot"))
+    if fo and not any(x["name"] == fo["name"] for x in found):
+        found = [fo, *found]  # opening trade: not a chart setup, so it skips the timeframe / momentum gates
+        logger.info(f"[FII_OPEN] {code} {fo['reason']}")
     diag = {"regime": analysis.get("regime"), "dayType": analysis.get("dayType"), "dayBias": analysis.get("dayBias"),
             "gamma": analysis.get("gamma"), "positioning": analysis.get("positioning"),
             "noise": analysis.get("noise"),

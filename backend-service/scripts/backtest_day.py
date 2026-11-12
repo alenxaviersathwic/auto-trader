@@ -250,7 +250,8 @@ def _run_trade(code, bars, k, s, atr5, mode):
     lot = cfg.lotSize
     pct = (px - p0) / p0 * 100
     cost_pct = round_trip_cost_pct(p0, lot, cfg.exchange, max(pct, 0)) + slippage_pct(p0)
-    return {"fees": cost_pct / 100 * p0 * lot, "exitK": j, "exitMin": bt._bar_min(bars[j]["t"]), "out": out, "strike": int(strike), "mode": mode, "p0": p0, "px": px,
+    risk_lot = None if premium else max(0.0, p0 - bs(code, fill - sg * stop_pts, strike, m0, ce)[0]) * lot
+    return {"riskLot": risk_lot, "fees": cost_pct / 100 * p0 * lot, "exitK": j, "exitMin": bt._bar_min(bars[j]["t"]), "out": out, "strike": int(strike), "mode": mode, "p0": p0, "px": px,
             "delta": delta, "pct": pct, "hold": bt._bar_min(bars[j]["t"]) - m0 + 1, "net": (px - p0) * lot - cost_pct / 100 * p0 * lot,
             "lot": lot}
 

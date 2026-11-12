@@ -103,3 +103,28 @@ def test_v3_ib_gate_pe_extra_and_inside_bar_policy():
     # INSIDE_BAR trades as a momentum entry, behind the same gates
     assert su.SETUP_POLICY["INSIDE_BAR"] == "CORE" and "INSIDE_BAR" in inst.MOMENTUM_SETUPS
     assert inst.block({"levels": lv, "bars1": bar("12:00", 100.0)}, {"name": "INSIDE_BAR", "side": "CE"}, "NIFTY", on)
+
+
+def test_fii_open_drive_signal_window_and_exit():
+    from app.core.config.settings import settings
+    from app.modules.opportunities.service import fii_open
+    from app.modules.trades.service.trade_service import _trade_close_at
+
+    old = settings.FII_OPEN_CODES
+    settings.FII_OPEN_CODES = "NIFTY"
+    try:
+        at = lambda h, m: datetime(2026, 11, 13, h, m, tzinfo=IST)  # noqa: E731
+        s = fii_open.signal("NIFTY", 25000.0, at(9, 22), change=(5000.0, "2026-11-12"))
+        assert s and s["side"] == "CE" and s["fixedStop"] and abs(s["stop"] - 24900.0) < 0.01 and s["target"] > 25000
+        assert su.SETUP_POLICY[s["name"]] == "CORE"
+        assert fii_open.signal("NIFTY", 25000.0, at(9, 22), change=(-10.0, "x")) is None  # FII net down: no trade
+        assert fii_open.signal("NIFTY", 25000.0, at(9, 40), change=(5000.0, "x")) is None  # after the window
+        assert fii_open.signal("SENSEX", 80000.0, at(9, 22), change=(5000.0, "x")) is None  # not configured
+        settings.FII_OPEN_CODES = ""
+        assert fii_open.signal("NIFTY", 25000.0, at(9, 22), change=(5000.0, "x")) is None  # switched off
+    finally:
+        settings.FII_OPEN_CODES = old
+    close = datetime(2026, 11, 13, 15, 30, tzinfo=IST)
+    now = datetime(2026, 11, 13, 9, 30, tzinfo=IST)
+    assert _trade_close_at("FII_OPEN_DRIVE", close, now) == datetime(2026, 11, 13, 10, 30, tzinfo=IST)
+    assert _trade_close_at("NOISE_BREAKOUT", close, now) == close
