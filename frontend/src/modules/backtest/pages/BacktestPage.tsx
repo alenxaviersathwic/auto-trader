@@ -1,26 +1,50 @@
 import React from "react";
 import { PlayCircle, Loader2, AlertTriangle } from "lucide-react";
-import { BacktestCalendar } from "../components/BacktestCalendar";
 import { IndexMultiSelect } from "../components/IndexMultiSelect";
-import { BacktestResults } from "../components/BacktestResults";
-import { useRunBacktest } from "../hooks/useBacktest";
+import { RangeBacktestResults } from "../components/RangeBacktestResults";
+import { useRangeBacktestJob, useStartRangeBacktest } from "../hooks/useBacktest";
+
+const MAX_RANGE_DAYS = 95;
+
+function isoDaysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
 
 export const BacktestPage: React.FC = () => {
-  const [dates, setDates] = React.useState<string[]>([]);
-  const [codes, setCodes] = React.useState<string[]>(["NIFTY", "SENSEX"]);
-  const runMutation = useRunBacktest();
+  const today = isoDaysAgo(0);
+  const [fromDate, setFromDate] = React.useState(isoDaysAgo(30));
+  const [toDate, setToDate] = React.useState(today);
+  const [codes, setCodes] = React.useState<string[]>(["NIFTY", "BANKNIFTY", "SENSEX"]);
+  const [capital, setCapital] = React.useState(50000);
+  const [maxLossPct, setMaxLossPct] = React.useState(4);
+  const [sizing, setSizing] = React.useState<"MAX_LOTS" | "RISK">("MAX_LOTS");
+  const [jobId, setJobId] = React.useState<string | null>(null);
+  const start = useStartRangeBacktest();
+  const job = useRangeBacktestJob(jobId);
 
-  const toggleDate = (d: string) =>
-    setDates((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort()));
   const toggleCode = (c: string) =>
     setCodes((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
 
-  const canRun = dates.length > 0 && codes.length > 0 && !runMutation.isPending;
+  const spanDays = (new Date(toDate).getTime() - new Date(fromDate).getTime()) / 86400000;
+  const rangeError =
+    !fromDate || !toDate
+      ? "Pick both dates"
+      : spanDays < 0
+        ? "To date is before from date"
+        : spanDays > MAX_RANGE_DAYS
+          ? `Max ${MAX_RANGE_DAYS} days per run`
+          : null;
+  const running = start.isPending || job.data?.state === "RUNNING";
+  const canRun = !rangeError && codes.length > 0 && capital > 0 && !running;
 
   const handleRun = () => {
     if (!canRun) return;
-    runMutation.mutate({ dates, codes });
+    start.mutate({ fromDate, toDate, codes, capital, maxLossPct, sizing }, { onSuccess: (j) => setJobId(j.jobId) });
   };
+
+  const err = (start.error as any)?.message ?? (job.error as any)?.message ?? (job.data?.state === "FAILED" ? job.data.error : null);
 
   return (
     <div className="page-container">
@@ -28,57 +52,82 @@ export const BacktestPage: React.FC = () => {
         <div>
           <h1 className="page-title">Backtest</h1>
           <p className="text-secondary micro">
-            Replays the live engine's own rules over real Upstox candles for the dates and indices you pick.
+            Fetches Upstox candles for the range and replays today's live strategies and rules: trades, P&amp;L, the
+            weakest strategy and what each rule saved or cost.
           </p>
         </div>
         <div className="page-actions">
           <button type="button" className="btn btn--primary" disabled={!canRun} onClick={handleRun}>
-            {runMutation.isPending ? <Loader2 size={16} className="spin" /> : <PlayCircle size={16} />}
-            {runMutation.isPending ? "Running..." : "Run backtest"}
+            {running ? <Loader2 size={16} className="spin" /> : <PlayCircle size={16} />}
+            {running ? "Running..." : "Run backtest"}
           </button>
         </div>
       </div>
 
       <div className="backtest-page-body">
         <div className="card backtest-picker-row">
-          <div className="backtest-picker-col">
-            <span className="section-title">Dates</span>
-            <BacktestCalendar selected={dates} onToggle={toggleDate} />
-            <span className="backtest-selected-summary">
-              {dates.length === 0 ? "No dates picked yet" : `${dates.length} date(s) selected`}
-            </span>
+          <div className="form-group">
+            <label className="form-label" htmlFor="bt-from">From</label>
+            <input id="bt-from" type="date" className="input" value={fromDate} max={toDate || today}
+              onChange={(e) => setFromDate(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="bt-to">To</label>
+            <input id="bt-to" type="date" className="input" value={toDate} min={fromDate} max={today}
+              onChange={(e) => setToDate(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="bt-capital">Capital (Rs)</label>
+            <input id="bt-capital" type="number" className="input mono" min={1000} step={1000} value={capital}
+              onChange={(e) => setCapital(Number(e.target.value))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="bt-maxloss">Daily max loss %</label>
+            <input id="bt-maxloss" type="number" className="input mono" min={0.5} max={100} step={0.5} value={maxLossPct}
+              onChange={(e) => setMaxLossPct(Number(e.target.value))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="bt-sizing">Lots per trade</label>
+            <select id="bt-sizing" className="select" value={sizing}
+              onChange={(e) => setSizing(e.target.value as "MAX_LOTS" | "RISK")}>
+              <option value="MAX_LOTS">Max lots the capital buys</option>
+              <option value="RISK">Live risk sizer (1 lot)</option>
+            </select>
           </div>
           <div className="backtest-picker-col" style={{ flex: 1 }}>
-            <span className="section-title">Indices</span>
+            <span className="form-label">Indices</span>
             <IndexMultiSelect selected={codes} onToggle={toggleCode} />
-            <span className="backtest-selected-summary">
-              {codes.length === 0 ? "No indices picked yet" : `${codes.length} index(es) selected`}
-            </span>
-            <p className="text-muted micro" style={{ marginTop: "var(--space-2)", maxWidth: 480 }}>
-              Premiums are a Black-Scholes estimate off the real underlying path (no historical option-chain
-              feed exists) -- entries, exits and guardrails are the exact rules the live engine trades with.
-              Needs a configured Upstox token; a date it can't fetch shows an error in that row instead of a
-              made-up number.
-            </p>
+            {rangeError && <span className="form-error">{rangeError}</span>}
           </div>
         </div>
 
-        {runMutation.isError && (
-          <div className="card" style={{ borderColor: "var(--bearish-red)" }}>
-            <AlertTriangle size={16} className="text-bearish" style={{ marginRight: 8, verticalAlign: "-3px" }} />
-            <span className="text-bearish">
-              {(runMutation.error as any)?.message ?? "Backtest run failed."}
-            </span>
+        {running && (
+          <div className="card">
+            <div className="backtest-progress">
+              <div className="backtest-progress__fill" style={{ width: `${job.data?.progressPct ?? 0}%` }} />
+            </div>
+            <p className="text-muted micro" style={{ marginTop: "var(--space-2)" }}>
+              {job.data?.stage ?? "starting"} · {(job.data?.progressPct ?? 0).toFixed(0)}%
+            </p>
           </div>
         )}
 
-        {runMutation.data && <BacktestResults result={runMutation.data} />}
+        {err && !running && (
+          <div className="card" style={{ borderColor: "var(--bearish-red)" }}>
+            <AlertTriangle size={16} className="text-bearish" style={{ marginRight: 8, verticalAlign: "-3px" }} />
+            <span className="text-bearish">{err}</span>
+          </div>
+        )}
 
-        {!runMutation.data && !runMutation.isPending && !runMutation.isError && (
+        {job.data?.state === "DONE" && job.data.result && <RangeBacktestResults result={job.data.result} />}
+
+        {!jobId && !start.isPending && !start.isError && (
           <div className="empty-state">
             <PlayCircle className="empty-state__icon" />
-            <div className="empty-state__title">Pick dates and indices, then run</div>
-            <div className="empty-state__body">Results appear here: opportunities, wins, losses, win rate and net P&amp;L.</div>
+            <div className="empty-state__title">Pick a date range and indices, then run</div>
+            <div className="empty-state__body">
+              Results: trades, win rate, P&amp;L per index, strategy and day, rule impact, and the result with your capital.
+            </div>
           </div>
         )}
       </div>

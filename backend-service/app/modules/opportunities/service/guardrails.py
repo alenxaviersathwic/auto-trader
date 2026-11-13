@@ -35,7 +35,7 @@ from app.modules.backtest.service.edge_stats import kill_verdict
 MAX_PER_DAY = 4  # SEBI FY26: traders active on most days carry most of the losses; few, selective trades
 MAX_PER_SETUP = 2  # a losing read repeated a 3rd/4th time is not a new opportunity
 LOSS_PAUSE_MIN = 30
-SIDE_COOLDOWN_MIN = 10
+SIDE_COOLDOWN_MIN = 30  # was 10; 13 Nov 2026 (Trade Max "avoid overtrading" study): +1.1k, DD 17.2k -> 16.1k over 6 months
 MAX_DAILY_LOSS_RS: float | None = None  # None = disabled; set per-underlying via params (rupee, one lot)
 SETUP_DEMOTE_LOOKBACK = 10  # trades, not days -- a slow setup may take weeks to gather this many
 SETUP_DEMOTE_MIN_N = 8  # below this, "net negative" is noise, not a verdict (see research review)

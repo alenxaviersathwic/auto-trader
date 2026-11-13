@@ -27,12 +27,18 @@ class TradingSession(BaseEntity):
 
     capital: Mapped[float] = mapped_column("capital", Numeric(14, 2), nullable=False)
     maxLossPercentage: Mapped[float] = mapped_column(
-        "max_loss_percentage", Numeric(5, 2), nullable=False, default=3.00
+        "max_loss_percentage", Numeric(5, 2), nullable=False, default=4.00
     )
 
     scope: Mapped[str] = mapped_column("scope", String(10), nullable=False)  # INDEX | COMMODITY
     underlyings: Mapped[list[str]] = mapped_column("underlyings", JSONB, nullable=False, default=list)
     commodityItems: Mapped[list[str]] = mapped_column("commodity_items", JSONB, nullable=False, default=list)
+    traders: Mapped[list[str]] = mapped_column(
+        "traders",
+        JSONB,
+        nullable=False,
+        default=lambda: ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"],
+    )
 
     sessionType: Mapped[str] = mapped_column(
         "session_type", String(12), nullable=False, default="MANUAL"

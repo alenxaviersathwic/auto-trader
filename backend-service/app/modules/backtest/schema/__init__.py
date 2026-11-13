@@ -1,3 +1,3 @@
-from app.modules.backtest.schema.backtest_schema import RunBacktestRequest
+from app.modules.backtest.schema.backtest_schema import RangeBacktestRequest, RunBacktestRequest
 
-__all__ = ["RunBacktestRequest"]
+__all__ = ["RangeBacktestRequest", "RunBacktestRequest"]

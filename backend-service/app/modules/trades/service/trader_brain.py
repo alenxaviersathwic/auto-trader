@@ -149,10 +149,12 @@ def evaluate_tick(
     now: datetime | None = None,
     close_at: datetime | None = None,
     momentum_trail: dict[str, float] | None = None,
+    projected_target: float | None = None,
 ) -> BrainDecision:
     """
     Evaluates the live option price (`ltp`) and 1-minute option premium candles (`candles_1m`)
-    against the trade's entry, stop, target, and `trader_profile` (`HIGH_CONVICTION` vs `STEP_GUARD`).
+    against the trade's entry, stop, target, and `trader_profile`
+    (`FIB_GOLDEN_TRADER` | `ORB_WAVE_TRADER` | `FLOW_VWAP_TRADER` | `HIGH_CONVICTION` | `STEP_GUARD`).
     """
     entry_at = float(entry_at)
     initial_stop = float(initial_stop)
@@ -167,6 +169,23 @@ def evaluate_tick(
     live_progress_pct = round((ltp - entry_at) / planned_move * 100.0, 1)
 
     micro = analyze_premium_candles(candles_1m or [], ltp)
+
+    # Fibonacci & Wave extension levels derived from the impulse setup
+    fib_618 = round_tick(entry_at + 0.50 * planned_move)
+    fib_100 = round_tick(initial_target)
+    fib_1272 = round_tick(entry_at + 1.272 * planned_move)
+    fib_1618 = round_tick(entry_at + 1.618 * planned_move)
+
+    # Live Projected Wave Ceiling (e.g., Target 100 -> Projected 150 when momentum & volume expand)
+    if projected_target is not None and float(projected_target) > initial_target:
+        proj_ceiling = round_tick(float(projected_target))
+    elif micro["momentumState"] == "STRONG" and micro["volumeRatio"] >= 1.25 and progress_pct >= 75.0:
+        proj_ceiling = round_tick(entry_at + 2.0 * planned_move)  # e.g., 50 -> 100 projects 150
+    elif trader_profile == "FIB_GOLDEN_TRADER":
+        proj_ceiling = fib_1618
+    else:
+        proj_ceiling = round_tick(max(current_target, initial_target))
+
     risk_now = max(0.05, ltp - current_stop)
     reward_now = max(0.0, current_target - ltp)
     rr_now = round(reward_now / risk_now, 2)
@@ -176,7 +195,14 @@ def evaluate_tick(
         "liveProgressPct": live_progress_pct,
         "rrNow": rr_now,
         "peakPrice": round(peak, 2),
-        "inRunnerMode": peak >= initial_target,
+        "inRunnerMode": peak >= initial_target or current_target > initial_target + 1e-4,
+        "projectedTarget": proj_ceiling,
+        "fibLevels": {
+            "fib618": fib_618,
+            "fib100": fib_100,
+            "fib1272": fib_1272,
+            "fib1618": fib_1618,
+        },
     }
 
     # 1. Hard Session Close Guard
@@ -261,24 +287,52 @@ def evaluate_tick(
 
         # Runner Mode: Lock SL at the achieved target (or higher) and trail target upward
         locked_floor = round_tick(max(current_stop, current_target, ltp - max(0.20 * planned_move, micro["atr1m"])))
-        # Ensure at least current_target is locked when crossing initial_target
         if current_target <= initial_target + 1e-6:
             locked_floor = round_tick(max(locked_floor, initial_target))
         if locked_floor > new_stop:
             new_stop = locked_floor
             reasons.append(f"locked SL at ₹{new_stop:.2f} on target breakout")
 
-        step_up = max(0.30 * planned_move, 1.5 * float(micro["atr1m"]), 1.0)
-        expanded_target = round_tick(max(current_target + TICK, ltp + step_up))
+        if trader_profile == "FIB_GOLDEN_TRADER":
+            expanded_target = fib_1618 if ltp >= fib_1272 - TICK else fib_1272
+        elif proj_ceiling > current_target + TICK:
+            expanded_target = proj_ceiling
+        else:
+            step_up = max(0.30 * planned_move, 1.5 * float(micro["atr1m"]), 1.0)
+            expanded_target = round_tick(max(current_target + TICK, ltp + step_up))
+
         if expanded_target > new_target:
             new_target = expanded_target
             reasons.append(
                 f"trailed Target to ₹{new_target:.2f} ({micro['momentumState']} momentum, vol {micro['volumeRatio']}x)"
             )
 
+    # 3b. Pre-Target Step-Wave Expansion (e.g. Target 100, Projected 150 -> Lock SL 75 & Step Target to 120 -> 150)
+    if (
+        (projected_target is not None or trader_profile == "ORB_WAVE_TRADER")
+        and proj_ceiling > initial_target + TICK
+        and progress_pct >= 75.0
+    ):
+        step1_target = round_tick(initial_target + 0.40 * (proj_ceiling - initial_target))
+        wave1_sl = round_tick(entry_at + 0.50 * planned_move)  # e.g., 75 on 50 -> 100
+        if wave1_sl > new_stop and wave1_sl < ltp:
+            new_stop = wave1_sl
+            reasons.append(f"Wave re-analysis (projected ₹{proj_ceiling:.2f}) → locked 50% SL at ₹{new_stop:.2f}")
+        if current_target <= initial_target + 1e-4 and step1_target > new_target:
+            new_target = step1_target
+            reasons.append(
+                f"Wave step 1: stepped Target ₹{initial_target:.2f} → ₹{new_target:.2f} (projected ₹{proj_ceiling:.2f})"
+            )
+        elif ltp >= step1_target - 0.10 * planned_move and proj_ceiling > new_target:
+            if initial_target > new_stop and initial_target < ltp:
+                new_stop = initial_target
+                reasons.append(f"Wave step 2: locked SL at initial target ₹{new_stop:.2f}")
+            new_target = proj_ceiling
+            reasons.append(f"Wave step 2: extended Target to full wave ceiling ₹{new_target:.2f}")
+
     # 4. In-Trade Progressive Stop-Loss Ratchet (Before or After Initial Target)
-    if trader_profile == "HIGH_CONVICTION":
-        # High Win-Rate (e.g. 80-100%): Wait until 80% target achieved, then lock 50% of planned profit (e.g. 28 -> SL 25)
+    if trader_profile in ("HIGH_CONVICTION", "FIB_GOLDEN_TRADER"):
+        # High Win-Rate / Fibonacci Golden Pocket: Wait until 80% target achieved, then lock 50% of planned profit (0.618 level)
         if progress_pct >= 95.0:
             candidate_sl = round_tick(entry_at + 0.70 * planned_move)
             if candidate_sl > new_stop and candidate_sl < ltp:
@@ -289,23 +343,23 @@ def evaluate_tick(
             if candidate_sl > new_stop and candidate_sl < ltp:
                 new_stop = candidate_sl
                 reasons.append(
-                    f"High-conviction 80% target achieved (peak ₹{peak:.2f}) → locked 50% profit SL at ₹{new_stop:.2f}"
+                    f"80% target achieved (peak ₹{peak:.2f}) → locked 50% profit SL at ₹{new_stop:.2f}"
                 )
     else:
-        # STEP_GUARD (~50% win-rate): Step 1 at 50% progress (25 -> SL 23), Step 2 at 80% progress (28 -> SL 25)
+        # STEP_GUARD / FLOW_VWAP_TRADER / ORB_WAVE_TRADER: Step 1 at 50% progress (25 -> SL 23), Step 2 at 80% progress (28 -> SL 25)
         if progress_pct >= 80.0:
             candidate_sl = round_tick(entry_at + 0.50 * planned_move)
             if candidate_sl > new_stop and candidate_sl < ltp:
                 new_stop = candidate_sl
                 reasons.append(
-                    f"Step-guard 80% target progress (peak ₹{peak:.2f}) → trailed SL to ₹{new_stop:.2f} (+50% move locked)"
+                    f"80% target progress (peak ₹{peak:.2f}) → trailed SL to ₹{new_stop:.2f} (+50% move locked)"
                 )
         elif progress_pct >= 50.0:
             candidate_sl = round_tick(entry_at + 0.30 * planned_move)
             if candidate_sl > new_stop and candidate_sl < ltp:
                 new_stop = candidate_sl
                 reasons.append(
-                    f"Step-guard 50% target progress (peak ₹{peak:.2f}) → trailed SL to ₹{new_stop:.2f} (above breakeven + costs)"
+                    f"50% target progress (peak ₹{peak:.2f}) → trailed SL to ₹{new_stop:.2f} (above breakeven + costs)"
                 )
 
     # 5. Beyond Initial Target (Runner Continuity between target expansions)

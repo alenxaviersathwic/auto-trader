@@ -271,6 +271,10 @@ def analyze(cfg: Any, market: dict[str, Any], now: datetime | None = None) -> di
         closes = [d["c"] for d in daily]
         out["trendDays"] = {n: ("UP" if closes[-1] > closes[-1 - n] else "DOWN")
                             for n in (5, 20) if len(closes) > n}
+        if len(closes) >= 50:
+            out["dma50"] = round(sum(closes[-50:]) / 50, 2)
+        if len(daily) >= 5:  # last 5 completed sessions: the swing institutional_filters FIB_ROOM measures against
+            out["swing5"] = {"high": max(d["h"] for d in daily[-5:]), "low": min(d["l"] for d in daily[-5:])}
         if len(closes) > 10:  # Kaufman efficiency ratio over 10 sessions: trend >= 0.35, range <= 0.20
             path = sum(abs(closes[i] - closes[i - 1]) for i in range(len(closes) - 10, len(closes)))
             out["er10"] = round(abs(closes[-1] - closes[-11]) / path, 3) if path else None

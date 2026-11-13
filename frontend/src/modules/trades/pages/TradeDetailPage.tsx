@@ -212,6 +212,47 @@ export const TradeDetailPage: React.FC = () => {
           </div>
         )}
 
+        {/* Live Exit Signal Alert Banner (for SEMI_AUTO when exit mark is reached on the graph) */}
+        {isRunning && trade.marketTelemetry.exitSignal && (
+          <div
+            className="card"
+            style={{
+              borderColor: "var(--warning-amber)",
+              background: "var(--warning-amber-tint)",
+              padding: "var(--space-3) var(--space-4)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "var(--space-3)",
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+              <AlertTriangle size={16} className="text-amber" />
+              <div>
+                <div className="mono" style={{ fontWeight: 700, color: "var(--warning-amber)" }}>
+                  ★ EXIT MARK REACHED ({trade.marketTelemetry.exitSignal}) — Recommended Exit @{" "}
+                  {formatRupee(trade.marketTelemetry.recommendedExitPrice ?? trade.lastPrice)}
+                </div>
+                <div className="micro text-secondary">
+                  {trade.marketTelemetry.exitRecommendation ??
+                    "Exit condition triggered on live 1m chart. Square off now to lock outcome."}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn btn--primary"
+              style={{ background: "var(--bearish-red)", borderColor: "var(--bearish-red)" }}
+              onClick={handleSquareOff}
+              disabled={exitMutation.isPending}
+            >
+              <Square size={14} />
+              <span>{exitMutation.isPending ? "Squaring Off…" : "Square Off Now"}</span>
+            </button>
+          </div>
+        )}
+
         {/* Visual Live Price Ladder */}
         <TradeLiveLadder trade={trade} />
 

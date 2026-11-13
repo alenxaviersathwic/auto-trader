@@ -128,3 +128,15 @@ def test_fii_open_drive_signal_window_and_exit():
     now = datetime(2026, 11, 13, 9, 30, tzinfo=IST)
     assert _trade_close_at("FII_OPEN_DRIVE", close, now) == datetime(2026, 11, 13, 10, 30, tzinfo=IST)
     assert _trade_close_at("NOISE_BREAKOUT", close, now) == close
+
+
+def test_dma50_filter_and_overtrading_cooldown():
+    from app.modules.opportunities.service import guardrails, institutional_filters as inst
+
+    on = inst.enabled("DMA50")
+    bar = [{"t": "2026-11-13T12:00:00+05:30", "c": 25000.0}]
+    assert "DMA50" in inst.block({"dma50": 25100.0, "bars1": bar}, {"name": "NOISE_BREAKOUT", "side": "CE"}, "NIFTY", on)
+    assert inst.block({"dma50": 24900.0, "bars1": bar}, {"name": "NOISE_BREAKOUT", "side": "CE"}, "NIFTY", on) is None
+    assert "DMA50" in inst.block({"dma50": 24900.0, "bars1": bar}, {"name": "NOISE_BREAKOUT", "side": "PE"}, "NIFTY", on)
+    assert inst.block({"bars1": bar}, {"name": "NOISE_BREAKOUT", "side": "CE"}, "NIFTY", on) is None  # unknown: no veto
+    assert guardrails.SIDE_COOLDOWN_MIN == 30

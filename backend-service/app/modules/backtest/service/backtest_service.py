@@ -22,7 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.backtest.service import expiry_calendar, premium_sim
 from app.modules.opportunities.provider.underlying_config import get_config
 from app.modules.opportunities.provider.upstox_market_data import market_data
-from app.modules.opportunities.service import day_type, guardrails, menu_builder as mb, setups as setup_detector
+from app.modules.opportunities.service import day_type, guardrails
+from app.modules.opportunities.service import menu_builder as mb
+from app.modules.opportunities.service import setups as setup_detector
 from app.modules.opportunities.service.market_analysis import _bar_min, _mins, analyze
 
 IST = ZoneInfo("Asia/Kolkata")

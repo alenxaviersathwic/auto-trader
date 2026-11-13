@@ -12,6 +12,7 @@ const DEFAULT_GAP_SECONDS = 20;
  *
  * One round = fetch today's cards, then call /iterate on every RUNNING session ONE BY ONE, then wait
  * loopGapSeconds. Stopped sessions drop out on the next round; the loop ends when none are RUNNING.
+ * Errors (backend restart, network) never end the loop: it retries with a backoff until Stop is pressed.
  */
 class OpportunityLoopRunner {
   private snap: LoopSnapshot = { running: false, round: 0, currentMasterId: null, currentCode: null, lastError: null };
@@ -57,9 +58,22 @@ class OpportunityLoopRunner {
     }
     this.stopRequested = false;
     this.set({ running: true, lastError: null });
+    let failures = 0;
     try {
       while (!this.stopRequested) {
-        const today = await opportunitiesApi.getTodayMasters();
+        let today;
+        try {
+          today = await opportunitiesApi.getTodayMasters();
+          failures = 0;
+        } catch (e) {
+          // Backend restarting / network blip: keep the loop alive and retry (5s, 10s ... max 60s) instead of
+          // ending it -- a dead loop silently stopped every card for hours (13 Nov 2026, 12:50-14:17).
+          failures += 1;
+          this.set({ lastError: `cards unavailable, retrying: ${e instanceof Error ? e.message : String(e)}` });
+          await this.sleep(Math.min(60, 5 * failures) * 1000);
+          continue;
+        }
+        if (this.snap.lastError?.startsWith("cards unavailable")) this.set({ lastError: null });
         const queue = today.list.filter((m) => m.state === "RUNNING");
         if (queue.length === 0) break;
         this.set({ round: this.snap.round + 1 });

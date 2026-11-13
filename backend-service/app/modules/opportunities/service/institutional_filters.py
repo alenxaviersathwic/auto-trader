@@ -26,15 +26,23 @@ settings.INSTITUTIONAL_FILTERS (comma list) once the real-data replay shows it h
                      reliable reference; NIFTY intraday vol is U-shaped with the 11:00-12:00 lull)
   PE_EXTRA           PE momentum also needs trend efficiency ER10 >= 0.25 or India VIX up on the day (short-side
                      noise-area momentum was negative out of sample in replications)
+  FIB_ROOM           no momentum entry when the next Fibonacci level of the last 5 sessions' swing (23.6% ... 161.8%,
+                     measured from the low for CE / the high for PE) is within 0.2% ahead of price: no room to run
+                     NOT ENABLED: dropping trades after the fact looked better (+69.4k vs +64.5k), but in the full
+                     replay a blocked signal re-fires minutes later at a worse price: 52 trades +54.5k (13 Nov 2026)
+  DMA50              CE only above the 50-day moving average, PE only below it (Trade Max Academy trend rule; 13 Nov
+                     2026 replay: with SIDE_COOLDOWN 30 min, 52 -> 49 trades, +64.5k -> +67.6k, DD 17.2k -> 14.7k)
   LATE_WINDOW_LAST   late-day momentum window moved to the true last 50 minutes (14:50-15:28 on the 15:40 close):
                      most last-half-hour predictability sits in the final minutes (Aalto thesis 2008-2024)
 """
 from typing import Any
 
 ALL = ("PE_GAP_UP", "PE_VIX_UP_GREEN", "NIFTY_NOISE_STRICT", "NIFTY_GAP_GO_CAP", "OI_BUILDUP", "HEAVYWEIGHTS",
-       "LATE_WINDOW_LAST", "TREND_5_20", "NO_VWAP_PULLBACK", "ENTRY_10_1430", "IB_GATE", "PE_EXTRA")
+       "LATE_WINDOW_LAST", "TREND_5_20", "NO_VWAP_PULLBACK", "ENTRY_10_1430", "IB_GATE", "PE_EXTRA", "FIB_ROOM", "DMA50")
 OPEN_DRIVE_GAP_PCT = 0.4
 PE_MIN_ER = 0.25
+FIB_LEVELS = (0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618)
+FIB_ROOM_PCT = 0.2
 ENTRY_FROM_MIN, ENTRY_TO_MIN = 10 * 60, 14 * 60 + 30
 PE_GAP_UP_PCT = 0.4
 NIFTY_GAP_GO_MAX = 0.8
@@ -108,6 +116,22 @@ def block(a: dict[str, Any], s: dict[str, Any], code: str, on: set[str]) -> str 
         vix_chg = (a.get("vix") or {}).get("changePct")
         if (er is not None or vix_chg is not None) and not ((er is not None and er >= PE_MIN_ER) or (vix_chg is not None and vix_chg > 0)):
             return f"PE_EXTRA: short momentum needs ER10 >= {PE_MIN_ER} (is {er}) or VIX up (is {vix_chg})"
+    if "DMA50" in on and a.get("dma50"):
+        px = a.get("spot") or ((a.get("bars1") or [{}])[-1].get("c"))
+        if px and (px < a["dma50"] if side == "CE" else px > a["dma50"]):
+            return f"DMA50: {side} on the wrong side of the 50-day average {a['dma50']:.1f}"
+    if "FIB_ROOM" in on and a.get("swing5"):
+        hi, lo = a["swing5"].get("high"), a["swing5"].get("low")
+        px = a.get("spot") or ((a.get("bars1") or [{}])[-1].get("c"))
+        if hi and lo and px and hi > lo:
+            sw = hi - lo
+            ahead = [lv for lv in ((lo + f * sw) if side == "CE" else (hi - f * sw) for f in FIB_LEVELS)
+                     if (lv > px if side == "CE" else lv < px)]
+            if ahead:
+                nxt = min(ahead) if side == "CE" else max(ahead)
+                room = abs(nxt - px) / px * 100
+                if room < FIB_ROOM_PCT:
+                    return f"FIB_ROOM: next 5-day Fibonacci level {nxt:.1f} only {room:.2f}% ahead (needs {FIB_ROOM_PCT:g}%)"
     if "PE_GAP_UP" in on and side == "PE" and gap is not None and gap >= PE_GAP_UP_PCT:
         return f"PE_GAP_UP: no short momentum on a {gap:+.2f}% gap-up day"
     if "PE_VIX_UP_GREEN" in on and side == "PE":

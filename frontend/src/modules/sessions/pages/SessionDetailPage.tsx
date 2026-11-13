@@ -63,6 +63,7 @@ export const SessionDetailPage: React.FC = () => {
   const [lockedPick, setLockedPick] = useState<SessionPick | null>(null);
   const [lockFailure, setLockFailure] = useState<string | null>(null);
   const failureTimer = useRef<number | undefined>(undefined);
+  const seenAutoTradesRef = useRef<Set<number> | null>(null);
 
   const pickIds = (loop.data?.picks ?? []).map((p) => p.id).join(",");
   const activeTradeIdsKey = (loop.data?.capital.activeTradeIds ?? []).join(",");
@@ -74,6 +75,28 @@ export const SessionDetailPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: tradesQueryKeys.lists() });
     }
   }, [pickIds, activeTradeIdsKey, lockedPicksKey, sessionId, queryClient]);
+
+  // In SEMI_AUTO / FULL_AUTO, when the session loop automatically locks & enters a trade,
+  // navigate directly to its live Trader Graph page (/trades/$tradeId).
+  useEffect(() => {
+    const ids = loop.data?.capital.activeTradeIds ?? [];
+    if (!session || !loop.data) return;
+    if (seenAutoTradesRef.current === null) {
+      seenAutoTradesRef.current = new Set(ids);
+      if (
+        (session.sessionType === "SEMI_AUTO" || session.sessionType === "FULL_AUTO") &&
+        ids.length === 1
+      ) {
+        navigate({ to: "/trades/$tradeId", params: { tradeId: String(ids[0]) } });
+      }
+      return;
+    }
+    const newest = ids.find((tid) => !seenAutoTradesRef.current!.has(tid));
+    ids.forEach((tid) => seenAutoTradesRef.current!.add(tid));
+    if (newest && (session.sessionType === "SEMI_AUTO" || session.sessionType === "FULL_AUTO")) {
+      navigate({ to: "/trades/$tradeId", params: { tradeId: String(newest) } });
+    }
+  }, [activeTradeIdsKey, session, loop.data, navigate]);
 
   useEffect(() => () => window.clearTimeout(failureTimer.current), []);
 

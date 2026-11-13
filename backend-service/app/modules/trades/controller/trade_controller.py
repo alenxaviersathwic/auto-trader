@@ -20,6 +20,7 @@ from app.modules.trades.schema.trade_schema import (
     TradeExitRequest,
     TradeLiveSnapshot,
     TradeResponse,
+    TraderPresetResponse,
     TradeSearchFilter,
 )
 from app.modules.trades.service.trade_service import trade_service
@@ -58,6 +59,19 @@ async def _trade_events(trade_id: int) -> AsyncGenerator[str, None]:
             yield f"event: trade\ndata: {item.model_dump_json()}\n\n"
     finally:
         trade_pilot_runner.unsubscribe(trade_id, q)
+
+
+@trade_router.get(
+    "/presets",
+    response_model=ApiResponse[list[TraderPresetResponse]],
+    status_code=status.HTTP_200_OK,
+    summary="List the 3 institutional preset Traders with live and historical stats",
+)
+async def list_trader_presets(
+    session: AsyncSession = Depends(get_db),
+):
+    result = await trade_service.list_presets(session)
+    return success(data=result, message="Trader presets fetched successfully")
 
 
 @trade_router.get(

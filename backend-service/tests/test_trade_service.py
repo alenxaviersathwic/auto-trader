@@ -280,7 +280,7 @@ def test_semi_auto_and_full_auto_session_modes(monkeypatch):
         monkeypatch.setattr(opp_run_mod.opportunity_run_service, "live_premium", lambda db, k, timeout=1.5: asyncio.sleep(0, 20.0))
         monkeypatch.setattr(opp_run_mod.opportunity_run_service, "resolve_win_rate_pct", lambda db, c, st, cf: asyncio.sleep(0, 80.0))
 
-        # A) SEMI_AUTO: auto-selects #1 pick and locks it
+        # A) SEMI_AUTO: auto-selects #1 pick, locks it, AND enters the ActiveTrade loop (marks exit signal on chart)
         s_semi = TradingSession(
             name="Semi", tradeDate=TODAY(), userId=1, capital=100000, maxLossPercentage=3, scope="INDEX",
             underlyings=["NIFTY"], commodityItems=[], sessionType="SEMI_AUTO", routeThroughUpstox=False,
@@ -293,14 +293,21 @@ def test_semi_auto_and_full_auto_session_modes(monkeypatch):
         t_svc_semi = TradeService(repo=FakeTradeRepo(), order_client=FakeOrderClient())
         monkeypatch.setattr(sls_mod, "session_loop_service", loop_semi)
         monkeypatch.setattr(ts_mod, "trade_service", t_svc_semi)
+        monkeypatch.setattr(opp_run_mod.opportunity_run_service, "option_candles_1m", lambda db, k, trade_date=None, timeout=3.0: asyncio.sleep(0, []))
 
         r_semi = await loop_semi.tick(FakeDb(), 21)
-        assert len(r_semi.lockedPicks) == 1
-        assert r_semi.lockedPicks[0].opportunityId == 2  # highest ranked opportunity auto-locked!
-        assert r_semi.lockedPicks[0].pickState == "LOCKED"
-        assert r_semi.capital.activeTradesCount == 0  # awaiting confirmation in SEMI_AUTO
+        assert r_semi.capital.activeTradesCount == 1
+        assert len(r_semi.capital.activeTradeIds) == 1
+        semi_trade_id = r_semi.capital.activeTradeIds[0]
 
-        # B) FULL_AUTO: auto-selects #1 pick, auto-locks it, AND auto-enters the trade!
+        # When price hits stop in SEMI_AUTO, it marks exitSignal on telemetry without auto-closing
+        monkeypatch.setattr(opp_run_mod.opportunity_run_service, "live_premium", lambda db, k, timeout=1.5: asyncio.sleep(0, 14.0))
+        snap_semi = await t_svc_semi.tick(FakeDb(), semi_trade_id)
+        assert snap_semi.trade.tradeState == "RUNNING"
+        assert snap_semi.trade.marketTelemetry.get("exitSignal") == "STOP_HIT"
+
+        # B) FULL_AUTO: auto-selects #1 pick, auto-locks it, auto-enters the trade, AND auto-exits!
+        monkeypatch.setattr(opp_run_mod.opportunity_run_service, "live_premium", lambda db, k, timeout=1.5: asyncio.sleep(0, 20.0))
         s_full = TradingSession(
             name="Full", tradeDate=TODAY(), userId=1, capital=100000, maxLossPercentage=3, scope="INDEX",
             underlyings=["NIFTY"], commodityItems=[], sessionType="FULL_AUTO", routeThroughUpstox=False,
@@ -317,6 +324,11 @@ def test_semi_auto_and_full_auto_session_modes(monkeypatch):
         r_full = await loop_full.tick(FakeDb(), 22)
         assert r_full.capital.activeTradesCount == 1
         assert len(r_full.capital.activeTradeIds) == 1
+        full_trade_id = r_full.capital.activeTradeIds[0]
+
+        monkeypatch.setattr(opp_run_mod.opportunity_run_service, "live_premium", lambda db, k, timeout=1.5: asyncio.sleep(0, 14.0))
+        snap_full = await t_svc_full.tick(FakeDb(), full_trade_id)
+        assert snap_full.trade.tradeState == "EXITED"
 
     asyncio.run(go())
 

@@ -5,6 +5,7 @@ import {
   createTrade,
   exitTrade,
   getTrade,
+  listTraderPresets,
   previewTradeSizing,
   searchTrades,
 } from "../api/trades.api";
@@ -15,6 +16,14 @@ import {
   TradeExitPayload,
   TradeSearchFilter,
 } from "../types/trades.types";
+
+export function useTraderPresets() {
+  return useQuery({
+    queryKey: tradesQueryKeys.presets(),
+    queryFn: () => listTraderPresets(),
+    placeholderData: keepPreviousData,
+  });
+}
 
 export function useTradeSearch(filter: TradeSearchFilter) {
   return useQuery({

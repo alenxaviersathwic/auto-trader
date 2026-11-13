@@ -207,3 +207,61 @@ def test_momentum_trail_never_exits_at_target_and_trails_in_r():
     assert d2.newStop == 101.0
     d3 = tb.evaluate_tick(peak_price=150.0, ltp=129.0, **{**kw, "current_stop": 130.0})
     assert d3.action == "EXIT" and d3.exitReason == "TRAILING_STOP_HIT"
+
+
+def test_wave_step_expansion_100_to_120_to_150_with_sl_75_to_100():
+    # Entry 50, Initial SL 35, Initial Target 100 (planned move = 50), Live Projected Ceiling = 150
+    # Step 1: At price 90 (80% progress toward 100), locks SL at 75 and steps Target 100 -> 120
+    d1 = brain.evaluate_tick(
+        entry_at=50.0,
+        initial_stop=35.0,
+        initial_target=100.0,
+        current_stop=35.0,
+        current_target=100.0,
+        peak_price=90.0,
+        ltp=90.0,
+        trader_profile="ORB_WAVE_TRADER",
+        projected_target=150.0,
+    )
+    assert d1.action == "TRAIL_BOTH"
+    assert d1.newStop == 75.0
+    assert d1.newTarget == 120.0
+
+    # Step 2: At price 118 (nearing Step 1 target 120), locks SL at 100 and steps Target 120 -> 150
+    d2 = brain.evaluate_tick(
+        entry_at=50.0,
+        initial_stop=35.0,
+        initial_target=100.0,
+        current_stop=d1.newStop,
+        current_target=d1.newTarget,
+        peak_price=118.0,
+        ltp=118.0,
+        trader_profile="ORB_WAVE_TRADER",
+        projected_target=150.0,
+    )
+    assert d2.action == "TRAIL_BOTH"
+    assert d2.newStop >= 100.0
+    assert d2.newTarget == 150.0
+
+
+def test_fib_golden_trader_steps_to_1272_and_1618_extensions():
+    # Entry 100, Initial SL 80, Swing High (1.0) = 150 (planned move = 50)
+    # 1.272 Ext = 163.60, 1.618 Ext = 180.90
+    strong_candles = [
+        {"t": "2026-11-10T10:00:00+05:30", "o": 135.0, "h": 142.0, "l": 134.0, "c": 141.0, "v": 1000},
+        {"t": "2026-11-10T10:01:00+05:30", "o": 141.0, "h": 151.0, "l": 140.5, "c": 150.5, "v": 2200},
+    ]
+    d1 = brain.evaluate_tick(
+        entry_at=100.0,
+        initial_stop=80.0,
+        initial_target=150.0,
+        current_stop=125.0,
+        current_target=150.0,
+        peak_price=150.5,
+        ltp=150.5,
+        trader_profile="FIB_GOLDEN_TRADER",
+        candles_1m=strong_candles,
+    )
+    assert d1.newStop >= 150.0
+    assert d1.newTarget == 163.6
+

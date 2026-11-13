@@ -130,3 +130,21 @@ class TradeSearchFilter(BaseFilter):
     tradeState: Optional[str] = None
     traderProfile: Optional[str] = None
 
+
+class TraderPresetResponse(BaseModel):
+    """Representation of one Institutional Specialist Trader preset."""
+
+    code: str
+    name: str
+    shortLabel: str
+    badgeColor: str
+    methodology: str
+    entryLogic: str
+    trailLogic: str
+    strategies: list[str]
+    activeTradesCount: int = 0
+    totalTradesCount: int = 0
+    winRatePct: float = 0.0
+    netPnl: float = 0.0
+
+

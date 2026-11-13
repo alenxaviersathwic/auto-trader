@@ -21,6 +21,8 @@ class SessionPickResponse(BaseModel):
     expiry: str
     instrumentKey: Optional[str] = None
     strategy: Optional[str] = None
+    traderCode: str = "ORB_WAVE_TRADER"
+    traderName: str = "ORB & Momentum Wave Runner"
     confidence: int
     entry: float
     entryMax: float

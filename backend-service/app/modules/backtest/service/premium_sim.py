@@ -159,3 +159,82 @@ def simulate_trade(cfg: UnderlyingConfig, bars: list[dict[str, Any]], entry_idx:
                         exitPremium=round(px, 2), pctMove=round(pct, 1), outcome=out, entryMinute=m0,
                         exitMinute=exit_minute, exitIdx=j, holdMinutes=exit_minute - m0 + 1,
                         netPnl=round((px - p0) * lot - cost_pct / 100 * p0 * lot, 2))
+
+
+# ───────────────────────── momentum engine (live MOMO policy) ─────────────────────────
+TARGET_DELTA["MOMO"] = 0.7
+
+
+@dataclass
+class MomoResult:
+    strike: int
+    delta: float
+    entryPremium: float
+    exitPremium: float
+    pctMove: float
+    outcome: str  # STOP | TRAIL | TIME_EXIT | EOD
+    entryMinute: int
+    exitMinute: int
+    exitIdx: int
+    holdMinutes: int
+    riskPerLot: float  # Rs between entry premium and the premium at the stop, one lot (session sizing reads this)
+    premiumPerLot: float
+    netPnl: float
+
+
+def simulate_momo(cfg: UnderlyingConfig, bars: list[dict[str, Any]], entry_idx: int, side: str, stop: float,
+                  atr5: float, days_to_expiry: int, bar_minute, fixed_stop: bool = False,
+                  exit_by_min: int | None = None, close_min: int | None = None) -> MomoResult | None:
+    """The live momentum exit (menu_builder.MOMO_EXIT, trader_brain momentum_trail) over the real underlying path:
+    ITM next-expiry strike (delta 0.6-0.8), stop = chart stop clamped to 0.5-1.25 x ATR5 (FII_OPEN_DRIVE keeps its
+    own fixed stop), breakeven at +beR R, trail trailR R under the best move from +fromR R, no fixed target,
+    square-off 10 min before close or at `exit_by_min` (strategy time exit). Black-Scholes premiums at fixed IV."""
+    if entry_idx >= len(bars):
+        return None
+    ce = side == "CE"
+    sg = 1 if ce else -1
+    fill = bars[entry_idx]["o"]
+    m0 = bar_minute(bars[entry_idx])
+    down = (fill - stop) * sg
+    if down <= 0:
+        return None
+    iv = IV.get(cfg.code, DEFAULT_IV)
+    got = pick_strike(cfg, fill, days_to_expiry, m0, ce, "MOMO", iv)
+    if not got:
+        return None
+    strike, p0, delta = got
+    stop_pts = down if fixed_stop or atr5 <= 0 else min(max(down, mb.STOP_ATR_MIN * atr5), mb.STOP_ATR_MAX * atr5)
+    ex = mb.MOMO_EXIT
+    risk_lot = max(0.0, p0 - bs(fill - sg * stop_pts, strike, years_left(days_to_expiry, m0), iv, ce)[0]) * cfg.lotSize
+    close_m = close_min if close_min is not None else bar_minute(bars[-1])
+    line, best, out, px, j = -stop_pts, 0.0, "EOD", p0, entry_idx
+    for j in range(entry_idx, len(bars)):
+        b = bars[j]
+        m = bar_minute(b)
+        years = years_left(days_to_expiry, m)
+        fav, adv = (b["h"], b["l"]) if ce else (b["l"], b["h"])
+        if (adv - fill) * sg <= line:
+            out = "STOP" if line < 0 else "TRAIL"
+            px = bs(fill + sg * line, strike, years, iv, ce)[0]
+            break
+        best = max(best, (fav - fill) * sg)
+        if best >= ex["beR"] * stop_pts:
+            line = max(line, 0.0)
+        if best >= ex["fromR"] * stop_pts:
+            line = max(line, best - ex["trailR"] * stop_pts)
+        px = bs(b["c"], strike, years_left(days_to_expiry, m + 1), iv, ce)[0]
+        if exit_by_min is not None and m >= exit_by_min:
+            out = "TIME_EXIT"
+            break
+        if m >= close_m - 10:
+            out = "EOD"
+            break
+    lot = cfg.lotSize
+    pct = (px - p0) / p0 * 100
+    cost_pct = round_trip_cost_pct(p0, lot, cfg.exchange, max(pct, 0)) + slippage_pct(p0)
+    exit_minute = bar_minute(bars[j])
+    return MomoResult(strike=int(strike), delta=round(delta, 2), entryPremium=round(p0, 2), exitPremium=round(px, 2),
+                      pctMove=round(pct, 1), outcome=out, entryMinute=m0, exitMinute=exit_minute, exitIdx=j,
+                      holdMinutes=exit_minute - m0 + 1, riskPerLot=round(risk_lot, 2),
+                      premiumPerLot=round(p0 * lot, 2),
+                      netPnl=round((px - p0) * lot - cost_pct / 100 * p0 * lot, 2))

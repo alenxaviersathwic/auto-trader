@@ -63,11 +63,19 @@ class Ctx:
                     self.heavy[n] = bm.by_day(bm.load_csv(f))
         self.trend: dict[tuple[str, str], dict[int, str]] = {}
         self.er: dict[tuple[str, str], float | None] = {}
+        self.swing5: dict[tuple[str, str], dict[str, float]] = {}
+        self.dma50: dict[tuple[str, str], float] = {}
         for code in CODES:
             closes = [(b["t"][:10], b["c"]) for b in bm.load_csv(data / "daily" / f"{code}.csv")]
             days = sorted({t for t, _ in closes})
+            hl = [(b["t"][:10], b["h"], b["l"]) for b in bm.load_csv(data / "daily" / f"{code}.csv")]
             for d in days + [date.today().isoformat()]:
                 prior = [c for t, c in closes if t < d]
+                if len(prior) >= 50:
+                    self.dma50[(code, d)] = sum(prior[-50:]) / 50
+                p5 = [x for x in hl if x[0] < d][-5:]
+                if len(p5) == 5:
+                    self.swing5[(code, d)] = {"high": max(x[1] for x in p5), "low": min(x[2] for x in p5)}
                 self.trend[(code, d)] = {n: ("UP" if prior[-1] > prior[-1 - n] else "DOWN")
                                          for n in (5, 20) if len(prior) > n}
                 if len(prior) > 10:
@@ -94,7 +102,8 @@ class Ctx:
                     self.buildup[(code, nxt)] = st  # yesterday's state is known before today's open
 
     def extra(self, code, day, minute, cd):
-        out = {"trendDays": self.trend.get((code, day), {}), "er10": self.er.get((code, day))}
+        out = {"trendDays": self.trend.get((code, day), {}), "er10": self.er.get((code, day)),
+               "swing5": self.swing5.get((code, day)), "dma50": self.dma50.get((code, day))}
         vm = self.vix_min.get(day) or []
         prev = self.vix_prev.get(day)
         cur = next((b for b in reversed(vm) if int(b["t"][11:13]) * 60 + int(b["t"][14:16]) <= minute), None)

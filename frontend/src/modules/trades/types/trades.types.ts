@@ -1,8 +1,28 @@
 import { BaseFilter } from "../../../core/types/filter.types";
 
-export type TraderProfile = "HIGH_CONVICTION" | "STEP_GUARD";
+export type TraderProfile =
+  | "HIGH_CONVICTION"
+  | "STEP_GUARD"
+  | "FIB_GOLDEN_TRADER"
+  | "ORB_WAVE_TRADER"
+  | "FLOW_VWAP_TRADER";
 export type TradeState = "RUNNING" | "EXITED";
 export type BrokerStatus = "SIMULATED" | "PLACED" | "FILLED" | "REJECTED" | "ERROR";
+
+export interface TraderPreset {
+  code: string;
+  name: string;
+  shortLabel: string;
+  badgeColor: string;
+  methodology: string;
+  entryLogic: string;
+  trailLogic: string;
+  strategies: string[];
+  activeTradesCount: number;
+  totalTradesCount: number;
+  winRatePct: number;
+  netPnl: number;
+}
 
 export interface TrailEvent {
   at: string;
@@ -16,6 +36,8 @@ export interface TrailEvent {
 }
 
 export interface MarketTelemetry {
+  traderCode?: string;
+  traderName?: string;
   volumeRatio?: number;
   candleStructure?: string;
   momentumState?: string;
@@ -26,7 +48,18 @@ export interface MarketTelemetry {
   liveProgressPct?: number;
   rrNow?: number;
   peakPrice?: number;
+  projectedTarget?: number;
+  fibLevels?: {
+    fib618: number;
+    fib100: number;
+    fib1272: number;
+    fib1618: number;
+  };
   inRunnerMode?: boolean;
+  sessionType?: string;
+  exitSignal?: string | null;
+  exitRecommendation?: string;
+  recommendedExitPrice?: number;
 }
 
 export interface OptionCandle1m {

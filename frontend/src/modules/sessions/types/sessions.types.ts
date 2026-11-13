@@ -16,6 +16,7 @@ export interface TradingSession {
   scope: SessionScope;
   underlyings: string[];
   commodityItems: string[];
+  traders?: string[];
   sessionType: SessionType;
   routeThroughUpstox: boolean;
   sessionStatus: SessionStatus;
@@ -40,6 +41,7 @@ export interface TradingSessionCreatePayload {
   scope: SessionScope;
   underlyings?: string[];
   commodityItems?: string[];
+  traders?: string[];
   sessionType?: SessionType;
   routeThroughUpstox?: boolean;
   /** HH:MM IST. Blank = now if created at/after 09:25, else 09:15. */
@@ -54,6 +56,7 @@ export interface TradingSessionUpdatePayload {
   maxLossPercentage?: number;
   underlyings?: string[];
   commodityItems?: string[];
+  traders?: string[];
   sessionType?: SessionType;
   routeThroughUpstox?: boolean;
   sessionStatus?: SessionStatus;
@@ -84,6 +87,8 @@ export interface SessionPick {
   expiry: string;
   instrumentKey: string | null;
   strategy: string | null;
+  traderCode?: string | null;
+  traderName?: string | null;
   confidence: number;
   entry: number;
   entryMax: number;

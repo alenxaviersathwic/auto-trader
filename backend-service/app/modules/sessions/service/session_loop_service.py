@@ -34,6 +34,11 @@ from app.modules.sessions.service.session_sizing import (
     rank_key,
     size_candidate,
 )
+from app.modules.trades.service.trader_presets import (
+    ALL_PRESET_TRADER_CODES,
+    assign_trader_for_opportunity,
+    get_trader_preset,
+)
 
 _IST = ZoneInfo("Asia/Kolkata")
 WEEKLY_MAX_LOSS_PCT = 4.0  # research gap 9: stop for the week once realised losses reach 4% of session capital
@@ -109,10 +114,13 @@ class SessionLoopService:
         entry, stop, target = float(p.entry), float(p.stop), float(p.target)
         left = (_utc(p.expiresAt) - now).total_seconds() if p.pickState == "OFFERED" else 0.0
         state = "EXPIRED" if p.pickState == "OFFERED" and left <= 0 else p.pickState
+        t_code = assign_trader_for_opportunity(p.strategy, int(p.confidence), float(p.rewardRisk))
+        t_preset = get_trader_preset(t_code)
         return SessionPickResponse(
             id=p.id, sessionId=p.sessionId, opportunityId=p.opportunityId, opportunityRef=p.opportunityRef,
             underlyingCode=p.underlyingCode, optionType=p.optionType, strike=float(p.strike), expiry=p.expiry,
-            instrumentKey=p.instrumentKey, strategy=p.strategy, confidence=p.confidence,
+            instrumentKey=p.instrumentKey, strategy=p.strategy, traderCode=t_code, traderName=t_preset["name"],
+            confidence=p.confidence,
             entry=entry, entryMax=float(p.entryMax), stop=stop, target=target,
             stopPct=round((entry - stop) / entry * 100, 2), targetPct=round((target - entry) / entry * 100, 2),
             rewardRisk=float(p.rewardRisk), lots=p.lots, lotUnits=p.lotUnits, quantity=p.quantity,
@@ -321,8 +329,15 @@ class SessionLoopService:
                 except Exception:  # noqa: BLE001 -- no participant file yet: neutral
                     pos_bias = 0
 
+            active_traders = set(getattr(s, "traders", None) or ALL_PRESET_TRADER_CODES)
             ranked: list[tuple[tuple, dict[str, Any], Any]] = []
             for opp in candidates:
+                opp_trader = assign_trader_for_opportunity(
+                    opp.get("strategy"), int(opp.get("confidence") or 70), float(opp.get("rewardRisk") or 1.5)
+                )
+                if active_traders and opp_trader not in active_traders:
+                    drop("trader not active in session")
+                    continue
                 opp["sizeMult"] = size_multiplier(opp.get("strategy"), opp["optionType"], pos_bias, overlay_on)
                 if int(opp["id"]) in seen:
                     drop("already offered")
@@ -362,9 +377,11 @@ class SessionLoopService:
                 excluded["table full"] = len(ranked) - max(0, room)
 
             # ─── SEMI_AUTO & FULL_AUTO Automation ───
+            # Both SEMI_AUTO and FULL_AUTO automatically select the #1 ranked opportunity, size it against
+            # session capital/risk, lock the pick, and enter the ActiveTrade loop (navigation to /trades/$tradeId).
+            # SEMI_AUTO marks exit signals on the live Trader graph for user exit; FULL_AUTO also auto-exits.
             if s.sessionType in ("SEMI_AUTO", "FULL_AUTO") and live:
-                active_slots = len(active_ids) + (len(pending_locked) if s.sessionType == "SEMI_AUTO" else 0)
-                if active_slots < MAX_PARALLEL_TRADES:
+                if len(active_ids) < MAX_PARALLEL_TRADES:
                     best_pick = self._ranked(live)[0]
                     live_px = await self.opportunities.live_premium(db, best_pick.instrumentKey)
                     fill_px = float(live_px) if live_px is not None and live_px > 0 else float(best_pick.entry)
@@ -374,24 +391,21 @@ class SessionLoopService:
                         best_pick.lockedPrice = fill_px
                         live.remove(best_pick)
                         await db.flush()
-                        if s.sessionType == "FULL_AUTO":
-                            from app.modules.trades.schema.trade_schema import TradeCreateRequest
+                        from app.modules.trades.schema.trade_schema import TradeCreateRequest
 
-                            try:
-                                entered = await _trade_service().enter_trade(
-                                    db,
-                                    TradeCreateRequest(
-                                        sessionId=s.id,
-                                        pickId=best_pick.id,
-                                        entryAt=fill_px,
-                                        lots=int(best_pick.lots),
-                                    ),
-                                )
-                                active_ids.append(entered.id)
-                                pick_to_trade[best_pick.id] = entered.id
-                            except Exception:
-                                pending_locked.append(best_pick)
-                        else:
+                        try:
+                            entered = await _trade_service().enter_trade(
+                                db,
+                                TradeCreateRequest(
+                                    sessionId=s.id,
+                                    pickId=best_pick.id,
+                                    entryAt=fill_px,
+                                    lots=int(best_pick.lots),
+                                ),
+                            )
+                            active_ids.append(entered.id)
+                            pick_to_trade[best_pick.id] = entered.id
+                        except Exception:
                             pending_locked.append(best_pick)
                         locked = [p for p in await self.picks.open_picks(db, session_id) if p.pickState == "LOCKED"]
                         cap, active_ids, pick_to_trade, pending_locked = await self._session_commitments(db, s, locked)

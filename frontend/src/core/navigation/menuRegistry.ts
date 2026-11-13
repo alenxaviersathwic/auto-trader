@@ -42,7 +42,7 @@ class MenuRegistry {
   }
 }
 
-import { Users, TrendingUp, BotMessageSquare, Sparkles, Lightbulb, CalendarClock, History, Activity } from "lucide-react";
+import { Users, TrendingUp, BotMessageSquare, Sparkles, CalendarClock, History, Activity } from "lucide-react";
 
 export const menuRegistry = new MenuRegistry();
 
@@ -55,24 +55,6 @@ menuRegistry.register({
   order: 1,
 });
 
-// Register Research Engine navigation item
-menuRegistry.register({
-  id: "research-engine",
-  label: "Research Engine",
-  path: "/research",
-  icon: Sparkles,
-  order: 3,
-});
-
-// Register Opportunities navigation item
-menuRegistry.register({
-  id: "opportunities-engine",
-  label: "Opportunities",
-  path: "/opportunities",
-  icon: Lightbulb,
-  order: 4,
-});
-
 // Register Trading Sessions navigation item
 menuRegistry.register({
   id: "trading-sessions",
@@ -82,13 +64,22 @@ menuRegistry.register({
   order: 2,
 });
 
-// Register Active Trader navigation item
+// Register Active Trader Desk navigation item (3 Preset Traders + Live Positions)
 menuRegistry.register({
   id: "active-trader",
-  label: "Active Trader",
+  label: "Traders & Live Desk",
   path: "/trades",
   icon: Activity,
   order: 2.5,
+});
+
+// Register Research Engine navigation item
+menuRegistry.register({
+  id: "research-engine",
+  label: "Research Engine",
+  path: "/research",
+  icon: Sparkles,
+  order: 3,
 });
 
 // Register Backtest navigation item

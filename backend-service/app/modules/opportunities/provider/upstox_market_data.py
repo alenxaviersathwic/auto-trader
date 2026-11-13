@@ -1,6 +1,6 @@
 import asyncio
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -61,7 +61,9 @@ class UpstoxMarketData:
         self._vix_cache: tuple[float, dict[str, Any]] | None = None
 
     async def _token(self, session: AsyncSession) -> str:
-        from app.modules.users.entity.upstox_config_entity import UpstoxConfig  # lazy: read-only token lookup
+        from app.modules.users.entity.upstox_config_entity import (
+            UpstoxConfig,  # lazy: read-only token lookup
+        )
         from app.modules.users.entity.user_entity import User
 
         res = await session.execute(
@@ -105,7 +107,9 @@ class UpstoxMarketData:
         try:
             return await fn(token)
         except TokenRejected:
-            from app.modules.users.service.user_service import UserService  # lazy: avoid import cycle
+            from app.modules.users.service.user_service import (
+                UserService,  # lazy: avoid import cycle
+            )
 
             if not await UserService().reauth_default_after_rejection():
                 raise
@@ -252,6 +256,30 @@ class UpstoxMarketData:
             seen: dict[str, dict[str, Any]] = {}
             for b in bars:
                 seen[b["t"]] = b
+            return sorted(seen.values(), key=lambda x: x["t"])
+
+        return await self._with_token(session, run)
+
+    async def history_span(self, key: str, unit: str, from_date: str, to_date: str, session: AsyncSession,
+                           chunk_days: int = 28) -> list[dict[str, Any]]:
+        """Historical candles for [from_date, to_date] (YYYY-MM-DD, IST) via Upstox v3, fetched in chunks the API
+        accepts (1-minute: <= 1 month per call). unit = "minutes/1" or "days/1". Oldest first, de-duplicated."""
+        if not key:
+            return []
+
+        async def run(token: str) -> list[dict[str, Any]]:
+            k = key.replace("|", "%7C")
+            seen: dict[str, dict[str, Any]] = {}
+            start, end = date.fromisoformat(from_date), date.fromisoformat(to_date)
+            async with self._client(token) as c:
+                lo = start
+                while lo <= end:
+                    hi = min(end, lo + timedelta(days=chunk_days - 1))
+                    r = await self._get(c, f"{BASE}/v3/historical-candle/{k}/{unit}/{hi.isoformat()}/{lo.isoformat()}",
+                                        f"historical {unit} candles")
+                    for b in _bars((r.json().get("data") or {}).get("candles", [])):
+                        seen[b["t"]] = b
+                    lo = hi + timedelta(days=1)
             return sorted(seen.values(), key=lambda x: x["t"])
 
         return await self._with_token(session, run)
@@ -461,7 +489,7 @@ class UpstoxMarketData:
         if cached and cached[0] == today.isoformat():
             return cached[1]
         k = key.replace("|", "%7C")
-        frm = (today - timedelta(days=45)).isoformat()
+        frm = (today - timedelta(days=100)).isoformat()  # >= 50 sessions for the DMA50 filter (was 45 days)
         r = await self._get(c, f"{BASE}/v3/historical-candle/{k}/days/1/{today.isoformat()}/{frm}", "daily candles")
         bars = [b for b in _bars((r.json().get("data") or {}).get("candles", [])) if b["t"][:10] < today.isoformat()]
         self._daily_cache[key] = (today.isoformat(), bars)

@@ -38,7 +38,7 @@ const OpportunityCard: React.FC<CardProps> = ({ pick: p, clockOffsetMs, locking,
           </span>
           <span className="micro text-muted">
             {formatExpiry(p.expiry)}
-            {p.strategy ? ` · ${p.strategy}` : ""}
+            {p.traderName ? ` · ${p.traderName}` : p.strategy ? ` · ${p.strategy}` : ""}
           </span>
         </div>
         <div className="sl-win sl-card__win">

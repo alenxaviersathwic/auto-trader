@@ -19,10 +19,14 @@ class TradingSessionCreateRequest(BaseModel):
     tradeDate: str = Field(..., min_length=10, max_length=10, description="YYYY-MM-DD, IST trading day")
     userId: int = Field(..., gt=0)
     capital: float = Field(..., gt=0)
-    maxLossPercentage: float = Field(default=3.00, gt=0, le=100, description="Session-level loss halt, % of capital")
+    maxLossPercentage: float = Field(default=4.00, gt=0, le=100, description="Session-level loss halt, % of capital")
     scope: str = Field(..., description="INDEX or COMMODITY")
     underlyings: list[str] = Field(default_factory=list, description="Selected index underlyings (scope=INDEX)")
     commodityItems: list[str] = Field(default_factory=list, description="Selected commodities (scope=COMMODITY)")
+    traders: list[str] = Field(
+        default_factory=lambda: ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"],
+        description="Selected specialist Traders active in this session",
+    )
     sessionType: str = Field(default="MANUAL", description="FULL_AUTO | SEMI_AUTO | MANUAL")
     routeThroughUpstox: bool = Field(default=False, description="False = fully simulated session")
     startTime: Optional[str] = Field(default=None, pattern=HHMM_PATTERN, description="HH:MM IST. Blank = now if created at/after 09:25, else 09:15")
@@ -50,6 +54,7 @@ class TradingSessionUpdateRequest(BaseModel):
     maxLossPercentage: Optional[float] = Field(default=None, gt=0, le=100)
     underlyings: Optional[list[str]] = None
     commodityItems: Optional[list[str]] = None
+    traders: Optional[list[str]] = None
     sessionType: Optional[str] = None
     routeThroughUpstox: Optional[bool] = None
     sessionStatus: Optional[str] = Field(default=None, description="ACTIVE | CLOSED | EXPIRED")
@@ -79,6 +84,7 @@ class TradingSessionResponse(BaseModel):
     scope: str
     underlyings: list[str]
     commodityItems: list[str]
+    traders: list[str] = ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"]
     sessionType: str
     routeThroughUpstox: bool
     sessionStatus: str

@@ -137,14 +137,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Option history job setup failed: {e}")
 
-    # 3d. Expiry-day iron fly, PAPER only (research gap 6A) -- builds a live-quote track record, never sends orders
+    # 3d. NSE participant-wise OI (FII positioning -> FII_OPEN_DRIVE opportunity, positioning overlay)
     try:
-        from app.modules.opportunities.job import register_iron_fly_paper_job, register_positioning_job
+        from app.modules.opportunities.job import register_positioning_job
 
-        register_iron_fly_paper_job()
-        register_positioning_job()  # NSE participant-wise OI -> positioning overlay + gamma sign convention
+        register_positioning_job()
     except Exception as e:
-        logger.error(f"Iron fly paper job setup failed: {e}")
+        logger.error(f"Participant OI job setup failed: {e}")
 
     # 4. Start scheduler
     start_scheduler()

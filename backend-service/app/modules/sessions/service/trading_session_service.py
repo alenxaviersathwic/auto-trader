@@ -21,6 +21,7 @@ _UPDATABLE_FIELDS = (
     "maxLossPercentage",
     "underlyings",
     "commodityItems",
+    "traders",
     "sessionType",
     "routeThroughUpstox",
 )
@@ -54,6 +55,7 @@ class TradingSessionService:
             scope=entity.scope,
             underlyings=entity.underlyings or [],
             commodityItems=entity.commodityItems or [],
+            traders=getattr(entity, "traders", None) or ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"],
             sessionType=entity.sessionType,
             routeThroughUpstox=entity.routeThroughUpstox,
             sessionStatus=entity.sessionStatus,
@@ -91,6 +93,7 @@ class TradingSessionService:
             scope=request.scope.upper(),
             underlyings=request.underlyings,
             commodityItems=request.commodityItems,
+            traders=request.traders or ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"],
             sessionType=request.sessionType.upper(),
             routeThroughUpstox=request.routeThroughUpstox,
             startAt=start_at,

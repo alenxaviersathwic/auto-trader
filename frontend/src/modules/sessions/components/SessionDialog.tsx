@@ -68,22 +68,52 @@ const SESSION_MODES: Array<{
     value: "MANUAL",
     label: "Manual",
     tag: "4 PICKS",
-    desc: "Offers top 4 live setups. You lock the pick and confirm entry price & lots in the Trader modal.",
+    desc: "Offers top 4 live setups from your active Traders. You lock the pick and confirm entry price & lots.",
     icon: <Hand size={14} className="text-blue" />,
   },
   {
     value: "SEMI_AUTO",
     label: "Semi-Auto",
-    tag: "AUTO-LOCK",
-    desc: "Session loop automatically selects and locks the #1 highest-ranked opportunity for 1-click confirmation.",
+    tag: "AUTO-LOCK & GRAPH",
+    desc: "Auto-selects, sizes & locks the #1 opportunity into its Trader and opens the live trade graph with exit marks.",
     icon: <Cpu size={14} className="text-amber" />,
   },
   {
     value: "FULL_AUTO",
     label: "Full-Auto",
     tag: "AUTONOMOUS",
-    desc: "Auto-selects, locks & enters the #1 pick into its Trader loop; trails SL & exits in best condition.",
+    desc: "Auto-selects, locks & enters the #1 pick into its Trader loop; steps SL/Target (e.g. 100→120→150) & auto-exits.",
     icon: <Bot size={14} className="text-green" />,
+  },
+];
+
+const PRESET_TRADERS: Array<{
+  code: string;
+  name: string;
+  tag: string;
+  badgeClass: string;
+  desc: string;
+}> = [
+  {
+    code: "FIB_GOLDEN_TRADER",
+    name: "Fibonacci Golden-Pocket Specialist",
+    tag: "FIB 0.618 → 1.618",
+    badgeClass: "badge--cyan",
+    desc: "Finds 0.50–0.618 Fibonacci pullbacks; trails SL along 1.0 → 1.272 → 1.618 extension waves.",
+  },
+  {
+    code: "ORB_WAVE_TRADER",
+    name: "ORB & Momentum Wave Runner",
+    tag: "STEP-WAVE 100→120→150",
+    badgeClass: "badge--green",
+    desc: "Captures Opening Range Breakouts; steps SL to 75 & Target 100 → 120 → 150 when wave extends.",
+  },
+  {
+    code: "FLOW_VWAP_TRADER",
+    name: "Institutional VWAP & OI Flow Trader",
+    tag: "VWAP + OI FLOW",
+    badgeClass: "badge--amber",
+    desc: "Tracks institutional option-chain OI unwinding & VWAP reclaim; ratchets SL at 50% & 80% milestones.",
   },
 ];
 
@@ -92,10 +122,11 @@ const DEFAULT_VALUES: SessionCreateFormValues = {
   tradeDate: todayIST(),
   userId: 0,
   capital: 100000,
-  maxLossPercentage: 3,
+  maxLossPercentage: 4,
   scope: "INDEX",
   underlyings: ["NIFTY"],
   commodityItems: [],
+  traders: ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"],
   sessionType: "MANUAL",
   routeThroughUpstox: false,
   startTime: defaultStartTime(),
@@ -145,6 +176,7 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
   const closeTime = watch("closeTime");
   const underlyings = watch("underlyings") || [];
   const commodityItems = watch("commodityItems") || [];
+  const traders = watch("traders") || ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"];
   const routeThroughUpstox = Boolean(watch("routeThroughUpstox"));
 
   const selectedUser = useMemo(
@@ -201,8 +233,13 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
     [commodityResults],
   );
 
-  const toggleChip = (field: "underlyings" | "commodityItems", code: string) => {
-    const current = field === "underlyings" ? underlyings : commodityItems;
+  const toggleChip = (field: "underlyings" | "commodityItems" | "traders", code: string) => {
+    const current =
+      field === "underlyings"
+        ? underlyings
+        : field === "commodityItems"
+          ? commodityItems
+          : traders;
     const next = current.includes(code) ? current.filter((c) => c !== code) : [...current, code];
     setValue(field, next, { shouldValidate: true, shouldDirty: true });
   };
@@ -450,12 +487,68 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
               </div>
             </div>
 
-            {/* Section 3: Scope & Underlyings */}
+            {/* Section 2B: Specialist Preset Traders Assigned to This Session */}
+            <div className="session-section-card">
+              <div className="session-section-head">
+                <span className="session-section-title">
+                  <Cpu size={14} className="text-blue" />
+                  <span>3. Assigned Preset Traders ({traders.length} / 3 Active)</span>
+                </span>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  style={{ padding: "2px 8px", fontSize: "0.7rem" }}
+                  onClick={() =>
+                    setValue(
+                      "traders",
+                      PRESET_TRADERS.map((t) => t.code),
+                      { shouldValidate: true, shouldDirty: true },
+                    )
+                  }
+                >
+                  Enable All 3 Traders
+                </button>
+              </div>
+              <div className="session-mode-grid">
+                {PRESET_TRADERS.map((tr) => {
+                  const active = traders.includes(tr.code);
+                  return (
+                    <button
+                      key={tr.code}
+                      type="button"
+                      className={`session-mode-card ${active ? "session-mode-card--active" : ""}`}
+                      onClick={() => toggleChip("traders", tr.code)}
+                    >
+                      <div className="session-mode-card__top">
+                        <span
+                          className="session-mode-card__title"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                        >
+                          {active && <CheckCircle2 size={13} className="text-green" />}
+                          {tr.name}
+                        </span>
+                        <span className={`badge ${active ? tr.badgeClass : "badge--slate"}`}>
+                          {tr.tag}
+                        </span>
+                      </div>
+                      <span className="session-mode-card__desc">{tr.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {errors.traders && (
+                <span className="form-error" style={{ display: "block", marginTop: 6 }}>
+                  {errors.traders.message as string}
+                </span>
+              )}
+            </div>
+
+            {/* Section 4: Scope & Underlyings */}
             <div className="session-section-card">
               <div className="session-section-head">
                 <span className="session-section-title">
                   <Layers size={14} className="text-blue" />
-                  <span>3. Market Scope &amp; Underlyings</span>
+                  <span>4. Market Scope &amp; Underlyings</span>
                 </span>
                 <div style={{ display: "flex", gap: "var(--space-2)" }}>
                   <button

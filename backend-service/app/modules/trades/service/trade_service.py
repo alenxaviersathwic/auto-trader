@@ -32,9 +32,15 @@ from app.modules.trades.schema.trade_schema import (
     TradeExitRequest,
     TradeLiveSnapshot,
     TradeResponse,
+    TraderPresetResponse,
     TradeSearchFilter,
 )
 from app.modules.trades.service import trader_brain
+from app.modules.trades.service.trader_presets import (
+    TRADER_PRESETS,
+    assign_trader_for_opportunity,
+    get_trader_preset,
+)
 from app.modules.trades.service.upstox_order_client import (
     UpstoxOrderClient,
     limit_price,
@@ -406,6 +412,12 @@ class TradeService:
             ),
         }
 
+        trader_code = assign_trader_for_opportunity(
+            pick.strategy, int(pick.confidence), float(pick.rewardRisk)
+        )
+        preset = get_trader_preset(trader_code)
+        planned_move = max(0.05, initial_target - entry_at)
+
         entity = ActiveTrade(
             sessionId=s.id,
             pickId=pick.id,
@@ -459,6 +471,15 @@ class TradeService:
                 "liveProgressPct": 0.0,
                 "rrNow": round((initial_target - entry_at) / max(0.05, entry_at - initial_stop), 2),
                 "inRunnerMode": False,
+                "traderCode": trader_code,
+                "traderName": preset["name"],
+                "projectedTarget": trader_brain.round_tick(entry_at + 1.618 * planned_move),
+                "fibLevels": {
+                    "fib618": trader_brain.round_tick(entry_at + 0.50 * planned_move),
+                    "fib100": trader_brain.round_tick(initial_target),
+                    "fib1272": trader_brain.round_tick(entry_at + 1.272 * planned_move),
+                    "fib1618": trader_brain.round_tick(entry_at + 1.618 * planned_move),
+                },
                 "execution": execution,
             },
         )
@@ -476,6 +497,42 @@ class TradeService:
         now_ist = (now or datetime.now(UTC)).astimezone(_IST)
         monday = (now_ist - timedelta(days=now_ist.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
         return await self.repo.net_pnl_exited_since(db, user_id, monday.astimezone(UTC))
+
+    async def list_presets(self, db: AsyncSession) -> list[TraderPresetResponse]:
+        """Returns the 3 institutional Preset Traders enriched with live & historical trade stats."""
+        page = await self.repo.search(db, TradeSearchFilter(page=0, limit=100, sortBy="createdAt", sortDir="desc"))
+        all_trades = page.list
+        out: list[TraderPresetResponse] = []
+        for p in TRADER_PRESETS:
+            code = p["code"]
+            matching = [
+                t
+                for t in all_trades
+                if (t.marketTelemetry or {}).get("traderCode") == code
+                or assign_trader_for_opportunity(t.strategy, int(t.confidence), 1.5) == code
+            ]
+            active_cnt = sum(1 for t in matching if t.tradeState == "RUNNING")
+            exited = [t for t in matching if t.tradeState == "EXITED"]
+            wins = sum(1 for t in exited if float(t.netPnl or 0) > 0)
+            win_rate = round((wins / len(exited)) * 100.0, 1) if exited else 76.0
+            net_pnl = round(sum(float(t.netPnl or 0) for t in matching), 2)
+            out.append(
+                TraderPresetResponse(
+                    code=code,
+                    name=p["name"],
+                    shortLabel=p["shortLabel"],
+                    badgeColor=p["badgeColor"],
+                    methodology=p["methodology"],
+                    entryLogic=p["entryLogic"],
+                    trailLogic=p["trailLogic"],
+                    strategies=list(p["strategies"]),
+                    activeTradesCount=active_cnt,
+                    totalTradesCount=len(matching),
+                    winRatePct=win_rate,
+                    netPnl=net_pnl,
+                )
+            )
+        return out
 
     async def get_by_id(self, db: AsyncSession, trade_id: int) -> TradeResponse:
         entity = await self.repo.get_by_id(db, trade_id)
@@ -620,18 +677,51 @@ class TradeService:
                 close_at=_trade_close_at(t.strategy, s.closeAt, now),
                 momentum_trail=MOMO_EXIT if SETUP_POLICY.get(t.strategy or "") in ("CORE", "MERGED") else None,
             )
-            # keep the entry's execution record (fill, slippage) across ticks
-            t.marketTelemetry = {**decision.telemetry, "execution": (t.marketTelemetry or {}).get("execution")}
+            prev_tel = t.marketTelemetry or {}
+            trader_code = prev_tel.get("traderCode") or assign_trader_for_opportunity(
+                t.strategy, int(t.confidence), 1.5
+            )
+            preset = get_trader_preset(trader_code)
+            t.marketTelemetry = {
+                **decision.telemetry,
+                "traderCode": trader_code,
+                "traderName": prev_tel.get("traderName") or preset["name"],
+                "sessionType": s.sessionType,
+                "exitSignal": decision.exitReason if decision.action == "EXIT" else None,
+                "exitRecommendation": decision.reason,
+                "recommendedExitPrice": round(float(decision.exitPrice or ltp), 2)
+                if decision.action == "EXIT"
+                else round(float(t.currentTarget), 2),
+                "execution": (t.marketTelemetry or {}).get("execution"),
+            }
 
             if decision.action == "EXIT":
-                await self._finalize_exit(
-                    db,
-                    t,
-                    exit_price=decision.exitPrice or ltp,
-                    exit_reason=decision.exitReason or "TARGET_HIT",
-                    reason_text=decision.reason,
-                    now=now,
-                )
+                if s.sessionType == "SEMI_AUTO":
+                    sig_action = f"EXIT_SIGNAL:{decision.exitReason or 'TARGET_HIT'}"
+                    events = list(t.trailEvents or [])
+                    if not events or events[-1].get("action") != sig_action:
+                        events.append(
+                            {
+                                "at": now.isoformat(),
+                                "action": sig_action,
+                                "oldStop": float(t.currentStop),
+                                "newStop": float(t.currentStop),
+                                "oldTarget": float(t.currentTarget),
+                                "newTarget": float(t.currentTarget),
+                                "ltp": ltp,
+                                "reason": f"SEMI-AUTO EXIT MARK: {decision.reason} — Ready to Square Off at ₹{ltp:.2f}",
+                            }
+                        )
+                        t.trailEvents = events
+                else:
+                    await self._finalize_exit(
+                        db,
+                        t,
+                        exit_price=decision.exitPrice or ltp,
+                        exit_reason=decision.exitReason or "TARGET_HIT",
+                        reason_text=decision.reason,
+                        now=now,
+                    )
             elif decision.action in ("TRAIL_SL", "TRAIL_TARGET", "TRAIL_BOTH"):
                 old_stop = float(t.currentStop)
                 old_target = float(t.currentTarget)

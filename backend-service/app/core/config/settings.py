@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # Opportunity ranking: CODE = rank by the code baseline (default); LLM = the local model selects.
     # When CODE, the LLM still runs in SHADOW (its pick is logged for A/B) if OPPORTUNITY_LLM_SHADOW is true.
     OPPORTUNITY_RANKER: str = "CODE"
-    OPPORTUNITY_LLM_SHADOW: bool = True
+    OPPORTUNITY_LLM_SHADOW: bool = False  # off 13 Nov 2026: no side/paper modes, live flow only
 
     # Institutional overlays (11 Nov 2026 review). Both are COMPUTED and logged always; they only change trading when
     # enabled, after their validation scripts pass (gamma: scripts/validate_gamma_regime.py t > 2; positioning: A/B).
@@ -59,9 +59,9 @@ class Settings(BaseSettings):
     #   TREND_5_20 + NO_VWAP_PULLBACK + ENTRY_10_1430: 430 -> 73 trades, -Rs 89.3k -> +Rs 30.2k, PF 0.78 -> 1.38,
     #   max drawdown 1.08L -> 15.6k, total losses 4.1L -> 0.79L; better in BOTH halves (May-Aug16 -108k -> -14.6k,
     #   Aug17-Nov +18.9k -> +44.7k). ENTRY_10_1430 also keeps LATE_DAY_MOMENTUM (net negative over 6 months) out.
-    INSTITUTIONAL_FILTERS: str = "NIFTY_NOISE_STRICT,TREND_5_20,NO_VWAP_PULLBACK,ENTRY_10_1430,IB_GATE,PE_EXTRA"
+    INSTITUTIONAL_FILTERS: str = "NIFTY_NOISE_STRICT,TREND_5_20,NO_VWAP_PULLBACK,ENTRY_10_1430,IB_GATE,PE_EXTRA,DMA50"
     FII_OPEN_CODES: str = "NIFTY"  # FII_OPEN_DRIVE opening trade (fii_open.py); "" = off
-    MAX_ONE_LOT_RISK_PCT: float = 1.0  # one lot may risk up to this % of session capital when 0.5% buys < 1 lot
+    MAX_ONE_LOT_RISK_PCT: float = 4.0  # one lot may risk up to this % of session capital when 0.5% buys < 1 lot (4% = Rs 2,000 at Rs 50k, set 13 Nov 2026)
 
     # Logging
     LOG_LEVEL: str = "INFO"

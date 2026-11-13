@@ -106,12 +106,21 @@ def test_size_is_fixed_fractional_and_ignores_confidence():
     assert sizes[78].riskAmount == 2 * 65 * 3.5 and sizes[78].winProbPct == 78.0
 
 
-def test_one_lot_allowed_up_to_one_percent_risk_then_refused():
-    small = sz.capital_state(30000, 3, 0, [])  # 0.5% = 150 < 227.5 per lot, but 1% = 300 >= 227.5: one lot
-    assert sz.size_candidate(opp(confidence=90), small)[0].lots == 1
-    tiny = sz.capital_state(20000, 3, 0, [])  # 1% = 200 < 227.5: refused
-    z, why = sz.size_candidate(opp(confidence=90), tiny)
-    assert z is None and "risks more than" in why
+def test_one_lot_allowed_up_to_the_one_lot_risk_limit_then_refused():
+    from app.core.config.settings import settings
+
+    old = settings.MAX_ONE_LOT_RISK_PCT
+    try:
+        settings.MAX_ONE_LOT_RISK_PCT = 1.0
+        small = sz.capital_state(30000, 3, 0, [])  # 0.5% = 150 < 227.5 per lot, but 1% = 300 >= 227.5: one lot
+        assert sz.size_candidate(opp(confidence=90), small)[0].lots == 1
+        tiny = sz.capital_state(20000, 3, 0, [])  # 1% = 200 < 227.5: refused
+        z, why = sz.size_candidate(opp(confidence=90), tiny)
+        assert z is None and "risks more than 1%" in why
+        settings.MAX_ONE_LOT_RISK_PCT = 4.0  # small-account setting: 4% of 20k = 800 >= 227.5
+        assert sz.size_candidate(opp(confidence=90), tiny)[0].lots == 1
+    finally:
+        settings.MAX_ONE_LOT_RISK_PCT = old
 
 
 def test_correlated_index_book_counts_as_one_bet():

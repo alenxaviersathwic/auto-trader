@@ -7,7 +7,12 @@ import {
   TradeCreatePayload,
   TradeExitPayload,
   TradeSearchFilter,
+  TraderPreset,
 } from "../types/trades.types";
+
+export async function listTraderPresets(): Promise<TraderPreset[]> {
+  return httpClient.get("/trades/presets");
+}
 
 export async function previewTradeSizing(
   sessionId: number,
