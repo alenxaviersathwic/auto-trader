@@ -17,6 +17,28 @@ class TradeCreateRequest(BaseModel):
     initialTarget: Optional[float] = Field(default=None, gt=0)
 
 
+class TradeDirectInsertRequest(BaseModel):
+    """Payload for inserting a trade directly from the Traders Desk using Fibonacci & OA (Option Chain) analysis or a Trader Suggestion."""
+
+    sessionId: Optional[int] = Field(default=None, gt=0, description="Active session ID; auto-resolves or creates today's session if omitted")
+    opportunityId: Optional[int] = Field(default=None, ge=0, description="Optional source TradeOpportunity.id from Trader suggestions")
+    traderCode: str = Field(default="FIB_GOLDEN_TRADER", max_length=40)
+    underlyingCode: str = Field(..., min_length=2, max_length=30)
+    optionType: str = Field(..., pattern="^(CE|PE)$")
+    strike: float = Field(..., gt=0)
+    expiry: Optional[str] = Field(default=None, max_length=16)
+    instrumentKey: Optional[str] = Field(default=None, max_length=80)
+    entryAt: float = Field(..., gt=0)
+    initialStop: float = Field(..., gt=0)
+    initialTarget: float = Field(..., gt=0)
+    lots: int = Field(default=1, ge=1, le=200)
+    strategy: Optional[str] = Field(default="Fibonacci Golden Pocket + OA Flow", max_length=100)
+    confidence: int = Field(default=84, ge=1, le=100)
+    swingLow: Optional[float] = Field(default=None, gt=0)
+    swingHigh: Optional[float] = Field(default=None, gt=0)
+    oaAnalysis: Optional[dict[str, Any]] = Field(default=None)
+
+
 class TradeAdjustRequest(BaseModel):
     """Manual override of currentStop and/or currentTarget while the trade is RUNNING."""
 

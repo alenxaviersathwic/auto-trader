@@ -35,6 +35,39 @@ export interface TrailEvent {
   reason: string;
 }
 
+export interface FibLevels {
+  swingLow?: number;
+  swingHigh?: number;
+  fib382?: number;
+  fib500?: number;
+  fib618: number;
+  fib786?: number;
+  fib100: number;
+  fib1272: number;
+  fib1618: number;
+}
+
+export interface OAStrikeRow {
+  strike: number;
+  callOi: number;
+  putOi: number;
+  callOiChgPct: number;
+  putOiChgPct: number;
+  volumeRatio: number;
+  role: "ACTIVE_STRIKE" | "CALL_OI_WALL" | "PUT_OI_WALL" | "CHAIN" | string;
+}
+
+export interface OAAnalysis {
+  pcr: number;
+  maxPain: number;
+  putOiSupportWall: number;
+  callOiResistanceWall: number;
+  gammaWall: number;
+  oiBuildup: string;
+  verdict: string;
+  strikes: OAStrikeRow[];
+}
+
 export interface MarketTelemetry {
   traderCode?: string;
   traderName?: string;
@@ -49,12 +82,8 @@ export interface MarketTelemetry {
   rrNow?: number;
   peakPrice?: number;
   projectedTarget?: number;
-  fibLevels?: {
-    fib618: number;
-    fib100: number;
-    fib1272: number;
-    fib1618: number;
-  };
+  fibLevels?: FibLevels;
+  oaAnalysis?: OAAnalysis;
   inRunnerMode?: boolean;
   sessionType?: string;
   exitSignal?: string | null;
@@ -163,6 +192,26 @@ export interface TradeCreatePayload {
   lots?: number;
   initialStop?: number;
   initialTarget?: number;
+}
+
+export interface TradeDirectInsertPayload {
+  sessionId?: number;
+  opportunityId?: number;
+  traderCode: string;
+  underlyingCode: string;
+  optionType: "CE" | "PE";
+  strike: number;
+  expiry?: string;
+  instrumentKey?: string | null;
+  entryAt: number;
+  initialStop: number;
+  initialTarget: number;
+  lots: number;
+  strategy?: string;
+  confidence?: number;
+  swingLow?: number;
+  swingHigh?: number;
+  oaAnalysis?: OAAnalysis;
 }
 
 export interface TradeAdjustPayload {

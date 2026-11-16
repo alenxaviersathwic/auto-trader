@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -38,6 +39,8 @@ class SessionLoopRunner:
         self._factory = session_factory
         self._tick_seconds = tick_seconds
         self._tasks: dict[int, asyncio.Task] = {}
+        self._scan_tasks: dict[int, asyncio.Task] = {}
+        self._last_scan_at: dict[int, float] = {}
         self._snapshots: dict[int, SessionLoopResponse] = {}
         self._keys: dict[int, str] = {}
         self._subs: dict[int, set[asyncio.Queue]] = {}
@@ -66,6 +69,10 @@ class SessionLoopRunner:
         if t and not t.done():
             t.cancel()
             logger.info(f"session loop stopped: session={session_id}")
+        st = self._scan_tasks.pop(session_id, None)
+        if st and not st.done():
+            st.cancel()
+        self._last_scan_at.pop(session_id, None)
         self._snapshots.pop(session_id, None)
         self._keys.pop(session_id, None)
         self._close_subscribers(session_id)
@@ -93,11 +100,13 @@ class SessionLoopRunner:
         return len(rows)
 
     async def stop_all(self) -> None:
-        tasks = list(self._tasks.values())
+        tasks = list(self._tasks.values()) + list(self._scan_tasks.values())
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         self._tasks.clear()
+        self._scan_tasks.clear()
+        self._last_scan_at.clear()
         self._snapshots.clear()
         for sid in list(self._subs):
             self._close_subscribers(sid)
@@ -167,6 +176,69 @@ class SessionLoopRunner:
             self._put(q, fresh)
 
     # ───────────────────────── the loop ─────────────────────────
+    def _maybe_trigger_scan(self, session_id: int, snap: SessionLoopResponse) -> None:
+        """
+        Server-side autonomous discovery: when an ACTIVE session is WAITING with 0 fresh candidates,
+        trigger an async underlying scan every 25s so the session discovers setups even without `/opportunities` open.
+        """
+        if snap.state != "WAITING":
+            return
+        if (snap.scanned or {}).get("candidates", 0) > 0:
+            return
+        existing = self._scan_tasks.get(session_id)
+        if existing and not existing.done():
+            return
+        now_m = time.monotonic()
+        if now_m - self._last_scan_at.get(session_id, 0.0) < 25.0:
+            return
+        self._last_scan_at[session_id] = now_m
+        self._scan_tasks[session_id] = asyncio.create_task(
+            self._run_session_scan(session_id), name=f"session-scan-{session_id}"
+        )
+
+    async def _run_session_scan(self, session_id: int) -> None:
+        try:
+            from app.modules.opportunities.schema.opportunity_schema import StartOpportunityRequest
+            from app.modules.opportunities.service.run_service import opportunity_run_service
+
+            async with self._factory() as db:
+                s = await db.get(TradingSession, session_id)
+                if not s or s.sessionStatus != "ACTIVE":
+                    return
+                codes = list(s.underlyings if s.scope == "INDEX" else s.commodityItems) or []
+                if not codes:
+                    return
+                today_masters = await opportunity_run_service.today_masters(db)
+                running_by_code = {
+                    m["underlyingCode"]: m["id"]
+                    for m in today_masters.get("list", [])
+                    if m.get("state") == "RUNNING" and m.get("underlyingCode") in codes
+                }
+                missing = [c for c in codes if c not in running_by_code]
+                if missing:
+                    started = await opportunity_run_service.start(
+                        StartOpportunityRequest(underlyings=missing), db
+                    )
+                    if not started.get("started"):
+                        logger.info(
+                            f"session {session_id} auto-scan skipped: {started.get('reason')} - {started.get('message')}"
+                        )
+                    for m in started.get("masters", []):
+                        running_by_code[m["underlyingCode"]] = m["id"]
+
+            for code, master_id in running_by_code.items():
+                try:
+                    await opportunity_run_service.iterate(master_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"session {session_id} scan {code} failed: {type(exc).__name__}: {exc}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"session {session_id} auto-scan error: {type(exc).__name__}: {exc}")
+        finally:
+            if self._scan_tasks.get(session_id) is asyncio.current_task():
+                self._scan_tasks.pop(session_id, None)
+
     async def _run(self, session_id: int) -> None:
         try:
             while True:
@@ -179,6 +251,7 @@ class SessionLoopRunner:
                     self._publish(session_id, snap)
                     if snap.state in STOP_STATES:
                         return
+                    self._maybe_trigger_scan(session_id, snap)
                 except NotFoundException:
                     self._snapshots.pop(session_id, None)
                     return

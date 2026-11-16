@@ -20,7 +20,8 @@ The documentation is organized into modular, deep-dive specifications covering s
 | [**07. System & Runtime Module**](07-system-module.md) | System Registry & Diagnostics (`system`) | Centralized execution engine registry, system-wide health checks (PostgreSQL, pgvector, Upstox), background task lifecycle, and runtime state monitoring. |
 | [**08. Frontend Architecture**](08-frontend-architecture.md) | React 19 SPA & UI Systems | React 19 + TypeScript, TanStack Query key factories, TanStack Router, TanStack Table manual pagination, Zod form validation, and Zerodha Kite dark trading theme. |
 | [**09. Inter-Module Data Flows**](09-inter-module-data-flows.md) | End-to-End Execution Flows | Comprehensive sequence diagrams: Autonomous Market Intelligence, Live Trade Opportunity Generation, Master AI Proposal Lifecycle, Broker Token Renewal, Health Quarantine, and the Session Loop. |
-| [**10. Trading Sessions Module**](10-sessions-module.md) | Session Loop & Trade Lock (`sessions`) | Per-day capital / loss / hours envelope, server-side 1 s loop that reads saved opportunities, sizing by win probability, SSE live table, Trade Lock, and the daily 16:00 IST archive of `session_picks`. |
+| [**10. Trading Sessions Module**](10-sessions-module.md) | Session Loop & Execution Modes (`sessions`) | Per-day capital / loss / hours envelope, assigned Preset Traders, autonomous server-side scanning, `MANUAL` / `SEMI_AUTO` / `FULL_AUTO` modes, max 3 parallel open trades (unlimited total), SSE live stream, and daily 16:00 IST archive. |
+| [**11. Active Traders Module**](11-traders-module.md) | 3 Preset Traders & Fib+OA Desk (`trades`) | `FIB_GOLDEN_TRADER`, `ORB_WAVE_TRADER`, `FLOW_VWAP_TRADER`, 1-second Re-Analysis & Step-Wave Target/SL Brain (`100→120→150`), direct Fib+OA trade insertion, Right-Side Bar (`TraderSideSheet`), and Live Trade Cockpit (`/trades/$tradeId`). |
 
 ---
 
@@ -44,8 +45,8 @@ graph TB
         UI_Kite["Zerodha Kite Pro Trading Theme"]
         UI_Master["AI Master Chat (/master)"]
         UI_Strat["Strategies & Rules (/strategies)"]
-        UI_Opp["Opportunities Scanner (/opportunities)"]
         UI_Sess["Trading Sessions (/sessions)"]
+        UI_Trades["Traders & Live Desk (/trades)"]
         UI_Res["Research Engine (/research)"]
         UI_Users["Users & Broker Settings (/settings/users)"]
         UI_Client["Axios httpClient (Envelope Unwrapping)"]

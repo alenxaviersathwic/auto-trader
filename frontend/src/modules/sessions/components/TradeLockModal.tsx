@@ -82,8 +82,9 @@ export const TradeLockModal: React.FC<{ pick: SessionPick; onClose: () => void }
         <div className="sl-modal__head">
           <Lock size={16} />
           <h3 className="modal-title" style={{ margin: 0 }}>
-            Enter Trade & Start Trader: {p.underlyingCode} {p.strike} {p.optionType}
+            Enter Trade &amp; Start Trader: {p.underlyingCode} {p.strike} {p.optionType}
           </h3>
+          {p.traderName && <span className="badge badge--cyan">{p.traderName}</span>}
           <button type="button" className="btn btn--icon" onClick={onClose} aria-label="Close">
             <X size={16} />
           </button>

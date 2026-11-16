@@ -5,6 +5,7 @@ import {
   LotSuggestion,
   TradeAdjustPayload,
   TradeCreatePayload,
+  TradeDirectInsertPayload,
   TradeExitPayload,
   TradeSearchFilter,
   TraderPreset,
@@ -12,6 +13,10 @@ import {
 
 export async function listTraderPresets(): Promise<TraderPreset[]> {
   return httpClient.get("/trades/presets");
+}
+
+export async function insertDirectTrade(payload: TradeDirectInsertPayload): Promise<ActiveTrade> {
+  return httpClient.post("/trades/insert", payload);
 }
 
 export async function previewTradeSizing(

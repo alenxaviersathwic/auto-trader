@@ -5,6 +5,7 @@ import {
   createTrade,
   exitTrade,
   getTrade,
+  insertDirectTrade,
   listTraderPresets,
   previewTradeSizing,
   searchTrades,
@@ -13,6 +14,7 @@ import { tradesQueryKeys } from "../queryKeys/tradesQueryKeys";
 import {
   TradeAdjustPayload,
   TradeCreatePayload,
+  TradeDirectInsertPayload,
   TradeExitPayload,
   TradeSearchFilter,
 } from "../types/trades.types";
@@ -63,6 +65,18 @@ export function useCreateTrade() {
       queryClient.invalidateQueries({ queryKey: tradesQueryKeys.all });
       queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.detail(created.sessionId) });
       queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.picks(created.sessionId) });
+    },
+  });
+}
+
+export function useInsertDirectTrade() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: TradeDirectInsertPayload) => insertDirectTrade(payload),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: tradesQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.detail(created.sessionId) });
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.lists() });
     },
   });
 }

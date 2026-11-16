@@ -457,11 +457,32 @@ export const SessionsPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Underlyings Strip */}
+                {/* Underlyings & Assigned Preset Traders Strip */}
                 <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", padding: "2px 0" }}>
                   {underlyings.map((code) => (
                     <span key={code} className="badge badge--blue mono">
                       {code}
+                    </span>
+                  ))}
+                  {(s.traders && s.traders.length > 0
+                    ? s.traders
+                    : ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"]
+                  ).map((tr) => (
+                    <span
+                      key={tr}
+                      className={
+                        tr === "FIB_GOLDEN_TRADER"
+                          ? "badge badge--cyan mono"
+                          : tr === "ORB_WAVE_TRADER"
+                            ? "badge badge--green mono"
+                            : "badge badge--amber mono"
+                      }
+                    >
+                      {tr === "FIB_GOLDEN_TRADER"
+                        ? "FIB 0.618"
+                        : tr === "ORB_WAVE_TRADER"
+                          ? "ORB WAVE"
+                          : "VWAP FLOW"}
                     </span>
                   ))}
                 </div>

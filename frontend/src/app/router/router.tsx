@@ -114,6 +114,12 @@ const opportunityDetailRoute = createRoute({
   component: OpportunityDetailPage,
 });
 
+const traderSheetSearchSchema = z.object({
+  sheet: z.enum(["SUGGESTIONS", "TRADE_INSPECT", "INSERT_TRADE"]).optional(),
+  trader: z.string().optional(),
+  tradeId: z.coerce.number().int().positive().optional(),
+});
+
 const sessionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sessions",
@@ -123,12 +129,14 @@ const sessionsRoute = createRoute({
 const sessionDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sessions/$id",
+  validateSearch: traderSheetSearchSchema,
   component: SessionDetailPage,
 });
 
 const tradesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/trades",
+  validateSearch: traderSheetSearchSchema,
   component: TradesPage,
 });
 

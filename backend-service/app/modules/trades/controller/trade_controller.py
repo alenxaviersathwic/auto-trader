@@ -17,6 +17,7 @@ from app.modules.trades.schema.trade_schema import (
     LotSuggestionResponse,
     TradeAdjustRequest,
     TradeCreateRequest,
+    TradeDirectInsertRequest,
     TradeExitRequest,
     TradeLiveSnapshot,
     TradeResponse,
@@ -102,6 +103,20 @@ async def create_trade(
 ):
     result = await trade_service.enter_trade(session, payload)
     return created(data=result, message="Trade entered and Trader pilot started")
+
+
+@trade_router.post(
+    "/insert",
+    response_model=ApiResponse[TradeResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Insert a trade directly from Traders Desk using Fibonacci & OA analysis or a Trader Suggestion",
+)
+async def insert_trade(
+    payload: TradeDirectInsertRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    result = await trade_service.insert_direct_trade(session, payload)
+    return created(data=result, message="Trade inserted with Fib & OA levels and 1s Trader pilot started")
 
 
 @trade_router.post(

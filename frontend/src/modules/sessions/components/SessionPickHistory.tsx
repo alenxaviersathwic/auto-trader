@@ -27,6 +27,7 @@ export const SessionPickHistory: React.FC<{
           <tr>
             <th>Offered</th>
             <th>Option</th>
+            <th>Specialist Trader</th>
             <th>State</th>
             <th>Entry / Lock</th>
             <th>Stop</th>
@@ -34,18 +35,18 @@ export const SessionPickHistory: React.FC<{
             <th>Lots</th>
             <th>Risk</th>
             <th>Reward</th>
-            <th>Trader</th>
+            <th>Trader Loop</th>
           </tr>
         </thead>
         <tbody>
           {isLoading && (
             <tr>
-              <td colSpan={10} className="text-muted">Loading picks...</td>
+              <td colSpan={11} className="text-muted">Loading picks...</td>
             </tr>
           )}
           {!isLoading && picks.length === 0 && (
             <tr>
-              <td colSpan={10} className="text-muted">Nothing offered yet in this session.</td>
+              <td colSpan={11} className="text-muted">Nothing offered yet in this session.</td>
             </tr>
           )}
           {picks.map((p) => (
@@ -53,6 +54,19 @@ export const SessionPickHistory: React.FC<{
               <td className="mono">{hms(p.offeredAt)}</td>
               <td className="mono text-primary">
                 {p.underlyingCode} {p.strike} {p.optionType}
+              </td>
+              <td>
+                <span
+                  className={
+                    p.traderCode === "FIB_GOLDEN_TRADER"
+                      ? "badge badge--cyan"
+                      : p.traderCode === "ORB_WAVE_TRADER"
+                        ? "badge badge--green"
+                        : "badge badge--amber"
+                  }
+                >
+                  {p.traderName || p.strategy || "ORB Wave"}
+                </span>
               </td>
               <td><span className={STATE_BADGE[p.pickState]}>{p.pickState}</span></td>
               <td className="mono">

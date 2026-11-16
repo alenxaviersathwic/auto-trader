@@ -8,14 +8,16 @@
 
 ## 1. Executive Overview
 
-A **trading session** is the capital / risk / scope / hours envelope a trader sets up for one trading day. A **MANUAL** session runs a **server-side loop** that turns the opportunities the engine has already saved into a ranked table of **trades to take**, sized to the session's own capital and loss budget, and pushes that table to the browser over **SSE**. The trader presses **Trade Lock** on a row.
+A **trading session** is the capital / risk / scope / hours envelope a trader sets up for one trading day. Each session assigns **1 to 3 Preset Specialist Traders** (`FIB_GOLDEN_TRADER`, `ORB_WAVE_TRADER`, `FLOW_VWAP_TRADER`) and supports **unlimited total trades per day** with a **maximum of 3 parallel open trades at once**.
+
+Execution modes:
+- **`MANUAL`**: Offers top ranked setups from assigned Preset Traders; you lock & enter manually.
+- **`SEMI_AUTO`**: Automatically selects, sizes, locks & enters the #1 setup into its 1-second Trader loop, navigates to the live graph, and displays **`★ EXIT NOW`** when an exit condition is reached.
+- **`FULL_AUTO`**: Fully autonomous — auto-selects, locks, enters, trails SL/Target (including Step-Wave expansion `100 → 120 → 150` with `SL 75 → 100`), and auto-exits (placing Upstox `BUY` / `SELL` orders when `routeThroughUpstox = true`).
 
 Key rules:
-
-- The session loop **never runs or listens to the opportunity engine**. It only reads `trade_opportunities` (a plain indexed read). Opportunities are produced separately by the Opportunities module (see [05](05-opportunities-module.md)); the two are linked only through that table.
-- The loop is a plain `asyncio` task (`while True: tick; sleep`), **not** a scheduler job.
-- Nothing here places an order. **Trade Lock** records the lock and the live premium; execution is a later phase.
-- Only `sessionType = MANUAL` runs the loop. `SEMI_AUTO` / `FULL_AUTO` report `UNSUPPORTED_TYPE`.
+- **Autonomous Server-Side Discovery**: When an `ACTIVE` session is `WAITING` with 0 fresh candidates, `SessionLoopRunner` automatically triggers `opportunity_run_service` scans every 25s for the session's underlyings — no separate `/opportunities` browser tab is required.
+- The session loop is an `asyncio` task (`while True: tick; sleep`) ticking every **1 second**.
 
 ---
 

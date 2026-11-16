@@ -3,13 +3,17 @@ import { ActiveTrade } from "../types/trades.types";
 import { formatRupee } from "../../opportunities/components/formatters";
 
 export const TradeLiveLadder: React.FC<{ trade: ActiveTrade }> = ({ trade: t }) => {
+  const projected = Number(t.marketTelemetry?.projectedTarget || t.currentTarget);
   const minVal = Math.min(t.initialStop, t.currentStop, t.troughPrice, t.entryAt) * 0.96;
-  const maxVal = Math.max(t.initialTarget, t.currentTarget, t.peakPrice, t.lastPrice, t.entryAt) * 1.04;
+  const maxVal =
+    Math.max(t.initialTarget, t.currentTarget, projected, t.peakPrice, t.lastPrice, t.entryAt) *
+    1.04;
   const span = Math.max(1, maxVal - minVal);
   const pct = (v: number) => Math.max(2, Math.min(98, ((v - minVal) / span) * 100));
 
   const slMoved = t.currentStop > t.initialStop + 0.01;
   const targetMoved = Math.abs(t.currentTarget - t.initialTarget) > 0.01;
+  const hasWaveExtension = projected > t.currentTarget + 0.5;
 
   return (
     <div className="card" style={{ padding: "var(--space-4)" }}>
@@ -23,7 +27,12 @@ export const TradeLiveLadder: React.FC<{ trade: ActiveTrade }> = ({ trade: t }) 
           )}
           {targetMoved && (
             <span className="badge badge--cyan">
-              Target Trailed: {formatRupee(t.initialTarget)} → {formatRupee(t.currentTarget)}
+              Target Stepped: {formatRupee(t.initialTarget)} → {formatRupee(t.currentTarget)}
+            </span>
+          )}
+          {hasWaveExtension && (
+            <span className="badge badge--blue">
+              Projected Wave Ceiling: {formatRupee(projected)}
             </span>
           )}
         </div>
@@ -133,6 +142,21 @@ export const TradeLiveLadder: React.FC<{ trade: ActiveTrade }> = ({ trade: t }) 
           }}
           title={`Current Target: ${formatRupee(t.currentTarget)}`}
         />
+
+        {/* Projected Wave Extension Ceiling marker */}
+        {hasWaveExtension && (
+          <div
+            style={{
+              position: "absolute",
+              top: "-6px",
+              bottom: "-6px",
+              left: `${pct(projected)}%`,
+              width: "2px",
+              borderLeft: "2px dashed var(--cyan)",
+            }}
+            title={`Projected Wave Ceiling: ${formatRupee(projected)}`}
+          />
+        )}
 
         {/* Live LTP puck */}
         <div
