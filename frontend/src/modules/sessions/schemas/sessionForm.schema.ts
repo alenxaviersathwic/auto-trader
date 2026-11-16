@@ -12,8 +12,9 @@ export const sessionCreateSchema = z
     commodityItems: z.array(z.string()).default([]),
     traders: z
       .array(z.string())
-      .min(1, "Select at least one Preset Trader")
-      .default(["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"]),
+      .min(1, "Select at least one trader")
+      .default(["FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER"]),
+    riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]).default("LOW"),
     sessionType: z.enum(["FULL_AUTO", "SEMI_AUTO", "MANUAL"]).default("MANUAL"),
     routeThroughUpstox: z.boolean().default(false),
     startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM"),

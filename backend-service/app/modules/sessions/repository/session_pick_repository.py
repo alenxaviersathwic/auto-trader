@@ -40,6 +40,18 @@ class SessionPickRepository:
         )
         return {int(x) for x in res.scalars().all()}
 
+    async def all_for_session(self, session: AsyncSession, session_id: int) -> list[SessionPick]:
+        """Every pick of a session (live table while it runs, archive once it is finished), oldest first."""
+        for model in (SessionPick, SessionPickArchive):
+            res = await session.execute(
+                select(model).where(model.sessionId == session_id).where(model.status == EntityStatus.ACTIVE)
+                .order_by(model.offeredAt, model.id)
+            )
+            rows = list(res.scalars().all())
+            if rows:
+                return rows
+        return []
+
     async def save(self, session: AsyncSession, entity: SessionPick) -> SessionPick:
         session.add(entity)
         await session.flush()

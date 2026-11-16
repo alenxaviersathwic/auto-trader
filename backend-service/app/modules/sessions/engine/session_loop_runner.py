@@ -268,3 +268,13 @@ class SessionLoopRunner:
 
 
 session_loop_runner = SessionLoopRunner()
+
+
+def _alive(tasks: dict) -> int:
+    return sum(1 for t in tasks.values() if not t.done())
+
+
+def active_counts() -> dict[str, int]:
+    """Running session loops and their scanner tasks (read by the system load check)."""
+    return {"sessionLoops": _alive(session_loop_runner._tasks), "sessionScans": _alive(session_loop_runner._scan_tasks)}
+

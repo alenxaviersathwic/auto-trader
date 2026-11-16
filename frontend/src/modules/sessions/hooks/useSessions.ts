@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { BaseFilter } from "../../../core/types/filter.types";
 import {
+  analyseSessionBatch,
   createSession,
   deleteSession,
   getSession,
   lockSessionPick,
+  searchSessionBatches,
   searchSessionPicks,
   searchSessions,
   updateSession,
@@ -77,6 +80,26 @@ export function useLockSessionPick(sessionId: number) {
   return useMutation({
     mutationFn: (pickId: number) => lockSessionPick(sessionId, pickId),
     onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.picks(sessionId) });
+    },
+  });
+}
+
+export function useSessionBatches(sessionId: number, filter: BaseFilter, enabled = true) {
+  return useQuery({
+    queryKey: sessionsQueryKeys.batchList(sessionId, filter),
+    queryFn: () => searchSessionBatches(sessionId, filter),
+    enabled: enabled && sessionId > 0,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useAnalyseSessionBatch(sessionId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (batchKey: string) => analyseSessionBatch(sessionId, batchKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.batches(sessionId) });
       queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.picks(sessionId) });
     },
   });

@@ -53,3 +53,8 @@ export async function exitTrade(id: number, payload: TradeExitPayload = {}): Pro
   return httpClient.post(`/trades/${id}/exit`, payload);
 }
 
+/** The LLM uses the trade's session risk level (LOW / MEDIUM / HIGH). */
+export async function llmAnalyzeTrade(id: number): Promise<ActiveTrade> {
+  return httpClient.post(`/trades/${id}/llm-analyze`, {});
+}
+

@@ -18,6 +18,8 @@ export const researchQueryKeys = {
   candidateList: (filter: CandidateSearchFilter) => [...researchQueryKeys.candidates(), "list", filter] as const,
   candidateDetail: (id: number) => [...researchQueryKeys.candidates(), "detail", id] as const,
 
+  schedule: () => [...researchQueryKeys.all, "schedule"] as const,
+
   // Runs
   runs: () => [...researchQueryKeys.all, "runs"] as const,
   runList: (filter: RunSearchFilter) => [...researchQueryKeys.runs(), "list", filter] as const,

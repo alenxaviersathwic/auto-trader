@@ -153,3 +153,8 @@ class TradePilotRunner:
 
 trade_pilot_runner = TradePilotRunner()
 
+
+def active_count() -> int:
+    """Running trade pilot loops (read by the system load check)."""
+    return sum(1 for t in trade_pilot_runner._tasks.values() if not t.done())
+

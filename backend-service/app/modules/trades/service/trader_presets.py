@@ -1,92 +1,74 @@
 """
-Institutional Preset Traders (`trader_presets.py`).
+The two Traders of `auto-trader` (`trader_presets.py`).
 
-Defines the 3 self-contained Specialist Traders for `auto-trader`. Each Trader combines:
-  1. Opportunity Discovery / Strategy Filter (how it finds setups in the market)
-  2. Live 1-Second Re-Analysis & SL/Target Step-Wave Brain (how it trails SL & steps Target)
+A Trader is (1) the setups it is allowed to take and (2) how it manages the position once entered.
+
+  FIB_GOLDEN_TRADER     takes ONLY `FIB_GOLDEN_POCKET` (opportunities/service/fib_pocket.py): a pullback into the
+                        0.50-0.618 retracement of a real impulse swing, and only when the option chain (OI) and the
+                        futures volume both confirm it. Manages the trade along the Fibonacci extensions.
+  FLOW_MOMENTUM_TRADER  takes everything else the engine allows (noise breakout, inside bar, FII open drive, late-day
+                        momentum, VWAP / range entries inside an active breakout). Manages the trade with the R-trail
+                        momentum exit (menu_builder.MOMO_EXIT) or the step guard.
+
+Until 16 Nov 2026 there were three presets (FIB_GOLDEN / ORB_WAVE / FLOW_VWAP). The last two are merged into
+FLOW_MOMENTUM_TRADER; `normalize_trader_code()` maps the old codes so stored sessions and trades keep working.
 """
 from typing import Any
 
 TRADER_FIB_GOLDEN = "FIB_GOLDEN_TRADER"
-TRADER_ORB_WAVE = "ORB_WAVE_TRADER"
-TRADER_FLOW_VWAP = "FLOW_VWAP_TRADER"
+TRADER_FLOW_MOMENTUM = "FLOW_MOMENTUM_TRADER"
 
-ALL_PRESET_TRADER_CODES: tuple[str, ...] = (
-    TRADER_FIB_GOLDEN,
-    TRADER_ORB_WAVE,
-    TRADER_FLOW_VWAP,
-)
+ALL_PRESET_TRADER_CODES: tuple[str, ...] = (TRADER_FIB_GOLDEN, TRADER_FLOW_MOMENTUM)
+
+LEGACY_TRADER_CODES: dict[str, str] = {
+    "ORB_WAVE_TRADER": TRADER_FLOW_MOMENTUM,
+    "FLOW_VWAP_TRADER": TRADER_FLOW_MOMENTUM,
+}
+
+FIB_SETUP = "FIB_GOLDEN_POCKET"
+_FIB_KEYWORDS = ("fib", "golden pocket", "golden-pocket", "retracement")
 
 TRADER_PRESETS: list[dict[str, Any]] = [
     {
         "code": TRADER_FIB_GOLDEN,
-        "name": "Fibonacci Golden-Pocket Trader",
-        "shortLabel": "FIB GOLDEN",
+        "name": "Fib Golden-Pocket Trader",
+        "shortLabel": "FIB + OI + VOL",
         "badgeColor": "cyan",
-        "methodology": "0.50–0.618 Golden Pocket Pullback + 1.272 / 1.618 Fib Extension Trail",
+        "methodology": "0.50-0.618 pullback of an impulse swing, confirmed by option-chain OI and futures volume",
         "entryLogic": (
-            "Detects an impulse swing (Swing Low → Swing High) aligned with trend bias and enters on a "
-            "pullback into the 0.50–0.618 Golden Pocket with 1m candle confirmation."
+            "Finds an impulse swing of at least 3 ATR on the 5-minute chart, waits for the pullback into the "
+            "0.50-0.618 pocket and a 5-minute close turning back with the swing. Enters only when the option chain "
+            "confirms (OI wall behind the stop, no OI wall blocking the target) and volume confirms (quiet pullback, "
+            "active turn bar)."
         ),
         "trailLogic": (
-            "Initial SL below 0.786 retracement. At 80% of 1.0 Swing High, locks SL at 0.618 (+50% move). "
-            "When 1.0 Target is reached with volume, locks SL at 1.0 and steps Target to 1.272 Fib Extension, "
-            "then 1.618 Golden Extension."
+            "Stop behind the 0.786 retracement. Waits for 80% of the move to the swing high before locking half the "
+            "profit, then steps the target to the 1.272 and 1.618 extensions while momentum holds."
         ),
-        "strategies": [
-            "Fibonacci Golden Pocket",
-            "EMA Pullback",
-            "Supertrend",
-            "Trend Pullback",
-            "Multi-Timeframe Trend",
-        ],
+        "strategies": ["FIB_GOLDEN_POCKET"],
     },
     {
-        "code": TRADER_ORB_WAVE,
-        "name": "ORB & Momentum Wave Runner",
-        "shortLabel": "ORB WAVE",
+        "code": TRADER_FLOW_MOMENTUM,
+        "name": "Flow & Momentum Trader",
+        "shortLabel": "FLOW + MOMENTUM",
         "badgeColor": "green",
-        "methodology": "15m Opening Range / Consolidation Breakout + Step-Wave Expansion (100 → 120 → 150)",
+        "methodology": "Noise-area breakouts and institutional flow, held with an R-multiple trail (no fixed target)",
         "entryLogic": (
-            "Scans for 15-minute Opening Range, FII Open Drive, or multi-bar box breakouts with "
-            "volumeRatio >= 1.35x and expanding directional momentum."
+            "Takes the engine's breakout and flow setups: noise breakout, inside bar, FII open drive, late-day "
+            "momentum, plus VWAP pullback / range breakout / gap-and-go inside an active breakout on the same side."
         ),
         "trailLogic": (
-            "Re-analyzes wave potential every second. When planned Target is 100 and live volume/momentum "
-            "projects 150, locks SL at 75 (at 75–80% progress) and steps Target to 120, then locks SL at 100 "
-            "and steps Target to 150."
+            "Momentum setups: stop to breakeven at +1.5R, then trail 2R under the peak, no fixed target. Other "
+            "entries: step guard (+30% of the move locked at 50% progress, +50% at 80%)."
         ),
         "strategies": [
-            "ORB Breakout",
-            "FII Open Drive",
-            "Opening Range Breakout",
-            "Volume Breakout",
-            "Momentum Breakout",
-            "Gamma Squeeze",
-            "Bollinger Breakout",
-        ],
-    },
-    {
-        "code": TRADER_FLOW_VWAP,
-        "name": "Institutional VWAP & OI Flow Trader",
-        "shortLabel": "VWAP FLOW",
-        "badgeColor": "blue",
-        "methodology": "Session VWAP + Option Chain OI Wall Support + Fast Step-Guard Trail",
-        "entryLogic": (
-            "Identifies bounces off Session VWAP, 9-EMA, or CPR/Camarilla pivots backed by Put-writing "
-            "support (for CE) or Call-writing resistance (for PE)."
-        ),
-        "trailLogic": (
-            "Protects capital fast: at 50% target progress trails SL to +30% profit (above breakeven + fees); "
-            "at 80% progress locks +50% profit and trails under 1m higher-low support."
-        ),
-        "strategies": [
-            "VWAP Bounce",
-            "VWAP Pullback",
-            "CPR Bounce",
-            "RSI Reversal",
-            "OI Flow",
-            "Iron Fly",
+            "NOISE_BREAKOUT",
+            "INSIDE_BAR",
+            "FII_OPEN_DRIVE",
+            "LATE_DAY_MOMENTUM",
+            "VWAP_PULLBACK",
+            "RANGE_BREAKOUT",
+            "GAP_GO",
         ],
     },
 ]
@@ -94,32 +76,32 @@ TRADER_PRESETS: list[dict[str, Any]] = [
 _PRESET_BY_CODE: dict[str, dict[str, Any]] = {p["code"]: p for p in TRADER_PRESETS}
 
 
+def normalize_trader_code(code: str | None) -> str | None:
+    """Current trader code for `code` (old three-trader codes are mapped), or None when it is not a trader code."""
+    if not code:
+        return None
+    c = LEGACY_TRADER_CODES.get(code, code)
+    return c if c in _PRESET_BY_CODE else None
+
+
+def normalize_trader_codes(codes: list[str] | None) -> list[str]:
+    """De-duplicated current codes in preset order; an empty / unknown list means both traders."""
+    wanted = {normalize_trader_code(c) for c in (codes or [])}
+    out = [c for c in ALL_PRESET_TRADER_CODES if c in wanted]
+    return out or list(ALL_PRESET_TRADER_CODES)
+
+
 def get_trader_preset(code: str | None) -> dict[str, Any]:
-    """Return the preset metadata dict for `code`, defaulting to `ORB_WAVE_TRADER`."""
-    if code and code in _PRESET_BY_CODE:
-        return _PRESET_BY_CODE[code]
-    return _PRESET_BY_CODE[TRADER_ORB_WAVE]
+    """Preset metadata for `code` (old codes accepted); unknown codes fall back to the Flow & Momentum trader."""
+    return _PRESET_BY_CODE[normalize_trader_code(code) or TRADER_FLOW_MOMENTUM]
 
 
 def assign_trader_for_opportunity(strategy: str | None, confidence: int = 70, reward_risk: float = 1.5) -> str:
-    """
-    Maps a candidate setup's strategy / characteristics to one of the 3 Specialist Preset Traders:
-      - `FIB_GOLDEN_TRADER`
-      - `ORB_WAVE_TRADER`
-      - `FLOW_VWAP_TRADER`
-    """
-    s = (strategy or "").strip().lower()
-    if any(k in s for k in ("fib", "pullback", "ema", "supertrend", "golden", "swing")):
+    """Which trader owns an opportunity: the Fib trader for the Fib golden-pocket setup (by setup name, or a cited
+    strategy that names it), the Flow & Momentum trader for everything else. `confidence` / `reward_risk` are kept
+    for call compatibility; ownership no longer depends on them."""
+    del confidence, reward_risk
+    s = (strategy or "").strip()
+    if s.upper() == FIB_SETUP or any(k in s.lower() for k in _FIB_KEYWORDS):
         return TRADER_FIB_GOLDEN
-    if any(k in s for k in ("orb", "open drive", "fii", "breakout", "momentum", "gamma", "squeeze", "impulse")):
-        return TRADER_ORB_WAVE
-    if any(k in s for k in ("vwap", "cpr", "pivot", "rsi", "reversal", "oi", "flow", "iron", "bollinger")):
-        return TRADER_FLOW_VWAP
-
-    # Fallback by reward/risk & conviction profile
-    if reward_risk >= 1.8:
-        return TRADER_ORB_WAVE
-    if confidence >= 78:
-        return TRADER_FIB_GOLDEN
-    return TRADER_FLOW_VWAP
-
+    return TRADER_FLOW_MOMENTUM

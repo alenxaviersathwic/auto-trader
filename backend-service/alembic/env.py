@@ -9,6 +9,7 @@ from app.core.config.settings import settings
 from app.core.db.base_entity import Base
 import app.modules.users.entity
 import app.modules.trades.entity
+import app.modules.learning.entity
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

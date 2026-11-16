@@ -181,3 +181,15 @@ async def get_latest_results(
     """Fetch latest run results grouped by clearance status."""
     res = await run_service.get_latest_results(underlyingType, session)
     return success(data=res, message=f"Latest {underlyingType} research results retrieved")
+
+
+@research_router.get(
+    "/research/schedule",
+    response_model=ApiResponse[dict],
+    summary="Automatic research schedule and its last decision",
+)
+async def research_schedule():
+    """Start-up + every-30-minute runs, skipped while system usage is at or above the limit."""
+    from app.modules.research.job import status
+
+    return success(data=status(), message="Research schedule fetched")

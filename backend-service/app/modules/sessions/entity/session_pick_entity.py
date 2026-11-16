@@ -41,6 +41,10 @@ class _PickColumns:
 
     reasons: Mapped[list[Any]] = mapped_column("reasons", JSONB, nullable=False, default=list)
     risks: Mapped[list[Any]] = mapped_column("risks", JSONB, nullable=False, default=list)
+    # copied from the opportunity (TradeOpportunity.setupMeta): the Fib trader's real swing and levels
+    setupMeta: Mapped[dict[str, Any] | None] = mapped_column("setup_meta", JSONB, nullable=True)
+    # the session manager's after-the-fact check (session_manager.judge_pick), written by "Analyse"
+    outcomeAnalysis: Mapped[dict[str, Any] | None] = mapped_column("outcome_analysis", JSONB, nullable=True)
 
     pickState: Mapped[str] = mapped_column("pick_state", String(10), nullable=False, default="OFFERED")
     signalAt: Mapped[datetime] = mapped_column("signal_at", DateTime(timezone=True), nullable=False)

@@ -20,12 +20,17 @@ import {
   SourceSearchFilter,
   UnderlyingSearchFilter,
   UnderlyingType,
+  ResearchSchedule,
 } from "../types/research.types";
 
 export const researchApi = {
   // Direct Research Engine APIs
   async runEngine(): Promise<any> {
     return httpClient.post("/research/run");
+  },
+
+  async getSchedule(): Promise<ResearchSchedule> {
+    return httpClient.get("/research/schedule");
   },
 
   async getRunStatus(): Promise<any> {

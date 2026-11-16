@@ -31,6 +31,12 @@ export function formatRupee(value: number): string {
   return `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** -₹1,240.00 / +₹1,240.00 (sign before the symbol); `plus` adds "+" to positive values. */
+export function formatSignedRupee(value: number, plus = false): string {
+  const sign = value < 0 ? "-" : plus && value > 0 ? "+" : "";
+  return `${sign}${formatRupee(Math.abs(value))}`;
+}
+
 export function formatCompactRupee(value: number): string {
   const abs = Math.abs(value);
   const sign = value < 0 ? "-" : "";

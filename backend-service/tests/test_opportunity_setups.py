@@ -147,7 +147,9 @@ def test_menu_uses_setup_levels_and_costs():
     cfg = get_config("NIFTY")
     m = _orb_market()
     a = analyze(cfg, m, now=datetime(2026, 11, 2, 9, 45, 5, tzinfo=IST))
-    found = setup_detector.detect(a, cfg)
+    # only ORB: other detected setups on the same bar (e.g. SCALP_IMPULSE) may outrank it, and this test is about how
+    # the menu uses ONE setup's levels; live, the menu only ever sees setups that passed confirm_timeframes()
+    found = [s for s in setup_detector.detect(a, cfg) if s["name"] == "ORB"]
     menu = build_menu(cfg, m, "BULLISH", 5.0, setups=found)
     ce = [x for x in menu if x["side"] == "CE"]
     assert ce and ce[0]["setup"] == "ORB" and ce[0]["costPct"] > 0 and ce[0]["exitMode"] == "PCT"

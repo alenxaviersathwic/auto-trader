@@ -16,6 +16,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { TRADER_META, normalizeTraderCodes } from "../../trades/components/traderMeta";
 import { useSessionSearch, useCreateSession, useUpdateSession, useDeleteSession } from "../hooks/useSessions";
 import { TradingSession, TradingSessionSearchFilter } from "../types/sessions.types";
 import { SessionDialog } from "../components/SessionDialog";
@@ -59,6 +60,7 @@ export const SessionsPage: React.FC = () => {
     sortBy: "createdAt",
     sortDir: "desc",
     status: "ACTIVE",
+    sessionStatus: "ACTIVE",
   });
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -160,7 +162,7 @@ export const SessionsPage: React.FC = () => {
   };
 
   return (
-    <div className="sp-page">
+    <div className="sp-page" style={{ padding: "18px 24px", minHeight: "100vh" }}>
       {toast && (
         <div className={`toast-notification toast-${toast.type}`}>
           {toast.type === "success" ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
@@ -171,13 +173,43 @@ export const SessionsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Minimal High-Density Command & Summary Strip (matching StrategiesPage / OpportunitiesPage) */}
+      {/* Modern Terminal Header */}
+      <div className="sp-header">
+        <div>
+          <div className="sp-eyebrow">ORDERGRID // SESSION COMMAND &amp; EXECUTION DESK</div>
+          <div className="sp-title-row">
+            <h1 className="sp-title">Trading Sessions</h1>
+            <span className="badge badge--blue mono">
+              {filter.sessionStatus ?? "ALL"}
+            </span>
+          </div>
+        </div>
+
+        <div className="sp-actions" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <button
+            type="button"
+            className="sp-btn"
+            onClick={() => navigate({ to: "/trades" })}
+          >
+            <Activity size={13} /> Opportunities Trader
+          </button>
+          <button
+            type="button"
+            className="sp-btn sp-btn--run"
+            onClick={() => setIsDialogOpen(true)}
+          >
+            <Plus size={14} strokeWidth={2.5} /> New Session
+          </button>
+        </div>
+      </div>
+
+      {/* Minimal High-Density Command & Summary Strip */}
       <div className="sp-toolbar">
         <div className="sp-toolbar-left">
           <div className="sp-tabs" role="tablist">
             {(
               [
-                { key: "ALL", label: "All Sessions" },
+                { key: "ALL", label: "All Scopes" },
                 { key: "INDEX", label: "Indices" },
                 { key: "COMMODITY", label: "Commodities" },
               ] as const
@@ -229,23 +261,6 @@ export const SessionsPage: React.FC = () => {
               </span>
             </div>
           </div>
-        </div>
-
-        <div className="sp-actions">
-          <button
-            type="button"
-            className="sp-btn"
-            onClick={() => navigate({ to: "/trades" })}
-          >
-            <Activity size={13} /> Active Trader Cockpit
-          </button>
-          <button
-            type="button"
-            className="sp-btn sp-btn--run"
-            onClick={() => setIsDialogOpen(true)}
-          >
-            <Plus size={14} strokeWidth={2.5} /> New Session
-          </button>
         </div>
       </div>
 
@@ -302,7 +317,8 @@ export const SessionsPage: React.FC = () => {
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
           <div className="toggle-chip-group">
-            {(["ALL", "ACTIVE", "CLOSED", "EXPIRED"] as const).map((st) => {
+            <span className="micro text-muted" style={{ marginRight: 4 }}>STATUS:</span>
+            {(["ACTIVE", "ALL", "CLOSED", "EXPIRED"] as const).map((st) => {
               const isSelected = (filter.sessionStatus ?? "ALL") === st;
               return (
                 <button
@@ -311,7 +327,7 @@ export const SessionsPage: React.FC = () => {
                   className={`toggle-chip ${isSelected ? "toggle-chip--active" : ""}`}
                   onClick={() => handleStatusChip(st)}
                 >
-                  {st}
+                  {st === "ACTIVE" ? "🟢 ACTIVE ONLY" : st}
                 </button>
               );
             })}
@@ -400,7 +416,6 @@ export const SessionsPage: React.FC = () => {
             const isRunning = s.sessionStatus === "ACTIVE";
             const pnl = Number(s.realizedPnl || 0);
             const currentCap = Number(s.currentCapital || s.capital || 0);
-            const maxLossAmt = (Number(s.capital || 0) * Number(s.maxLossPercentage || 3)) / 100;
             const underlyings = s.scope === "INDEX" ? s.underlyings : s.commodityItems;
             const tone = pnl > 0 ? "sp-card--bull" : pnl < 0 ? "sp-card--bear" : "";
 
@@ -464,25 +479,9 @@ export const SessionsPage: React.FC = () => {
                       {code}
                     </span>
                   ))}
-                  {(s.traders && s.traders.length > 0
-                    ? s.traders
-                    : ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"]
-                  ).map((tr) => (
-                    <span
-                      key={tr}
-                      className={
-                        tr === "FIB_GOLDEN_TRADER"
-                          ? "badge badge--cyan mono"
-                          : tr === "ORB_WAVE_TRADER"
-                            ? "badge badge--green mono"
-                            : "badge badge--amber mono"
-                      }
-                    >
-                      {tr === "FIB_GOLDEN_TRADER"
-                        ? "FIB 0.618"
-                        : tr === "ORB_WAVE_TRADER"
-                          ? "ORB WAVE"
-                          : "VWAP FLOW"}
+                  {normalizeTraderCodes(s.traders).map((tr) => (
+                    <span key={tr} className={`badge ${TRADER_META[tr]?.badgeClass ?? "badge--slate"} mono`}>
+                      {TRADER_META[tr]?.tag ?? tr}
                     </span>
                   ))}
                 </div>
@@ -532,10 +531,6 @@ export const SessionsPage: React.FC = () => {
                     <span className="sp-foot-time mono">
                       <Clock size={11} />
                       {s.tradeDate} · {hhmm(s.startAt)}–{hhmm(s.closeAt)} IST
-                    </span>
-                    <span className="sp-dot">·</span>
-                    <span className="mono micro text-secondary">
-                      Max Loss {s.maxLossPercentage}% ({formatCompactRupee(maxLossAmt)})
                     </span>
                   </div>
 

@@ -23,10 +23,15 @@ on every tick using:
          Exits immediately at `ltp` (`TARGET_HIT`).
   4. Invariant: `currentStop` NEVER moves down; it only ratchets up.
 """
-import math
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+from app.modules.trades.service.trader_presets import (
+    TRADER_FIB_GOLDEN,
+    TRADER_FLOW_MOMENTUM,
+    normalize_trader_code,
+)
 
 TICK = 0.05
 HIGH_CONVICTION_WIN_RATE = 75.0
@@ -150,12 +155,24 @@ def evaluate_tick(
     close_at: datetime | None = None,
     momentum_trail: dict[str, float] | None = None,
     projected_target: float | None = None,
+    trader_code: str | None = None,
+    fib_extensions: tuple[float, float] | None = None,
 ) -> BrainDecision:
     """
     Evaluates the live option price (`ltp`) and 1-minute option premium candles (`candles_1m`)
-    against the trade's entry, stop, target, and `trader_profile`
-    (`FIB_GOLDEN_TRADER` | `ORB_WAVE_TRADER` | `FLOW_VWAP_TRADER` | `HIGH_CONVICTION` | `STEP_GUARD`).
+    against the trade's entry, stop and target.
+
+    `trader_code` is WHO manages the trade and decides the style:
+      FIB_GOLDEN_TRADER     waits for 80% of the move before locking profit, extends the target along 1.272 / 1.618
+      FLOW_MOMENTUM_TRADER  step guard (+30% at 50% progress, +50% at 80%) and step-wave target expansion on strong
+                            momentum; momentum-engine setups use `momentum_trail` instead (no fixed target)
+    `trader_profile` is the conviction tier (`HIGH_CONVICTION` | `STEP_GUARD`) used when no trader manages the trade.
+    A trader code passed as `trader_profile` (old callers, old three-trader codes included) is still understood.
+    `fib_extensions` = (1.272, 1.618) extension prices of the REAL chart swing in premium terms
+    (fib_pocket.setup_meta()); without them the extensions are 1.272x / 1.618x of the planned move.
     """
+    trader = normalize_trader_code(trader_code) or normalize_trader_code(trader_profile)
+    is_fib, is_flow = trader == TRADER_FIB_GOLDEN, trader == TRADER_FLOW_MOMENTUM
     entry_at = float(entry_at)
     initial_stop = float(initial_stop)
     initial_target = float(initial_target)
@@ -175,13 +192,17 @@ def evaluate_tick(
     fib_100 = round_tick(initial_target)
     fib_1272 = round_tick(entry_at + 1.272 * planned_move)
     fib_1618 = round_tick(entry_at + 1.618 * planned_move)
+    if fib_extensions:
+        # real swing extensions; never at or below the first target, and always in ascending order
+        fib_1272 = round_tick(max(float(fib_extensions[0]), initial_target + TICK))
+        fib_1618 = round_tick(max(float(fib_extensions[1]), fib_1272 + TICK))
 
     # Live Projected Wave Ceiling (e.g., Target 100 -> Projected 150 when momentum & volume expand)
     if projected_target is not None and float(projected_target) > initial_target:
         proj_ceiling = round_tick(float(projected_target))
     elif micro["momentumState"] == "STRONG" and micro["volumeRatio"] >= 1.25 and progress_pct >= 75.0:
         proj_ceiling = round_tick(entry_at + 2.0 * planned_move)  # e.g., 50 -> 100 projects 150
-    elif trader_profile == "FIB_GOLDEN_TRADER":
+    elif is_fib:
         proj_ceiling = fib_1618
     else:
         proj_ceiling = round_tick(max(current_target, initial_target))
@@ -293,7 +314,7 @@ def evaluate_tick(
             new_stop = locked_floor
             reasons.append(f"locked SL at ₹{new_stop:.2f} on target breakout")
 
-        if trader_profile == "FIB_GOLDEN_TRADER":
+        if is_fib:
             expanded_target = fib_1618 if ltp >= fib_1272 - TICK else fib_1272
         elif proj_ceiling > current_target + TICK:
             expanded_target = proj_ceiling
@@ -309,7 +330,7 @@ def evaluate_tick(
 
     # 3b. Pre-Target Step-Wave Expansion (e.g. Target 100, Projected 150 -> Lock SL 75 & Step Target to 120 -> 150)
     if (
-        (projected_target is not None or trader_profile == "ORB_WAVE_TRADER")
+        (projected_target is not None or is_flow)
         and proj_ceiling > initial_target + TICK
         and progress_pct >= 75.0
     ):
@@ -331,7 +352,7 @@ def evaluate_tick(
             reasons.append(f"Wave step 2: extended Target to full wave ceiling ₹{new_target:.2f}")
 
     # 4. In-Trade Progressive Stop-Loss Ratchet (Before or After Initial Target)
-    if trader_profile in ("HIGH_CONVICTION", "FIB_GOLDEN_TRADER"):
+    if is_fib or (trader is None and trader_profile == "HIGH_CONVICTION"):
         # High Win-Rate / Fibonacci Golden Pocket: Wait until 80% target achieved, then lock 50% of planned profit (0.618 level)
         if progress_pct >= 95.0:
             candidate_sl = round_tick(entry_at + 0.70 * planned_move)
@@ -346,7 +367,7 @@ def evaluate_tick(
                     f"80% target achieved (peak ₹{peak:.2f}) → locked 50% profit SL at ₹{new_stop:.2f}"
                 )
     else:
-        # STEP_GUARD / FLOW_VWAP_TRADER / ORB_WAVE_TRADER: Step 1 at 50% progress (25 -> SL 23), Step 2 at 80% progress (28 -> SL 25)
+        # STEP_GUARD / FLOW_MOMENTUM_TRADER: Step 1 at 50% progress (25 -> SL 23), Step 2 at 80% progress (28 -> SL 25)
         if progress_pct >= 80.0:
             candidate_sl = round_tick(entry_at + 0.50 * planned_move)
             if candidate_sl > new_stop and candidate_sl < ltp:

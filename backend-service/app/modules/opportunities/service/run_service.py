@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db.session import async_session_factory
 from app.core.exception.app_exceptions import ConflictException, NotFoundException
 from app.core.logging.logger import logger
+from app.modules.learning.service.learning_service import learning_service
 from app.modules.opportunities.entity.opportunity_entity import OpportunityIteration, OpportunityMaster, TradeOpportunity
 from app.modules.opportunities.graph.builder import underlying_graph
 from app.modules.opportunities.provider.instrument_catalog import instrument_catalog
@@ -156,6 +157,7 @@ class OpportunityRunService:
             m.lastStartedAt = now
             code, params, iteration = m.underlyingCode, dict(m.params or {}), m.iterationsCompleted + 1
             sel = await select_underlyings(s, ALL_IN_RESEARCH, ALL_IN_RESEARCH, [code])
+            await learning_service.ensure_loaded(s)
             research = sel["items"][0] if sel["items"] else None
             await s.commit()
 
@@ -284,6 +286,7 @@ class OpportunityRunService:
                 riskLevel=risk_level(c["confidence"], c["rewardRisk"], c.get("spreadPct", 0)), rank=c["rank"],
                 strategy=c.get("strategy"), reasons=c.get("reasons", []), risks=c.get("risks", []),
                 source=c["source"], validUntil=valid_until, isLatest=True, timeMachine=c.get("timeMachine"),
+                setupMeta=c.get("setupMeta"),
             )
             for c in picks
         ]
@@ -413,6 +416,18 @@ class OpportunityRunService:
         return {"list": items, "generatedAt": max((i["createdAt"] for i in items), default=None)}
 
     # ───────────────────────── batch / contract outcome verification ─────────────────────────
+    async def analyse_opportunities(self, session: AsyncSession, ids: list[int]) -> dict[int, dict[str, Any]]:
+        """Verdict of each opportunity from real 1-minute candles (target / stop / neither), keyed by id. Resolves
+        rows that are still PENDING; a resolved outcome is never rewritten here. When candles cannot be read the
+        stored outcome is returned with the error, so the caller can say why nothing was checked."""
+        rows = await opportunity_repository.by_ids(session, ids)
+        try:
+            return {int(r["opportunityId"]): r for r in await self._evaluate_opportunities(session, rows)}
+        except Exception as e:  # noqa: BLE001 -- no token / network: fall back to what is already stored
+            logger.warning(f"[ANALYSE] candles unavailable: {type(e).__name__}: {e}")
+            return {int(r.id): {"outcome": r.outcome, "error": f"candles unavailable: {type(e).__name__}"}
+                    for r in rows}
+
     async def check_opportunity(self, session: AsyncSession, opportunity_id: int) -> dict[str, Any]:
         """Evaluates ONE opportunity over its entry -> validUntil window using Upstox 1-minute candles."""
         row = await opportunity_repository.get(session, opportunity_id)
@@ -675,6 +690,7 @@ class OpportunityRunService:
             "ageSeconds": int((now - s.createdAt).total_seconds()),
             "expired": s.validUntil < now, "outcome": s.outcome, "isLatest": s.isLatest,
             "createdAt": s.createdAt.isoformat(), "timeMachine": s.timeMachine,
+            "setupMeta": getattr(s, "setupMeta", None),
         }
 
 

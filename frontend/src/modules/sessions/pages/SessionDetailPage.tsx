@@ -1,39 +1,43 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   AlertTriangle,
   ArrowLeft,
-  Ban,
-  Cpu,
-  ExternalLink,
-  Info,
+  History,
   Loader2,
+  Lock,
   Play,
-  Plus,
+  Power,
   Radio,
   Sparkles,
   Square,
   Zap,
 } from "lucide-react";
-import {
-  useLockSessionPick,
-  useSessionDetail,
-  useSessionPicks,
-  useUpdateSession,
-} from "../hooks/useSessions";
+import { useLockSessionPick, useSessionDetail, useUpdateSession } from "../hooks/useSessions";
 import { useSessionLoop } from "../hooks/useSessionLoop";
 import { sessionsQueryKeys } from "../queryKeys/sessionsQueryKeys";
-import { SessionCapitalStrip } from "../components/SessionCapitalStrip";
-import { SessionOpportunityTable } from "../components/SessionOpportunityTable";
-import { SessionPickHistory } from "../components/SessionPickHistory";
 import { TradeLockModal } from "../components/TradeLockModal";
-import { UNDERLYING_NAMES } from "../../opportunities/components/underlyingNames";
-import { formatRupee } from "../../opportunities/components/formatters";
-import { useTradeSearch, useTraderPresets } from "../../trades/hooks/useTrades";
+import { SuggestionCard } from "../components/SuggestionCard";
+import { ManagerCard } from "../components/ManagerCard";
+import { BatchHistory } from "../components/BatchHistory";
+import { RunningTradeCard } from "../components/RunningTradeCard";
+import { SessionTradesPanel } from "../components/SessionTradesPanel";
+import { AutopsyAgentPanel } from "../components/AutopsyAgentPanel";
+import { RISK_LEVELS, RISK_META } from "../components/riskLevels";
+import { useTradeSearch } from "../../trades/hooks/useTrades";
 import { tradesQueryKeys } from "../../trades/queryKeys/tradesQueryKeys";
-import { SideSheetMode, TraderSideSheet } from "../../trades/components/TraderSideSheet";
+import {
+  TRADER_CODES,
+  TRADER_META,
+  normalizeTraderCode,
+  normalizeTraderCodes,
+  traderForStrategy,
+} from "../../trades/components/traderMeta";
+import { TraderCode } from "../../trades/types/trades.types";
+import { useAutopsies } from "../../learning/hooks/useLearning";
+import { learningQueryKeys } from "../../learning/queryKeys/learningQueryKeys";
+import { formatRupee, formatSignedRupee } from "../../opportunities/components/formatters";
 import {
   resumeOpportunityLoop,
   useOpportunityCards,
@@ -41,188 +45,104 @@ import {
   useStartOpportunity,
   useStopAll,
 } from "../../opportunities/hooks/useOpportunities";
-import {
-  SessionCapital,
-  SessionLoopStateName,
-  SessionPick,
-  SessionPickSearchFilter,
-  TradingSession,
-} from "../types/sessions.types";
+import { RiskLevel, SessionLoopStateName, SessionPick } from "../types/sessions.types";
 
-const HISTORY_FILTER: SessionPickSearchFilter = {
-  page: 0,
-  limit: 20,
-  sortBy: "createdAt",
-  sortDir: "desc",
-};
 const LOCK_FAILURE_MS = 6000;
+const LIVE_REFRESH_MS = 2000;
+const IDLE_REFRESH_MS = 15000;
 
-const TRADER_META: Record<string, { label: string; tag: string; cls: string }> = {
-  FIB_GOLDEN_TRADER: {
-    label: "Fib Golden 0.618",
-    tag: "0.618 → 1.618 EXT",
-    cls: "sd-tag sd-tag--cyan",
-  },
-  ORB_WAVE_TRADER: {
-    label: "ORB Wave Runner",
-    tag: "STEP 100→120→150",
-    cls: "sd-tag sd-tag--green",
-  },
-  FLOW_VWAP_TRADER: {
-    label: "VWAP + OI Flow",
-    tag: "OI UNWIND + VWAP",
-    cls: "sd-tag sd-tag--amber",
-  },
+const STATE_COPY: Record<SessionLoopStateName, string> = {
+  SCHEDULED: "Waiting for the session start time",
+  WAITING: "Both traders are watching; nothing passes its checks yet",
+  PICK_READY: "Setups are open",
+  HALTED: "Halted: a loss limit was reached",
+  SESSION_CLOSED: "This session is closed",
+  UNSUPPORTED_TYPE: "This session type has no loop yet",
 };
 
 const hhmm = (iso: string): string =>
-  new Date(iso).toLocaleTimeString("en-IN", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
 
-function statusPillClass(status: TradingSession["sessionStatus"]): string {
-  if (status === "ACTIVE") return "sd-status-pill is-green";
-  if (status === "CLOSED") return "sd-status-pill";
-  return "sd-status-pill is-amber";
-}
+const pickTrader = (p: SessionPick): TraderCode => normalizeTraderCode(p.traderCode) ?? traderForStrategy(p.strategy);
 
-const STATE_COPY: Record<
-  Exclude<SessionLoopStateName, "PICK_READY">,
-  { title: string; tone: "scan" | "stop" | "info" }
-> = {
-  SCHEDULED: { title: "Waiting for the session start time", tone: "info" },
-  WAITING: { title: "Preset Traders scanning for the highest-conviction setup", tone: "scan" },
-  HALTED: { title: "Halted: session max loss limit reached", tone: "stop" },
-  SESSION_CLOSED: { title: "This session is closed", tone: "stop" },
-  UNSUPPORTED_TYPE: { title: "Loop not defined for this session type yet", tone: "info" },
-};
+type Tab = "CURRENT" | "HISTORY";
 
+/**
+ * The session screen, laid out like trading-engine's session desk: header with the session controls, a stat row,
+ * then the session manager's best suggestion with Current / History tabs on the left and running trades, session
+ * trades and the autopsy agent on the right.
+ */
 export const SessionDetailPage: React.FC = () => {
   const { id } = useParams({ strict: false }) as { id: string };
   const navigate = useNavigate({ from: "/sessions/$id" });
-  const search = useSearch({ from: "/sessions/$id" }) as {
-    sheet?: SideSheetMode;
-    trader?: string;
-    tradeId?: number;
-  };
   const queryClient = useQueryClient();
   const sessionId = Number(id);
 
   const { data: session, isLoading } = useSessionDetail(sessionId);
-  const loop = useSessionLoop(sessionId, !!session && session.sessionStatus === "ACTIVE");
-  const history = useSessionPicks(sessionId, HISTORY_FILTER);
-  const sessionTrades = useTradeSearch({
-    page: 0,
-    limit: 10,
-    sortBy: "createdAt",
-    sortDir: "desc",
-    sessionId,
-  });
+  const isActive = !!session && session.sessionStatus === "ACTIVE";
+  const loop = useSessionLoop(sessionId, isActive);
+  const hasLiveTrades = (loop.data?.capital.activeTradeIds ?? []).length > 0;
+  const trades = useTradeSearch(
+    { page: 0, limit: 25, sortBy: "createdAt", sortDir: "desc", sessionId },
+    hasLiveTrades ? LIVE_REFRESH_MS : IDLE_REFRESH_MS,
+  );
+  const autopsies = useAutopsies({ page: 0, limit: 50, sortBy: "createdAt", sortDir: "desc", sessionId }, IDLE_REFRESH_MS);
   const lockMutation = useLockSessionPick(sessionId);
   const updateMutation = useUpdateSession();
-  const { data: presetsData } = useTraderPresets();
 
-  // Underlying Scanner Engine (drives TradeOpportunity generation for this session)
+  // The scanner creates the opportunities this session picks from; the session never calls the engine itself.
   const oppLoop = useOpportunityLoop();
   const { cards: oppCards, hasResearch, isLoading: oppCardsLoading } = useOpportunityCards(oppLoop.running);
   const startScanner = useStartOpportunity();
   const stopScanner = useStopAll();
   const autoStartedScannerRef = useRef<boolean>(false);
 
+  const [tab, setTab] = useState<Tab>("CURRENT");
+  const [focusPickId, setFocusPickId] = useState<number | null>(null);
   const [lockedPick, setLockedPick] = useState<SessionPick | null>(null);
   const [lockFailure, setLockFailure] = useState<string | null>(null);
-  const sheetOpen = Boolean(search.sheet);
-  const sheetMode: SideSheetMode = search.sheet ?? "SUGGESTIONS";
-  const sheetPresetCode = search.trader ?? "FIB_GOLDEN_TRADER";
-  const inspectedTradeId = search.tradeId ?? null;
-
-  const updateSheetSearch = (patch: {
-    sheet?: SideSheetMode;
-    trader?: string;
-    tradeId?: number;
-  }) => {
-    navigate({
-      search: (prev: Record<string, unknown>) => ({
-        ...prev,
-        ...patch,
-      }),
-    });
-  };
   const failureTimer = useRef<number | undefined>(undefined);
-  const seenAutoTradesRef = useRef<Set<number> | null>(null);
 
   const pickIds = (loop.data?.picks ?? []).map((p) => p.id).join(",");
   const activeTradeIdsKey = (loop.data?.capital.activeTradeIds ?? []).join(",");
   const lockedPicksKey = (loop.data?.lockedPicks ?? []).map((p) => p.id).join(",");
 
   useEffect(() => {
-    if (pickIds || activeTradeIdsKey || lockedPicksKey) {
-      queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.picks(sessionId) });
-      queryClient.invalidateQueries({ queryKey: tradesQueryKeys.lists() });
-    }
+    queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.batches(sessionId) });
+    queryClient.invalidateQueries({ queryKey: tradesQueryKeys.lists() });
+    // a trade that just closed has a fresh autopsy and may have changed a scorecard
+    queryClient.invalidateQueries({ queryKey: learningQueryKeys.all });
   }, [pickIds, activeTradeIdsKey, lockedPicksKey, sessionId, queryClient]);
-
-  // In SEMI_AUTO / FULL_AUTO, when the session loop automatically locks & enters a trade,
-  // navigate directly to its live Trader Graph page (/trades/$tradeId).
-  useEffect(() => {
-    const ids = loop.data?.capital.activeTradeIds ?? [];
-    if (!session || !loop.data) return;
-    if (seenAutoTradesRef.current === null) {
-      seenAutoTradesRef.current = new Set(ids);
-      if (
-        (session.sessionType === "SEMI_AUTO" || session.sessionType === "FULL_AUTO") &&
-        ids.length === 1
-      ) {
-        navigate({ to: "/trades/$tradeId", params: { tradeId: String(ids[0]) } });
-      }
-      return;
-    }
-    const newest = ids.find((tid) => !seenAutoTradesRef.current!.has(tid));
-    ids.forEach((tid) => seenAutoTradesRef.current!.add(tid));
-    if (newest && (session.sessionType === "SEMI_AUTO" || session.sessionType === "FULL_AUTO")) {
-      navigate({ to: "/trades/$tradeId", params: { tradeId: String(newest) } });
-    }
-  }, [activeTradeIdsKey, session, loop.data, navigate]);
 
   useEffect(() => () => window.clearTimeout(failureTimer.current), []);
 
-  // Automatically resume or start the underlying scanner loop when viewing an ACTIVE session
+  useEffect(() => {
+    if (focusPickId === null) return;
+    const t = window.setTimeout(() => {
+      document.getElementById(`pick-${focusPickId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [focusPickId]);
+
+  // Resume or start the scanner for this session's underlyings when an ACTIVE session is opened.
   useEffect(() => {
     if (!session || session.sessionStatus !== "ACTIVE" || oppCardsLoading) return;
-    const targetCodes = session.scope === "INDEX" ? session.underlyings : session.commodityItems;
-    if (!targetCodes || targetCodes.length === 0) return;
-
-    const matchingRunning = oppCards.filter(
-      (c) => targetCodes.includes(c.code) && c.master?.state === "RUNNING",
-    );
-    if (matchingRunning.length > 0) {
-      if (!oppLoop.running) {
-        resumeOpportunityLoop();
-      }
+    const codes = session.scope === "INDEX" ? session.underlyings : session.commodityItems;
+    if (!codes || codes.length === 0) return;
+    const running = oppCards.filter((c) => codes.includes(c.code) && c.master?.state === "RUNNING");
+    if (running.length > 0) {
+      if (!oppLoop.running) resumeOpportunityLoop();
       return;
     }
-
     if (!autoStartedScannerRef.current && hasResearch && !startScanner.isPending) {
       autoStartedScannerRef.current = true;
-      startScanner.mutate({ underlyings: targetCodes });
+      startScanner.mutate({ underlyings: codes });
     }
-  }, [
-    session,
-    oppCards,
-    oppCardsLoading,
-    oppLoop.running,
-    hasResearch,
-    startScanner,
-  ]);
+  }, [session, oppCards, oppCardsLoading, oppLoop.running, hasResearch, startScanner]);
 
   const handleLock = (pid: number) => {
     lockMutation.mutate(pid, {
-      onSuccess: (locked) => {
-        setLockedPick(locked);
-      },
+      onSuccess: (locked) => setLockedPick(locked),
       onError: (err) => {
         setLockFailure(err instanceof Error ? err.message : "Trade lock failed");
         window.clearTimeout(failureTimer.current);
@@ -232,638 +152,406 @@ export const SessionDetailPage: React.FC = () => {
   };
 
   if (isLoading || !session) {
-    return (
-      <div className="sd-page">
-        <div className="sd-loading-box">Loading trading session #{id}…</div>
-      </div>
-    );
+    return <div className="te-empty">Loading trading session #{id}…</div>;
   }
 
   const underlyings = session.scope === "INDEX" ? session.underlyings : session.commodityItems;
-  const runningScannersForSession = oppCards.filter(
-    (c) => underlyings.includes(c.code) && c.master?.state === "RUNNING",
-  ).length;
+  const scannersRunning = oppCards.filter((c) => underlyings.includes(c.code) && c.master?.state === "RUNNING").length;
   const noResearchData =
     !hasResearch ||
     (startScanner.data && !startScanner.data.started && startScanner.data.reason === "NO_RESEARCH_DATA");
-  const presets = presetsData ?? [];
-  const activeSheetPreset = presets.find((p) => p.code === sheetPresetCode) ?? presets[0];
-
-  const activeTraders =
-    session.traders && session.traders.length > 0
-      ? session.traders
-      : ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"];
+  const activeTraders = normalizeTraderCodes(session.traders);
+  const riskLevel: RiskLevel = session.riskLevel ?? "HIGH";
   const data = loop.data;
-  const capital: SessionCapital = data?.capital ?? {
-    capital: session.capital,
-    realizedPnl: session.realizedPnl,
-    currentCapital: session.currentCapital,
-    committedPremium: 0,
-    availableCapital: session.currentCapital,
-    maxLossAmount: (session.capital * session.maxLossPercentage) / 100,
-    lossUsed: Math.max(0, -session.realizedPnl),
-    committedRisk: 0,
-    remainingLossBudget: (session.capital * session.maxLossPercentage) / 100,
-    lockedTrades: 0,
-    activeTradesCount: 0,
-    maxParallelTrades: 3,
-    activeTradeIds: [],
-  };
+  const picks = data?.picks ?? [];
+  const lockedPicks = data?.lockedPicks ?? [];
+  const allTrades = trades.data?.list ?? [];
+  const running = allTrades.filter((t) => t.tradeState === "RUNNING");
+  const closed = allTrades.filter((t) => t.tradeState === "EXITED");
+  const wins = closed.filter((t) => t.netPnl > 0).length;
+  const autopsyList = autopsies.data?.list ?? [];
+  const autopsyByTrade = new Map(autopsyList.map((a) => [a.tradeId, a]));
+  const excluded = Object.entries(data?.scanned.excluded ?? {});
+  const bestId = data?.manager?.pickId ?? null;
 
+  const cap = data?.capital;
+  const maxLoss = (session.capital * session.maxLossPercentage) / 100;
+  const budgetLeft = cap?.remainingLossBudget ?? maxLoss;
+  const budgetPct = maxLoss > 0 ? Math.min(100, (budgetLeft / maxLoss) * 100) : 0;
+  const realized = cap?.realizedPnl ?? session.realizedPnl;
+  const stateTitle = !isActive ? STATE_COPY.SESSION_CLOSED : data ? STATE_COPY[data.state] : STATE_COPY.WAITING;
+  const stateMessage = data?.message ?? "Waiting for the first loop tick.";
+
+  const update = (payload: Parameters<typeof updateMutation.mutate>[0]["payload"]) =>
+    updateMutation.mutate({ id: session.id, payload });
+  const toggleTrader = (code: TraderCode) => {
+    const on = activeTraders.includes(code);
+    if (on && activeTraders.length <= 1) return; // one trader must stay on
+    update({ traders: on ? activeTraders.filter((c) => c !== code) : [...activeTraders, code] });
+  };
+  const openTrade = (tradeId: number) => navigate({ to: "/trades/$tradeId", params: { tradeId: String(tradeId) } });
   const loopPill = loop.error
-    ? { cls: "sd-status-pill is-red", label: "RECONNECTING" }
+    ? { cls: "te-pill--red", label: "RECONNECTING" }
     : loop.running && data
-      ? { cls: "sd-status-pill is-green", label: "LOOP LIVE" }
-      : loop.connection === "connecting"
-        ? { cls: "sd-status-pill is-amber", label: "CONNECTING" }
-        : { cls: "sd-status-pill", label: "LOOP OFF" };
-
-  const stateCopy = data && data.state !== "PICK_READY" ? STATE_COPY[data.state] : null;
-  const pendingLockedPicks = data?.lockedPicks ?? [];
-  const activeTrades = (sessionTrades.data?.list ?? []).filter((t) => t.tradeState === "RUNNING");
-
-  const handleToggleTrader = (code: string) => {
-    const exists = activeTraders.includes(code);
-    if (exists && activeTraders.length <= 1) return; // keep at least 1 trader active
-    const next = exists ? activeTraders.filter((c) => c !== code) : [...activeTraders, code];
-    updateMutation.mutate({ id: session.id, payload: { traders: next } });
-  };
+      ? { cls: "te-pill--green", label: "LOOP LIVE" }
+      : { cls: "", label: loop.connection === "connecting" ? "CONNECTING" : "LOOP OFF" };
+  const alerts = [
+    oppLoop.lastError && `Scanner: ${oppLoop.lastError}`,
+    loop.error,
+    lockFailure && `Not locked: ${lockFailure}`,
+    updateMutation.error instanceof Error && updateMutation.error.message,
+  ].filter((m): m is string => Boolean(m));
 
   return (
-    <div className="sd-page">
-      {/* 1. Compact Top Bar matching StrategyDetailPage (.sd-topbar) */}
-      <div className="sd-topbar">
-        <div className="sd-topbar-left">
-          <button
-            type="button"
-            className="sd-ctrl-btn"
-            onClick={() => navigate({ to: "/sessions" })}
-          >
-            <ArrowLeft size={13} />
-            <span>Sessions</span>
+    <div className="te-desk">
+      {/* 1. Header: where you are + the session controls */}
+      <header className="te-head">
+        <div className="te-head__left">
+          <button type="button" className="te-btn te-btn--ghost te-btn--sm" onClick={() => navigate({ to: "/sessions" })}>
+            <ArrowLeft size={14} /> Sessions
           </button>
-          <span className="sd-topbar-sep" />
-          <span className="sd-code-tag">{session.scope}</span>
-          <span className="sd-ver-tag">
+          <h1 className="te-title">{session.name}</h1>
+          <span className={`te-mode-tag ${session.routeThroughUpstox ? "te-mode-tag--live" : "te-mode-tag--sim"}`}>
+            {session.routeThroughUpstox ? "UPSTOX LIVE" : "SIMULATED"}
+          </span>
+          <span className={`te-pill ${isActive ? "te-pill--green" : ""}`}>{session.sessionStatus}</span>
+          <span className={`te-pill ${loopPill.cls}`}>
+            <Radio size={10} /> {loopPill.label}
+          </span>
+          <span className="micro text-muted mono">
             {session.tradeDate} · {hhmm(session.startAt)}–{hhmm(session.closeAt)} IST
           </span>
-          <span className={loopPill.cls}>
-            <span className="sd-status-dot" />
-            {loopPill.label}
-          </span>
-          <span className={statusPillClass(session.sessionStatus)}>
-            <span className="sd-status-dot" />
-            {session.sessionStatus}
-          </span>
         </div>
-
-        <div className="sd-topbar-right">
-          {/* Segmented Mode Switcher: MANUAL / SEMI_AUTO / FULL_AUTO */}
-          <div className="sd-seg-group" title="Switch session automation mode">
-            {(["MANUAL", "SEMI_AUTO", "FULL_AUTO"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={`sd-seg-btn ${session.sessionType === mode ? "active" : ""}`}
-                onClick={() =>
-                  updateMutation.mutate({ id: session.id, payload: { sessionType: mode } })
-                }
-                disabled={updateMutation.isPending}
-              >
-                {mode}
-              </button>
-            ))}
+        <div className="te-head__right">
+          <div className="te-control">
+            <span className="label">Mode</span>
+            <div className="sd-seg-group" role="group" aria-label="Session mode">
+              {(["MANUAL", "SEMI_AUTO", "FULL_AUTO"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`sd-seg-btn ${session.sessionType === mode ? "active" : ""}`}
+                  aria-pressed={session.sessionType === mode}
+                  onClick={() => update({ sessionType: mode })}
+                  disabled={updateMutation.isPending || !isActive}
+                >
+                  {mode.replace("_", " ")}
+                </button>
+              ))}
+            </div>
           </div>
-
-          {/* Upstox Live Order Toggle Switch */}
+          <div className="te-control">
+            <span className="label">Risk</span>
+            <div className="sd-seg-group" role="group" aria-label="Session risk level">
+              {RISK_LEVELS.map((lv) => (
+                <button
+                  key={lv}
+                  type="button"
+                  className={`sd-seg-btn ${riskLevel === lv ? "active" : ""}`}
+                  aria-pressed={riskLevel === lv}
+                  title={RISK_META[lv].takes}
+                  onClick={() => update({ riskLevel: lv })}
+                  disabled={updateMutation.isPending || !isActive}
+                >
+                  {lv}
+                </button>
+              ))}
+            </div>
+          </div>
           <button
             type="button"
-            className={`upstox-switch-btn ${
-              session.routeThroughUpstox ? "upstox-switch-btn--live" : ""
-            }`}
-            onClick={() =>
-              updateMutation.mutate({
-                id: session.id,
-                payload: { routeThroughUpstox: !session.routeThroughUpstox },
-              })
-            }
-            disabled={updateMutation.isPending}
-            title="Toggle direct Upstox order API execution for this session"
+            className={`upstox-switch-btn ${session.routeThroughUpstox ? "upstox-switch-btn--live" : ""}`}
+            role="switch"
+            aria-checked={session.routeThroughUpstox}
+            onClick={() => update({ routeThroughUpstox: !session.routeThroughUpstox })}
+            disabled={updateMutation.isPending || !isActive}
+            title="Send this session's orders to Upstox (real money) or keep them simulated"
           >
-            <div
-              className={`upstox-switch-track ${
-                session.routeThroughUpstox ? "upstox-switch-track--on" : ""
-              }`}
-            >
+            <div className={`upstox-switch-track ${session.routeThroughUpstox ? "upstox-switch-track--on" : ""}`}>
               <div className="upstox-switch-thumb" />
             </div>
             <Zap size={12} />
             <span>{session.routeThroughUpstox ? "UPSTOX LIVE" : "SIMULATED"}</span>
           </button>
-
-          <button
-            type="button"
-            className="sd-ctrl-btn"
-            onClick={() =>
-              updateSheetSearch({
-                sheet: "SUGGESTIONS",
-                trader: activeTraders[0] ?? "FIB_GOLDEN_TRADER",
-                tradeId: undefined,
-              })
-            }
-          >
-            <Sparkles size={13} />
-            <span>Suggestions &amp; Fib+OA</span>
-          </button>
-
-          {session.sessionStatus === "ACTIVE" &&
-            (runningScannersForSession > 0 ? (
-              <button
-                type="button"
-                className="sd-ctrl-btn sd-ctrl-btn--danger"
-                onClick={() => stopScanner.mutate()}
-                disabled={stopScanner.isPending}
-                title="Stop live underlying scanner"
-              >
+          {isActive &&
+            (scannersRunning > 0 ? (
+              <button type="button" className="te-btn te-btn--ghost te-btn--sm" onClick={() => stopScanner.mutate()} disabled={stopScanner.isPending}>
                 <Square size={11} />
-                <span>
-                  {oppLoop.running && oppLoop.currentCode
-                    ? `Scanning ${oppLoop.currentCode}… (Stop)`
-                    : `Stop Scanner (${runningScannersForSession})`}
-                </span>
+                {oppLoop.running && oppLoop.currentCode ? `Scanning ${oppLoop.currentCode} · Stop` : "Stop scanner"}
               </button>
             ) : (
               <button
                 type="button"
-                className="sd-ctrl-btn sd-ctrl-btn--primary"
+                className="te-btn te-btn--primary te-btn--sm"
                 onClick={() => startScanner.mutate({ underlyings })}
                 disabled={startScanner.isPending || underlyings.length === 0}
-                title="Start scanning underlyings for Trader setups"
               >
-                {startScanner.isPending ? (
-                  <Loader2 size={12} className="sp-spin" />
-                ) : (
-                  <Play size={12} />
-                )}
-                <span>{startScanner.isPending ? "Starting Scan…" : "Scan Live Setups"}</span>
+                {startScanner.isPending ? <Loader2 size={12} className="sp-spin" /> : <Play size={12} />}
+                {startScanner.isPending ? "Starting…" : "Start scanner"}
               </button>
             ))}
-
-          <button
-            type="button"
-            className="sd-ctrl-btn"
-            onClick={() => navigate({ to: "/trades" })}
-          >
-            <Cpu size={13} />
-            <span>Traders Desk</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Research Engine Missing Alert (Why scanner cannot generate setups yet) */}
-      {noResearchData && (
-        <div
-          className="card"
-          style={{
-            borderColor: "var(--warning-amber)",
-            background: "var(--warning-amber-tint)",
-            padding: "var(--space-3) var(--space-4)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "var(--space-3)",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-            <AlertTriangle size={15} className="text-amber" />
-            <span className="micro" style={{ color: "var(--warning-amber)" }}>
-              <strong>Research Engine has no data for today yet.</strong> Run the Research Engine first so your Preset Traders can scan live option setups for {underlyings.join(", ")}.
-            </span>
-          </div>
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={() => navigate({ to: "/research" })}
-          >
-            <Sparkles size={13} />
-            <span>Run Research Engine</span>
-          </button>
-        </div>
-      )}
-
-      {oppLoop.lastError && (
-        <div className="card" style={{ borderColor: "var(--warning-amber)", padding: "var(--space-3)" }}>
-          <div className="micro text-amber" style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
-            <AlertTriangle size={14} />
-            <span>Scanner Notice: {oppLoop.lastError}</span>
-          </div>
-        </div>
-      )}
-
-      {/* 2. Unified Session Summary & Assigned Traders Card (.sd-summary-card) */}
-      <div className="sd-summary-card">
-        <div className="sd-summary-head">
-          <div className="sd-summary-title-block">
-            <h1 className="sd-title">{session.name}</h1>
-            <p className="sd-desc">
-              {session.sessionType === "FULL_AUTO"
-                ? "FULL_AUTO — Automatically selects, sizes, locks & enters the #1 setup from your assigned Preset Traders, steps SL/Target (e.g. 100→120→150), and auto-exits."
-                : session.sessionType === "SEMI_AUTO"
-                  ? "SEMI_AUTO — Automatically selects, sizes & locks the #1 setup into its Trader loop and opens the live trade graph with exit marks for your square-off."
-                  : "MANUAL — Ranks top 4 setups from your assigned Preset Traders. Click Lock Trade to confirm entry price & lots."}
-            </p>
-          </div>
-
-          <div className="sd-summary-badges">
-            {underlyings.map((u) => (
-              <span key={u} className="sd-tag sd-tag--cyan mono" title={UNDERLYING_NAMES[u] ?? u}>
-                {u}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Assigned Preset Traders Strip (Interactive Toggle Pills) */}
-        <div className="sd-notices-row">
-          <div
-            className="sd-compact-notice sd-compact-notice--cyan"
-            style={{ justifyContent: "space-between", flexWrap: "wrap" }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-              <Cpu size={13} />
-              <span>
-                <strong>Assigned Preset Traders ({activeTraders.length}/3):</strong> Click to toggle which specialist Traders scan and manage positions in this session:
-              </span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-              {(["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"] as const).map(
-                (code) => {
-                  const active = activeTraders.includes(code);
-                  const meta = TRADER_META[code];
-                  return (
-                    <button
-                      key={code}
-                      type="button"
-                      className={active ? meta.cls : "sd-tag"}
-                      style={{
-                        cursor: "pointer",
-                        opacity: active ? 1 : 0.45,
-                      }}
-                      onClick={() => handleToggleTrader(code)}
-                      disabled={updateMutation.isPending}
-                      title={`${active ? "Active" : "Inactive"} — Click to toggle ${meta.label}`}
-                    >
-                      {active ? "● " : "○ "}
-                      {meta.label} ({meta.tag})
-                    </button>
-                  );
-                },
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Capital, Risk Budget & Parallel Open Trades Strip */}
-      <SessionCapitalStrip capital={capital} maxLossPercentage={session.maxLossPercentage} />
-
-      {/* 4. Active Trader Loops Running in Parallel (max 3 open at once, unlimited total) */}
-      {activeTrades.length > 0 && (
-        <div className="card" style={{ padding: "var(--space-3) var(--space-4)" }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "var(--space-2)",
-            }}
-          >
-            <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
-              <Activity size={15} className="text-green" />
-              <span className="section-title" style={{ margin: 0 }}>
-                Open Parallel Trader Loops ({activeTrades.length} / {capital.maxParallelTrades ?? 3}{" "}
-                Max Open at Once)
-              </span>
-            </div>
+          {isActive && (
             <button
               type="button"
-              className="btn btn--ghost"
-              onClick={() => navigate({ to: "/trades" })}
+              className="te-btn te-btn--ghost te-btn--sm"
+              onClick={() => update({ sessionStatus: "CLOSED" })}
+              disabled={updateMutation.isPending || running.length > 0}
+              title={running.length > 0 ? "Exit the running trades first" : "Close this session"}
             >
-              <span>Open Traders Desk</span>
+              <Power size={13} /> Close session
             </button>
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-              gap: "var(--space-3)",
-            }}
-          >
-            {activeTrades.map((t) => {
-              const traderCode = t.marketTelemetry?.traderCode || t.traderProfile;
-              const meta = TRADER_META[traderCode];
-              return (
-                <div
-                  key={t.id}
-                  className="sp-card sp-card--iterating"
-                  onClick={() =>
-                    updateSheetSearch({
-                      sheet: "TRADE_INSPECT",
-                      trader: traderCode,
-                      tradeId: t.id,
-                    })
-                  }
-                >
-                  <div className="sp-card-top">
-                    <span className="mono text-primary" style={{ fontWeight: 700 }}>
-                      #{t.id} · {t.underlyingCode} {t.strike} {t.optionType}
-                    </span>
-                    <span className="badge badge--green">
-                      <Radio size={10} /> LIVE 1s
-                    </span>
-                  </div>
-                  {meta && (
-                    <div>
-                      <span className={meta.cls}>
-                        {meta.label} · {meta.tag}
-                      </span>
-                    </div>
-                  )}
-                  <div className="micro text-secondary">
-                    Entry {formatRupee(t.entryAt)} → LTP {formatRupee(t.lastPrice)} · SL{" "}
-                    <span className="text-red">{formatRupee(t.currentStop)}</span> · Target{" "}
-                    <span className="text-green">{formatRupee(t.currentTarget)}</span>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <span className={`mono ${t.netPnl >= 0 ? "text-green" : "text-red"}`}>
-                      {formatRupee(t.netPnl)} ({t.pnlPct >= 0 ? "+" : ""}
-                      {t.pnlPct.toFixed(1)}%)
-                    </span>
-                    <div
-                      style={{ display: "inline-flex", gap: "10px", alignItems: "center" }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        type="button"
-                        className="sd-link-btn"
-                        onClick={() =>
-                          updateSheetSearch({
-                            sheet: "TRADE_INSPECT",
-                            trader: traderCode,
-                            tradeId: t.id,
-                          })
-                        }
-                      >
-                        Fib+OA Sidebar
-                      </button>
-                      <button
-                        type="button"
-                        className="sp-inspect-link"
-                        onClick={() =>
-                          navigate({ to: "/trades/$tradeId", params: { tradeId: String(t.id) } })
-                        }
-                      >
-                        <span>Cockpit</span>
-                        <ExternalLink size={12} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Pending Locked Picks */}
-      {pendingLockedPicks.length > 0 && (
-        <div
-          className="card"
-          style={{
-            padding: "var(--space-3) var(--space-4)",
-            borderColor: "var(--bullish-green)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "var(--space-2)",
-            }}
-          >
-            <span className="section-title" style={{ margin: 0 }}>
-              Locked &amp; Ready to Enter ({pendingLockedPicks.length})
-            </span>
-            <span className="micro text-muted">
-              Click Enter &amp; Start Trader to launch the 1-second Trader loop
-            </span>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-3)" }}>
-            {pendingLockedPicks.map((lp) => (
-              <div
-                key={lp.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "var(--space-4)",
-                  padding: "var(--space-2) var(--space-3)",
-                  background: "var(--bg-elevated)",
-                  borderRadius: "4px",
-                  flex: "1 1 320px",
-                }}
-              >
-                <div>
-                  <div className="mono text-primary">
-                    {lp.underlyingCode} {lp.strike} {lp.optionType} · {lp.lots} lot(s) ({lp.quantity}{" "}
-                    qty)
-                  </div>
-                  <div className="micro text-secondary">
-                    Lock Price {formatRupee(lp.lockedPrice ?? lp.entry)} · SL {formatRupee(lp.stop)}{" "}
-                    · Target {formatRupee(lp.target)} · {lp.winProbPct.toFixed(0)}% win
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  onClick={() => setLockedPick(lp)}
-                >
-                  <Play size={13} />
-                  <span>Enter &amp; Start Trader</span>
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {loop.error && (
-        <div className="card" style={{ borderColor: "var(--bearish-red)" }}>
-          <div
-            className="micro text-red"
-            style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}
-          >
-            <AlertTriangle size={14} />
-            <span>{loop.error}</span>
-          </div>
-        </div>
-      )}
-
-      {lockFailure && (
-        <div className="card" style={{ borderColor: "var(--bearish-red)" }}>
-          <div
-            className="micro text-red"
-            style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}
-          >
-            <AlertTriangle size={14} />
-            <span>Not locked: {lockFailure}</span>
-          </div>
-        </div>
-      )}
-
-      {data && data.picks.length > 0 ? (
-        <>
-          <div className="sl-table-head">
-            <span className="section-title">Setups Discovered by Assigned Traders</span>
-            <span className="badge badge--cyan">{data.picks.length} OPEN</span>
-            <span className="micro text-muted">
-              Best first. Locking opens the Enter Trade modal and launches a dedicated 1s Trader loop.
-            </span>
-          </div>
-          <SessionOpportunityTable
-            picks={data.picks}
-            clockOffsetMs={loop.clockOffsetMs}
-            lockingId={lockMutation.isPending ? (lockMutation.variables ?? null) : null}
-            onLock={handleLock}
-          />
-        </>
-      ) : (
-        <div className="sl-wait">
-          {stateCopy?.tone === "stop" ? (
-            <Ban size={28} className="text-red" />
-          ) : stateCopy?.tone === "info" ? (
-            <Info size={28} className="text-muted" />
-          ) : (
-            <span className="sl-scan__dot" />
           )}
-          <div className="sl-wait__body">
-            <span className="sl-wait__title">
-              {session.sessionStatus !== "ACTIVE"
-                ? STATE_COPY.SESSION_CLOSED.title
-                : (stateCopy?.title ?? "Preset Traders scanning for setups")}
-            </span>
-            <span className="micro text-muted">
-              {data?.message ?? "Waiting for the next loop evaluation."}
+        </div>
+      </header>
+
+      {noResearchData && (
+        <div className="card desk-alert desk-alert--amber">
+          <div className="desk-alert__text micro">
+            <AlertTriangle size={15} />
+            <span>The Research Engine has no data for today, so the scanner cannot look for setups in {underlyings.join(", ")}.</span>
+          </div>
+          <button type="button" className="te-btn te-btn--primary te-btn--sm" onClick={() => navigate({ to: "/research" })}>
+            <Sparkles size={13} /> Run Research Engine
+          </button>
+        </div>
+      )}
+      {alerts.map((message) => (
+        <div key={message} className="card desk-alert desk-alert--red">
+          <div className="desk-alert__text micro">
+            <AlertTriangle size={14} />
+            <span>{message}</span>
+          </div>
+        </div>
+      ))}
+
+      {/* 2. Stat row */}
+      <div className="card te-stats">
+        <div className="te-stat">
+          <div className="te-stat__label">Current capital</div>
+          <div className="te-stat__value">{formatRupee(cap?.currentCapital ?? session.currentCapital)}</div>
+          <div className={`te-stat__sub ${realized >= 0 ? "text-green" : "text-red"}`}>
+            {formatSignedRupee(realized, true)} ({((realized / session.capital) * 100).toFixed(2)}%)
+          </div>
+        </div>
+        <div className="te-stat">
+          <div className="te-stat__label">Starting capital</div>
+          <div className="te-stat__value">{formatRupee(session.capital)}</div>
+          <div className="te-stat__sub">Max loss {session.maxLossPercentage}% = {formatRupee(maxLoss)}</div>
+        </div>
+        <div className="te-stat">
+          <div className="te-stat__label">Free to trade</div>
+          <div className="te-stat__value text-green">{formatRupee(cap?.availableCapital ?? session.currentCapital)}</div>
+          <div className="te-stat__sub">{formatRupee(cap?.committedPremium ?? 0)} in open positions</div>
+        </div>
+        <div className="te-stat">
+          <div className="te-stat__label">Loss budget left</div>
+          <div className="te-stat__value">{formatRupee(budgetLeft)}</div>
+          <div className="te-budget">
+            <div
+              className={`te-budget__fill ${budgetPct > 50 ? "" : budgetPct > 20 ? "te-budget__fill--warn" : "te-budget__fill--crit"}`}
+              style={{ width: `${budgetPct}%` }}
+            />
+          </div>
+        </div>
+        <div className="te-stat">
+          <div className="te-stat__label">Trades</div>
+          <div className="te-stat__value">
+            {running.length} live · {closed.length} closed
+          </div>
+          <div className="te-stat__sub">
+            {closed.length > 0 ? `${wins}W / ${closed.length - wins}L` : "No closed trades yet"} · max{" "}
+            {cap?.maxParallelTrades ?? 3} at once
+          </div>
+        </div>
+        <div className="te-stat">
+          <div className="te-stat__label">Profile</div>
+          <div className="te-chips" style={{ marginTop: 4 }}>
+            <span className="te-pill te-pill--blue">{session.sessionType.replace("_", " ")}</span>
+            <span className={`te-pill ${riskLevel === "LOW" ? "te-pill--green" : riskLevel === "MEDIUM" ? "te-pill--amber" : "te-pill--red"}`}>
+              {riskLevel} RISK
             </span>
           </div>
-          {data && data.state === "WAITING" && (
-            <div className="sl-wait__chips">
-              {oppLoop.running && (
-                <span className="badge badge--cyan">
-                  <Loader2 size={11} className="sp-spin" />{" "}
-                  {oppLoop.currentCode
-                    ? `Scanning ${oppLoop.currentCode} (R${oppLoop.round})`
-                    : `Scanner Round #${oppLoop.round}`}
-                </span>
-              )}
-              <span className="badge badge--slate">{data.scanned.candidates} candidates</span>
-              {Object.entries(data.scanned.excluded).map(([reason, n]) => (
-                <span key={reason} className="badge badge--slate">
-                  {n} {reason}
-                </span>
-              ))}
-              {runningScannersForSession === 0 && session.sessionStatus === "ACTIVE" && (
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  onClick={() => startScanner.mutate({ underlyings })}
-                  disabled={startScanner.isPending}
-                >
-                  <Play size={12} />
-                  <span>Scan Live Setups</span>
-                </button>
-              )}
+          <div className="te-stat__sub">{underlyings.join(", ")}</div>
+        </div>
+      </div>
+
+      {/* 3. Desk */}
+      <div className="te-grid">
+        <div className="te-desk">
+          <ManagerCard
+            advice={data?.manager}
+            stateTitle={stateTitle}
+            stateMessage={stateMessage}
+            openCount={picks.length}
+            candidates={data?.scanned.candidates ?? 0}
+            riskLevel={riskLevel}
+            locking={lockMutation.isPending}
+            canLock={isActive}
+            onLock={handleLock}
+            onShow={(pid) => {
+              setTab("CURRENT");
+              setFocusPickId(pid);
+            }}
+          />
+
+          <div className="te-tabs">
+            <div className="te-tabs__list" role="tablist">
               <button
                 type="button"
-                className="btn btn--ghost"
-                onClick={() =>
-                  updateSheetSearch({
-                    sheet: "INSERT_TRADE",
-                    trader: activeTraders[0] ?? "FIB_GOLDEN_TRADER",
-                    tradeId: undefined,
-                  })
-                }
+                role="tab"
+                aria-selected={tab === "CURRENT"}
+                className={`te-tab ${tab === "CURRENT" ? "active" : ""}`}
+                onClick={() => setTab("CURRENT")}
               >
-                <Plus size={12} />
-                <span>Insert Fib + OA Trade</span>
+                <Radio size={14} /> Current ({picks.length})
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "HISTORY"}
+                className={`te-tab ${tab === "HISTORY" ? "active" : ""}`}
+                onClick={() => setTab("HISTORY")}
+              >
+                <History size={14} /> History · batches
               </button>
             </div>
-          )}
+            <span className="te-tabs__meta">
+              {oppLoop.running && (
+                <span>
+                  <Loader2 size={11} className="sp-spin" />{" "}
+                  {oppLoop.currentCode ? `scanning ${oppLoop.currentCode}` : `round ${oppLoop.round}`}
+                </span>
+              )}
+              {tab === "CURRENT" && (
+                <span>
+                  Sorted by <strong>expected net</strong>
+                </span>
+              )}
+            </span>
+          </div>
 
-          {/* Per-Underlying Live Scanner Diagnostics (shows why 0 setups were found if market closed / no setup) */}
-          {oppCards.filter((c) => underlyings.includes(c.code) && c.master).length > 0 && (
-            <div
-              style={{
-                width: "100%",
-                marginTop: "var(--space-2)",
-                paddingTop: "var(--space-2)",
-                borderTop: "1px solid var(--border-subtle)",
-                display: "flex",
-                gap: "var(--space-2)",
-                flexWrap: "wrap",
-              }}
-            >
-              {oppCards
-                .filter((c) => underlyings.includes(c.code) && c.master)
-                .map((c) => (
-                  <span
-                    key={c.code}
-                    className={`badge ${c.master?.lastError ? "badge--red" : "badge--slate"} mono`}
-                  >
-                    {c.code}: Batch #{c.master?.iterationsCompleted ?? 0} ·{" "}
-                    {c.master?.lastError
-                      ? c.master.lastError
-                      : c.master?.lastNote || `${c.master?.liveCount ?? 0} live setups`}
+          {tab === "CURRENT" ? (
+            <div className="te-desk" role="tabpanel">
+              {excluded.length > 0 && (
+                <div className="te-chips" aria-label="Why candidates were skipped">
+                  {excluded.map(([reason, n]) => (
+                    <span key={reason} className="te-pill" title="Candidates skipped for this reason">
+                      {n} · {reason}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {lockedPicks.length > 0 && (
+                <section className="te-panel" aria-label="Locked picks">
+                  <span className="te-panel__title">
+                    <Lock size={14} /> Locked, ready to enter ({lockedPicks.length})
                   </span>
-                ))}
+                  {lockedPicks.map((lp) => (
+                    <div key={lp.id} className="te-row">
+                      <span className="te-row__main">
+                        <span className="te-row__title mono">
+                          {lp.underlyingCode} {lp.strike} {lp.optionType} · {lp.lots} lot{lp.lots === 1 ? "" : "s"}
+                        </span>
+                        <span className="te-row__sub">
+                          Locked at {formatRupee(lp.lockedPrice ?? lp.entry)} · stop {formatRupee(lp.stop)} · target{" "}
+                          {formatRupee(lp.target)}
+                        </span>
+                      </span>
+                      <button type="button" className="te-btn te-btn--primary te-btn--sm" onClick={() => setLockedPick(lp)}>
+                        <Play size={12} /> Enter trade
+                      </button>
+                    </div>
+                  ))}
+                </section>
+              )}
+
+              {TRADER_CODES.map((code) => {
+                const meta = TRADER_META[code];
+                const on = activeTraders.includes(code);
+                const mine = picks.filter((p) => pickTrader(p) === code);
+                return (
+                  <section key={code} className={`te-trader ${on ? "" : "te-trader--off"}`} aria-label={meta.name}>
+                    <div className="te-trader__head">
+                      <div className="te-trader__name">
+                        <span className={`badge ${on ? meta.badgeClass : "badge--slate"} mono`}>{meta.tag}</span>
+                        <h3>{meta.name}</h3>
+                        <span className="micro text-muted">{mine.length} open</span>
+                      </div>
+                      <button
+                        type="button"
+                        className={`desk-switch ${on ? "desk-switch--on" : ""}`}
+                        role="switch"
+                        aria-checked={on}
+                        aria-label={`${meta.name} ${on ? "on" : "off"}`}
+                        disabled={updateMutation.isPending || (on && activeTraders.length <= 1) || !isActive}
+                        title={on && activeTraders.length <= 1 ? "At least one trader must stay on" : undefined}
+                        onClick={() => toggleTrader(code)}
+                      >
+                        <span className="desk-switch__track">
+                          <span className="desk-switch__thumb" />
+                        </span>
+                        <span className="micro">{on ? "ON" : "OFF"}</span>
+                      </button>
+                    </div>
+                    {mine.length === 0 ? (
+                      <div className="te-empty">
+                        {!on
+                          ? "Switched off for this session."
+                          : !isActive
+                            ? "The session is closed."
+                            : scannersRunning === 0
+                              ? "The scanner is stopped. Start it to look for setups."
+                              : `Watching: ${meta.checks[0].toLowerCase()}.`}
+                      </div>
+                    ) : (
+                      mine.map((p) => (
+                        <div key={`${p.id}-${focusPickId === p.id}`} id={`pick-${p.id}`}>
+                          <SuggestionCard
+                            pick={p}
+                            clockOffsetMs={loop.clockOffsetMs}
+                            locking={lockMutation.isPending && lockMutation.variables === p.id}
+                            best={bestId === p.id}
+                            defaultExpanded={focusPickId === p.id || (bestId === p.id && focusPickId === null)}
+                            onLock={handleLock}
+                          />
+                        </div>
+                      ))
+                    )}
+                  </section>
+                );
+              })}
+
+              {oppCards.some((c) => underlyings.includes(c.code) && c.master) && (
+                <div className="te-chips" aria-label="Scanner status per underlying">
+                  {oppCards
+                    .filter((c) => underlyings.includes(c.code) && c.master)
+                    .map((c) => (
+                      <span key={c.code} className={`te-pill ${c.master?.lastError ? "te-pill--red" : ""}`}>
+                        {c.code} · scan {c.master?.iterationsCompleted ?? 0} ·{" "}
+                        {c.master?.lastError ?? c.master?.lastNote ?? `${c.master?.liveCount ?? 0} live`}
+                      </span>
+                    ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div role="tabpanel">
+              <BatchHistory sessionId={sessionId} />
             </div>
           )}
         </div>
-      )}
 
-      <div className="section-title">Session Pick &amp; Trade History</div>
-      <SessionPickHistory
-        picks={history.data?.list ?? []}
-        isLoading={history.isLoading}
-        onEnterLockedPick={(p) => setLockedPick(p)}
-      />
+        <aside className="te-side" aria-label="Trades and learning">
+          {running.map((t) => (
+            <RunningTradeCard key={t.id} trade={t} onOpen={openTrade} />
+          ))}
+          <SessionTradesPanel trades={allTrades} autopsies={autopsyByTrade} onOpen={openTrade} />
+          <AutopsyAgentPanel latest={autopsyList[0]} />
+        </aside>
+      </div>
 
       {lockedPick && <TradeLockModal pick={lockedPick} onClose={() => setLockedPick(null)} />}
-
-      {sheetOpen && activeSheetPreset && (
-        <TraderSideSheet
-          mode={sheetMode}
-          preset={activeSheetPreset}
-          allPresets={presets}
-          selectedTradeId={inspectedTradeId}
-          defaultSessionId={session.id}
-          onChangeMode={(m) => updateSheetSearch({ sheet: m })}
-          onSelectPreset={(code) => updateSheetSearch({ trader: code })}
-          onSelectTrade={(tid) => updateSheetSearch({ tradeId: tid })}
-          onClose={() =>
-            updateSheetSearch({ sheet: undefined, trader: undefined, tradeId: undefined })
-          }
-        />
-      )}
     </div>
   );
 };

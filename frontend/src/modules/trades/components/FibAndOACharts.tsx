@@ -1,21 +1,12 @@
 import React from "react";
-import { FibLevels, OAAnalysis, OAStrikeRow } from "../types/trades.types";
+import { FibLevels, OAAnalysis } from "../types/trades.types";
 import { formatRupee } from "../../opportunities/components/formatters";
 
-export function computeFibLevels(
-  entryAt: number,
-  initialStop: number,
-  initialTarget: number,
-  swingLow?: number,
-  swingHigh?: number,
-): FibLevels {
+/** Levels when the trade carries none: multiples of the planned move (entry -> target). No swing is made up. */
+export function computeFibLevels(entryAt: number, initialStop: number, initialTarget: number): FibLevels {
   const move = Math.max(0.5, initialTarget - entryAt);
-  const sLow = swingLow && swingLow > 0 ? swingLow : Number((initialStop * 0.94).toFixed(2));
-  const sHigh = swingHigh && swingHigh > sLow ? swingHigh : Number(initialTarget.toFixed(2));
   return {
-    swingLow: sLow,
-    swingHigh: sHigh,
-    fib382: Number((entryAt + 0.382 * move).toFixed(2)),
+    source: "PLAN",
     fib500: Number((entryAt + 0.5 * move).toFixed(2)),
     fib618: Number((entryAt + 0.5 * move).toFixed(2)),
     fib786: Number(initialStop.toFixed(2)),
@@ -25,97 +16,18 @@ export function computeFibLevels(
   };
 }
 
-export function buildDefaultOAAnalysis(
-  underlyingCode: string,
-  optionType: "CE" | "PE",
-  strike: number,
-  initialStop: number,
-  initialTarget: number,
-  existing?: OAAnalysis,
-): OAAnalysis {
-  if (existing && existing.strikes && existing.strikes.length > 0) {
-    return existing;
-  }
-  const code = (underlyingCode || "NIFTY").toUpperCase();
-  const step =
-    code === "BANKNIFTY" || code === "SENSEX"
-      ? 100
-      : code === "NIFTY" || code === "FINNIFTY"
-        ? 50
-        : 25;
-  const isCe = optionType === "CE";
-  const strikes: OAStrikeRow[] = [-3, -2, -1, 0, 1, 2, 3].map((offset) => {
-    const st = Math.round(strike + offset * step);
-    const callOi = isCe
-      ? Math.round(
-          1850000 * (offset === 2 ? 1.38 : offset === 1 ? 1.15 : offset <= 0 ? 0.72 : 0.95),
-        )
-      : Math.round(
-          2150000 *
-            (offset === 0 || offset === 1 ? 1.42 : offset === 2 ? 1.1 : 0.65),
-        );
-    const putOi = isCe
-      ? Math.round(
-          2150000 *
-            (offset === -1 || offset === 0 ? 1.44 : offset === -2 ? 1.12 : 0.65),
-        )
-      : Math.round(
-          1850000 * (offset === -2 ? 1.38 : offset === -1 ? 1.15 : offset >= 0 ? 0.72 : 0.95),
-        );
-    const callOiChgPct = isCe
-      ? offset === 0 || offset === 1
-        ? -14.8
-        : offset === 2
-          ? 22.4
-          : 8.1
-      : offset === 0 || offset === 1
-        ? 28.6
-        : 11.4;
-    const putOiChgPct = isCe
-      ? offset === -1 || offset === 0
-        ? 29.4
-        : 12.2
-      : offset === -1 || offset === 0
-        ? -15.2
-        : 21.8;
-    const role =
-      offset === 0
-        ? "ACTIVE_STRIKE"
-        : (isCe && offset === 2) || (!isCe && offset === 1)
-          ? "CALL_OI_WALL"
-          : (isCe && offset === -1) || (!isCe && offset === -2)
-            ? "PUT_OI_WALL"
-            : "CHAIN";
-    return {
-      strike: st,
-      callOi,
-      putOi,
-      callOiChgPct,
-      putOiChgPct,
-      volumeRatio: offset === 0 ? 1.58 : Math.abs(offset) === 1 ? 1.28 : 0.94,
-      role,
-    };
-  });
-
-  const pcr = isCe ? 1.26 : 0.76;
-  const supportStrike = isCe ? strike - step : strike - 2 * step;
-  const resistanceStrike = isCe ? strike + 2 * step : strike + step;
-  return {
-    pcr,
-    maxPain: strike + (isCe ? step : -step),
-    putOiSupportWall: supportStrike,
-    callOiResistanceWall: resistanceStrike,
-    gammaWall: isCe ? resistanceStrike : supportStrike,
-    oiBuildup: isCe
-      ? "SHORT_COVERING + PUT_WRITING_FLOOR"
-      : "LONG_UNWINDING + CALL_WRITING_CEILING",
-    verdict: `OA confirms ${optionType} edge: PCR ${pcr.toFixed(2)} with Put OI floor at ${supportStrike.toLocaleString("en-IN")} (backing SL ${formatRupee(initialStop)}) and Call unwinding toward ${resistanceStrike.toLocaleString("en-IN")} (Target ${formatRupee(initialTarget)}).`,
-    strikes,
-  };
+/** True only for an OI ladder built by the backend from a recorded option-chain snapshot. */
+export function isRecordedOA(oa?: OAAnalysis | null): oa is OAAnalysis {
+  return !!oa && oa.source === "CHAIN_SNAPSHOT" && Array.isArray(oa.strikes) && oa.strikes.length > 0;
 }
 
+const signedPct = (v: number | null | undefined): string =>
+  v === null || v === undefined ? "n/a" : `${v >= 0 ? "+" : ""}${v.toFixed(0)}%`;
+
 /**
- * Interactive Fibonacci Golden-Pocket (0.50–0.618) & Step-Wave Extension (1.0 -> 1.272 -> 1.618) Chart.
+ * Level ladder for a trade, in option-premium prices.
+ * source "SETUP_SWING": the real chart swing the Fib setup found (0.786 stop, 1.0 swing high, 1.272 / 1.618).
+ * anything else: multiples of the planned move, labelled as such, with no swing drawn.
  */
 export const FibRetracementChart: React.FC<{
   entryAt: number;
@@ -144,7 +56,8 @@ export const FibRetracementChart: React.FC<{
   const plotW = width - padLeft - padRight;
   const plotH = height - padTop - padBottom;
 
-  const swingLow = fib.swingLow ?? Number((currentStop * 0.94).toFixed(2));
+  const real = fib.source === "SETUP_SWING";
+  const swingLow = real && fib.swingLow ? fib.swingLow : currentStop;
   const stop786 = fib.fib786 ?? currentStop;
   const fib618 = fib.fib618;
   const fib100 = fib.fib100;
@@ -160,8 +73,8 @@ export const FibRetracementChart: React.FC<{
   const yFor = (p: number) =>
     Math.max(padTop + 4, Math.min(padTop + plotH - 4, padTop + ((maxP - p) / span) * plotH));
 
-  // Synthesize the Fibonacci Impulse -> Golden Pocket Pullback -> Wave Extension curve
-  const wavePts = [
+  // Schematic of the real swing (impulse -> pocket -> extensions); drawn only when the swing is real
+  const wavePts = !real ? [] : [
     { x: padLeft + plotW * 0.04, y: yFor(swingLow), label: "Swing Low" },
     { x: padLeft + plotW * 0.28, y: yFor(fib100), label: "Impulse 1.0" },
     { x: padLeft + plotW * 0.48, y: yFor(entryAt), label: "0.618 Entry" },
@@ -179,35 +92,35 @@ export const FibRetracementChart: React.FC<{
     slLock: number;
   }> = [
     {
-      ratio: "1.618 EXT",
+      ratio: real ? "1.618 EXT" : "1.62x MOVE",
       label: "Golden Wave Ceiling (Lock SL @ 1.0)",
       price: fib1618,
       color: "#38bdf8",
       slLock: fib100,
     },
     {
-      ratio: "1.272 EXT",
+      ratio: real ? "1.272 EXT" : "1.27x MOVE",
       label: "Step-Wave Target 2 (Lock SL @ 75%)",
       price: fib1272,
       color: "#4caf50",
       slLock: fib618,
     },
     {
-      ratio: "1.000 HIGH",
+      ratio: real ? "1.000 HIGH" : "TARGET",
       label: "Primary Swing Target 1",
       price: fib100,
       color: "#22c55e",
       slLock: currentStop,
     },
     {
-      ratio: "0.618 POCKET",
+      ratio: real ? "POCKET ENTRY" : "ENTRY",
       label: "Golden Pocket Entry / 50% Lock",
       price: entryAt,
       color: "#eab308",
       slLock: currentStop,
     },
     {
-      ratio: "0.786 STOP",
+      ratio: real ? "0.786 STOP" : "STOP",
       label: "Invalidation Stop-Loss Floor",
       price: currentStop,
       color: "#ef5350",
@@ -220,11 +133,14 @@ export const FibRetracementChart: React.FC<{
       <div className="sd-card-header">
         <div>
           <span className="sd-card-title">
-            Fibonacci Golden-Pocket &amp; Wave Extension Structure
+            {real ? "Fibonacci levels of the chart swing" : "Planned move levels (no chart swing for this trade)"}
           </span>
           <span className="sd-card-sub">
-            0.618 Pullback Entry ({formatRupee(entryAt)}) → 1.0 Target ({formatRupee(fib100)}) → 1.272 ({formatRupee(fib1272)}) → 1.618 ({formatRupee(fib1618)})
+            {real && fib.underlying
+              ? `Swing ${fib.underlying.swingLow.toLocaleString("en-IN")} → ${fib.underlying.swingHigh.toLocaleString("en-IN")} on the underlying, pullback to ${(fib.depth ?? 0).toFixed(2)}. Premium: entry ${formatRupee(entryAt)} → 1.0 ${formatRupee(fib100)} → 1.272 ${formatRupee(fib1272)} → 1.618 ${formatRupee(fib1618)}.`
+              : `Entry ${formatRupee(entryAt)} → target ${formatRupee(fib100)} → 1.27x ${formatRupee(fib1272)} → 1.62x ${formatRupee(fib1618)} of the planned move.`}
           </span>
+          {real && fib.why && <span className="sd-card-sub">{fib.why}</span>}
         </div>
         {onSelectTargetLevel && (
           <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
@@ -232,8 +148,8 @@ export const FibRetracementChart: React.FC<{
               type="button"
               className="sd-tag sd-tag--green mono"
               style={{ cursor: "pointer" }}
-              onClick={() => onSelectTargetLevel(fib100, stop786, "1.0 Swing High Target")}
-              title="Set Target to 1.0 Swing High & SL to 0.786"
+              onClick={() => onSelectTargetLevel(fib100, stop786, real ? "1.0 Swing High Target" : "Planned target")}
+              title="Set the target to this level and the stop to the stop level"
             >
               Use 1.0 ({formatRupee(fib100)})
             </button>
@@ -241,8 +157,8 @@ export const FibRetracementChart: React.FC<{
               type="button"
               className="sd-tag sd-tag--cyan mono"
               style={{ cursor: "pointer" }}
-              onClick={() => onSelectTargetLevel(fib1272, fib618, "1.272 Wave Extension")}
-              title="Step Target to 1.272 Extension & Lock SL at 0.618"
+              onClick={() => onSelectTargetLevel(fib1272, fib618, real ? "1.272 Extension" : "1.27x planned move")}
+              title="Step the target to this level and lock the stop at half the move"
             >
               Use 1.272 ({formatRupee(fib1272)})
             </button>
@@ -250,8 +166,8 @@ export const FibRetracementChart: React.FC<{
               type="button"
               className="sd-tag sd-tag--amber mono"
               style={{ cursor: "pointer" }}
-              onClick={() => onSelectTargetLevel(fib1618, fib100, "1.618 Golden Extension")}
-              title="Step Target to 1.618 Extension & Lock SL at 1.0"
+              onClick={() => onSelectTargetLevel(fib1618, fib100, real ? "1.618 Extension" : "1.62x planned move")}
+              title="Step the target to this level and lock the stop at the first target"
             >
               Use 1.618 ({formatRupee(fib1618)})
             </button>
@@ -300,7 +216,7 @@ export const FibRetracementChart: React.FC<{
                 y2={y}
                 stroke={r.color}
                 strokeWidth="1.1"
-                strokeDasharray={r.ratio.includes("EXT") ? "4 3" : "2 2"}
+                strokeDasharray={r.price > fib100 ? "4 3" : "2 2"}
                 opacity={0.85}
               />
               <rect
@@ -361,34 +277,34 @@ export const FibRetracementChart: React.FC<{
 };
 
 /**
- * OA Chart (Option Chain / Open Interest & Volume Strike Ladder Chart).
- * Shows Call OI Walls vs Put OI Support Floors across strikes around ATM.
+ * Option-chain OI ladder around the traded strike. Shows ONLY recorded chain data (backend chain_view.py);
+ * when no snapshot was recorded in the last few minutes it says so instead of drawing anything.
  */
 export const OptionChainOAChart: React.FC<{
-  underlyingCode: string;
   optionType: "CE" | "PE";
-  strike: number;
-  initialStop: number;
-  initialTarget: number;
-  oaAnalysis?: OAAnalysis;
+  oaAnalysis?: OAAnalysis | null;
   onSelectStrike?: (strike: number) => void;
-}> = ({
-  underlyingCode,
-  optionType,
-  strike,
-  initialStop,
-  initialTarget,
-  oaAnalysis,
-  onSelectStrike,
-}) => {
-  const oa = buildDefaultOAAnalysis(
-    underlyingCode,
-    optionType,
-    strike,
-    initialStop,
-    initialTarget,
-    oaAnalysis,
-  );
+}> = ({ optionType, oaAnalysis, onSelectStrike }) => {
+  if (!isRecordedOA(oaAnalysis)) {
+    return (
+      <div className="sd-card">
+        <div className="sd-card-header">
+          <div>
+            <span className="sd-card-title">Option-chain OI (Call wall vs Put floor)</span>
+            <span className="sd-card-sub">
+              No option-chain reading was recorded for this contract in the last 5 minutes. The chain is recorded
+              while the scanner runs for this underlying; nothing is estimated here.
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const oa = oaAnalysis;
+  const asOf = new Date(oa.asOf ?? "").toLocaleTimeString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour12: false,
+  });
   const maxOi = Math.max(
     1,
     ...oa.strikes.flatMap((s) => [s.callOi, s.putOi]),
@@ -399,19 +315,21 @@ export const OptionChainOAChart: React.FC<{
       <div className="sd-card-header">
         <div>
           <span className="sd-card-title">
-            OA Option-Chain Structure (Call OI Resistance vs Put OI Support)
+            Option-chain OI as of {asOf} IST (Call wall vs Put floor)
           </span>
           <span className="sd-card-sub">{oa.verdict}</span>
         </div>
         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-          <span className="sd-tag sd-tag--green mono">PCR {oa.pcr.toFixed(2)}</span>
+          <span className="sd-tag sd-tag--green mono">PCR {oa.pcr !== null ? oa.pcr.toFixed(2) : "n/a"}</span>
           <span className="sd-tag sd-tag--cyan mono">
             Put Floor {oa.putOiSupportWall.toLocaleString("en-IN")}
           </span>
           <span className="sd-tag sd-tag--amber mono">
             Call Wall {oa.callOiResistanceWall.toLocaleString("en-IN")}
           </span>
-          <span className="sd-tag mono">Max Pain {oa.maxPain.toLocaleString("en-IN")}</span>
+          <span className="sd-tag mono">
+            Max Pain {oa.maxPain !== null ? oa.maxPain.toLocaleString("en-IN") : "n/a"}
+          </span>
         </div>
       </div>
 
@@ -436,7 +354,7 @@ export const OptionChainOAChart: React.FC<{
         {oa.strikes.map((row) => {
           const putW = Math.max(4, Math.round((row.putOi / maxOi) * 100));
           const callW = Math.max(4, Math.round((row.callOi / maxOi) * 100));
-          const isAtm = row.role === "ACTIVE_STRIKE" || row.strike === strike;
+          const isAtm = row.role === "ACTIVE_STRIKE";
           const isPutWall = row.role === "PUT_OI_WALL";
           const isCallWall = row.role === "CALL_OI_WALL";
 
@@ -463,9 +381,8 @@ export const OptionChainOAChart: React.FC<{
               {/* Put OI numeric */}
               <div className="mono micro" style={{ fontSize: "0.68rem" }}>
                 <span className="text-green">{(row.putOi / 100000).toFixed(1)}L</span>{" "}
-                <span className={row.putOiChgPct >= 0 ? "text-green" : "text-red"}>
-                  ({row.putOiChgPct >= 0 ? "+" : ""}
-                  {row.putOiChgPct.toFixed(0)}%)
+                <span className={(row.putOiChgPct ?? 0) >= 0 ? "text-green" : "text-red"}>
+                  ({signedPct(row.putOiChgPct)})
                 </span>
               </div>
 
@@ -566,9 +483,8 @@ export const OptionChainOAChart: React.FC<{
                 style={{ fontSize: "0.68rem", textAlign: "right" }}
               >
                 <span className="text-red">{(row.callOi / 100000).toFixed(1)}L</span>{" "}
-                <span className={row.callOiChgPct <= 0 ? "text-green" : "text-amber"}>
-                  ({row.callOiChgPct >= 0 ? "+" : ""}
-                  {row.callOiChgPct.toFixed(0)}%)
+                <span className={(row.callOiChgPct ?? 0) <= 0 ? "text-green" : "text-amber"}>
+                  ({signedPct(row.callOiChgPct)})
                 </span>
               </div>
             </div>

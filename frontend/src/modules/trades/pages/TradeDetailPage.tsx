@@ -1,3 +1,4 @@
+import { TradeAutopsyCard } from "../components/TradeAutopsyCard";
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
@@ -7,15 +8,17 @@ import {
   Cpu,
   ShieldCheck,
   Sliders,
+  Sparkles,
   Square,
   Zap,
 } from "lucide-react";
-import { useAdjustTrade, useExitTrade, useTradeDetail } from "../hooks/useTrades";
+import { useAdjustTrade, useExitTrade, useLlmAnalyzeTrade, useTradeDetail } from "../hooks/useTrades";
 import { useTradeStream } from "../hooks/useTradeStream";
 import { TradeLiveLadder } from "../components/TradeLiveLadder";
 import { TradePremiumChart } from "../components/TradePremiumChart";
 import { TradeDecisionLog } from "../components/TradeDecisionLog";
 import { FibRetracementChart, OptionChainOAChart } from "../components/FibAndOACharts";
+import { TRADER_META, normalizeTraderCode, traderForStrategy } from "../components/traderMeta";
 import { formatExpiry, formatRupee } from "../../opportunities/components/formatters";
 
 const hms = (iso: string | null): string =>
@@ -26,27 +29,6 @@ const hms = (iso: string | null): string =>
       })
     : "—";
 
-const TRADER_DESC: Record<string, { name: string; tag: string; brain: string }> = {
-  FIB_GOLDEN_TRADER: {
-    name: "Fibonacci Golden-Pocket Specialist",
-    tag: "FIB 0.618 → 1.618 EXT",
-    brain:
-      "1-Second Fibonacci Wave Brain — Trails SL along 1.0 → 1.272 → 1.618 extensions and steps Target (e.g. 100 → 120 → 150) while locking SL (75 → 100).",
-  },
-  ORB_WAVE_TRADER: {
-    name: "ORB & Momentum Wave Runner",
-    tag: "STEP-WAVE 100→120→150",
-    brain:
-      "1-Second Step-Wave Brain — When planned Target is 100 and wave projects 150, locks SL at 75 and steps Target 100 → 120 → 150.",
-  },
-  FLOW_VWAP_TRADER: {
-    name: "Institutional VWAP & OI Flow Trader",
-    tag: "VWAP + OI FLOW",
-    brain:
-      "1-Second Institutional Flow Brain — Ratchets SL at 50% (+30% locked) and 80% (+50% locked), stepping Target up on ≥ 1.35x volume surges.",
-  },
-};
-
 export const TradeDetailPage: React.FC = () => {
   const { tradeId } = useParams({ strict: false }) as { tradeId: string };
   const navigate = useNavigate();
@@ -56,6 +38,7 @@ export const TradeDetailPage: React.FC = () => {
   const stream = useTradeStream(id, !!initialTrade && initialTrade.tradeState === "RUNNING");
   const adjustMutation = useAdjustTrade(id);
   const exitMutation = useExitTrade(id);
+  const llmMutation = useLlmAnalyzeTrade(id);
 
   const trade = stream.trade ?? initialTrade;
 
@@ -81,12 +64,12 @@ export const TradeDetailPage: React.FC = () => {
   const isRunning = trade.tradeState === "RUNNING";
   const pnlClass = trade.netPnl > 0 ? "text-green" : trade.netPnl < 0 ? "text-red" : "";
   const progressPct = trade.marketTelemetry.progressPct ?? 0;
-  const traderCode = trade.marketTelemetry.traderCode || trade.traderProfile;
-  const traderMeta = TRADER_DESC[traderCode] ?? {
-    name: trade.marketTelemetry.traderName || trade.traderProfile,
-    tag: trade.traderProfile,
-    brain:
-      "1-Second Re-Analysis Loop — Continuously evaluates LTP, 1m candle structure, volume ratio & projected wave ceiling to trail SL & Target.",
+  const traderCode =
+    normalizeTraderCode(trade.marketTelemetry.traderCode) ?? traderForStrategy(trade.strategy);
+  const traderMeta = {
+    name: TRADER_META[traderCode].name,
+    tag: TRADER_META[traderCode].tag,
+    brain: TRADER_META[traderCode].manages,
   };
   const projectedTarget = trade.marketTelemetry.projectedTarget ?? trade.currentTarget;
   const fibLevels = trade.marketTelemetry.fibLevels;
@@ -191,15 +174,45 @@ export const TradeDetailPage: React.FC = () => {
             </span>
           )}
           {isRunning && (
-            <button
-              type="button"
-              className="sd-ctrl-btn sd-ctrl-btn--danger"
-              onClick={handleSquareOff}
-              disabled={exitMutation.isPending}
-            >
-              <Square size={12} />
-              <span>{exitMutation.isPending ? "Squaring Off…" : "Square Off Now"}</span>
-            </button>
+            <>
+              <button
+                type="button"
+                className="sd-ctrl-btn sd-ctrl-btn--primary"
+                onClick={() => {
+                  llmMutation.mutate(undefined, {
+                    onSuccess: (updated) => {
+                      const lastEv = updated.trailEvents[updated.trailEvents.length - 1];
+                      setEditStop(String(updated.currentStop));
+                      setEditTarget(String(updated.currentTarget));
+                      setFeedback({
+                        type: "ok",
+                        text: lastEv?.reason || "LangGraph LLM evaluation completed",
+                      });
+                    },
+                    onError: (err) => {
+                      setFeedback({
+                        type: "err",
+                        text: err instanceof Error ? err.message : "LangGraph LLM evaluation failed",
+                      });
+                    },
+                  });
+                }}
+                disabled={llmMutation.isPending}
+                title="Invoke LangGraph LLM to evaluate 1m candles & trail SL/Target"
+              >
+                <Sparkles size={12} />
+                <span>{llmMutation.isPending ? "Analyzing…" : "Ask LangGraph LLM"}</span>
+              </button>
+              <button
+                type="button"
+                className="sd-ctrl-btn sd-ctrl-btn--danger"
+                onClick={handleSquareOff}
+                disabled={exitMutation.isPending}
+              >
+                <Square size={12} />
+                <span>{exitMutation.isPending ? "Squaring Off…" : "Square Off Now"}</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -223,15 +236,17 @@ export const TradeDetailPage: React.FC = () => {
           <div className="sd-summary-badges">
             {fibLevels && (
               <>
-                <span className="sd-tag mono">0.618: ₹{fibLevels.fib618.toFixed(1)}</span>
+                <span className="sd-tag mono">
+                  {fibLevels.source === "SETUP_SWING" ? "CHART SWING" : "PLANNED MOVE"}
+                </span>
                 <span className="sd-tag sd-tag--green mono">
-                  1.0 TGT: ₹{fibLevels.fib100.toFixed(1)}
+                  {fibLevels.source === "SETUP_SWING" ? "1.0" : "TGT"}: ₹{fibLevels.fib100.toFixed(1)}
                 </span>
                 <span className="sd-tag sd-tag--cyan mono">
-                  1.272 EXT: ₹{fibLevels.fib1272.toFixed(1)}
+                  {fibLevels.source === "SETUP_SWING" ? "1.272 EXT" : "1.27x"}: ₹{fibLevels.fib1272.toFixed(1)}
                 </span>
                 <span className="sd-tag sd-tag--amber mono">
-                  1.618 EXT: ₹{fibLevels.fib1618.toFixed(1)}
+                  {fibLevels.source === "SETUP_SWING" ? "1.618 EXT" : "1.62x"}: ₹{fibLevels.fib1618.toFixed(1)}
                 </span>
               </>
             )}
@@ -485,11 +500,7 @@ export const TradeDetailPage: React.FC = () => {
         />
 
         <OptionChainOAChart
-          underlyingCode={trade.underlyingCode}
           optionType={trade.optionType}
-          strike={trade.strike}
-          initialStop={trade.currentStop}
-          initialTarget={trade.currentTarget}
           oaAnalysis={trade.marketTelemetry.oaAnalysis}
         />
       </div>
@@ -499,6 +510,9 @@ export const TradeDetailPage: React.FC = () => {
         1-Second Trader Re-Analysis &amp; Step-Wave Trail Log ({trade.trailEvents.length})
       </div>
       <TradeDecisionLog events={trade.trailEvents} />
+
+      <div className="section-title">Autopsy agent</div>
+      <TradeAutopsyCard tradeId={trade.id} exited={trade.tradeState === "EXITED"} />
     </div>
   );
 };

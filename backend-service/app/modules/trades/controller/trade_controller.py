@@ -66,7 +66,7 @@ async def _trade_events(trade_id: int) -> AsyncGenerator[str, None]:
     "/presets",
     response_model=ApiResponse[list[TraderPresetResponse]],
     status_code=status.HTTP_200_OK,
-    summary="List the 3 institutional preset Traders with live and historical stats",
+    summary="List the two Traders with their live and historical stats",
 )
 async def list_trader_presets(
     session: AsyncSession = Depends(get_db),
@@ -188,4 +188,19 @@ async def exit_trade(
 ):
     result = await trade_service.manual_exit(session, id, payload)
     return success(data=result, message="Trade squared off")
+
+
+@trade_router.post(
+    "/{id}/llm-analyze",
+    response_model=ApiResponse[TradeResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Run LangGraph LLM position evaluation & trailing SL decision",
+)
+async def llm_analyze_trade(
+    id: int,
+    riskLevel: str | None = Query(default=None, description="Blank = the trade's session risk level"),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await trade_service.llm_analyze(session, id, risk_level=riskLevel)
+    return success(data=result, message="LangGraph LLM analysis completed")
 

@@ -70,6 +70,11 @@ export interface RangeBacktestParams {
   capital: number;
   maxLossPct: number;
   sizing: "MAX_LOTS" | "RISK";
+  managerView?: "MY_VIEW" | "AI_VIEW";
+  traderFilter?: "ALL" | "FIB_GOLDEN_TRADER" | "FLOW_MOMENTUM_TRADER";
+  sideFilter?: "ALL" | "CE" | "PE";
+  maxParallel?: number;
+  guardEnabled?: boolean;
 }
 
 export interface RangeStats {

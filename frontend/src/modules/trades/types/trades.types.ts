@@ -1,11 +1,8 @@
 import { BaseFilter } from "../../../core/types/filter.types";
 
-export type TraderProfile =
-  | "HIGH_CONVICTION"
-  | "STEP_GUARD"
-  | "FIB_GOLDEN_TRADER"
-  | "ORB_WAVE_TRADER"
-  | "FLOW_VWAP_TRADER";
+/** Conviction tier stored on a trade. Who manages it is `marketTelemetry.traderCode` (see TraderCode). */
+export type TraderProfile = "HIGH_CONVICTION" | "STEP_GUARD";
+export type TraderCode = "FIB_GOLDEN_TRADER" | "FLOW_MOMENTUM_TRADER";
 export type TradeState = "RUNNING" | "EXITED";
 export type BrokerStatus = "SIMULATED" | "PLACED" | "FILLED" | "REJECTED" | "ERROR";
 
@@ -35,7 +32,13 @@ export interface TrailEvent {
   reason: string;
 }
 
+/**
+ * Level set stored on a trade, in option-premium prices.
+ * source "SETUP_SWING": levels of the real chart swing the Fib setup found; `underlying` holds the swing itself.
+ * source "PLAN" (or missing, on older trades): multiples of the planned move; there is no swing.
+ */
 export interface FibLevels {
+  source?: "SETUP_SWING" | "PLAN";
   swingLow?: number;
   swingHigh?: number;
   fib382?: number;
@@ -45,24 +48,41 @@ export interface FibLevels {
   fib100: number;
   fib1272: number;
   fib1618: number;
+  underlying?: {
+    swingLow: number;
+    swingHigh: number;
+    fib500: number;
+    fib618: number;
+    fib786: number;
+    fib1272: number;
+    fib1618: number;
+  } | null;
+  depth?: number | null;
+  oiConfirm?: boolean | null;
+  volumeConfirm?: boolean | null;
+  why?: string | null;
 }
 
 export interface OAStrikeRow {
   strike: number;
   callOi: number;
   putOi: number;
-  callOiChgPct: number;
-  putOiChgPct: number;
+  /** % change vs the snapshot ~15 min earlier; null when there is no earlier snapshot. */
+  callOiChgPct: number | null;
+  putOiChgPct: number | null;
   volumeRatio: number;
   role: "ACTIVE_STRIKE" | "CALL_OI_WALL" | "PUT_OI_WALL" | "CHAIN" | string;
 }
 
+/** Option-chain OI around a traded strike. Real only when `source` is "CHAIN_SNAPSHOT" (recorded chain). */
 export interface OAAnalysis {
-  pcr: number;
-  maxPain: number;
+  source?: "CHAIN_SNAPSHOT";
+  asOf?: string;
+  spot?: number;
+  pcr: number | null;
+  maxPain: number | null;
   putOiSupportWall: number;
   callOiResistanceWall: number;
-  gammaWall: number;
   oiBuildup: string;
   verdict: string;
   strikes: OAStrikeRow[];
@@ -83,7 +103,7 @@ export interface MarketTelemetry {
   peakPrice?: number;
   projectedTarget?: number;
   fibLevels?: FibLevels;
-  oaAnalysis?: OAAnalysis;
+  oaAnalysis?: OAAnalysis | null;
   inRunnerMode?: boolean;
   sessionType?: string;
   exitSignal?: string | null;
@@ -211,7 +231,7 @@ export interface TradeDirectInsertPayload {
   confidence?: number;
   swingLow?: number;
   swingHigh?: number;
-  oaAnalysis?: OAAnalysis;
+  oaAnalysis?: OAAnalysis | null;
 }
 
 export interface TradeAdjustPayload {

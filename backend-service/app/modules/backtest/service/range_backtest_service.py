@@ -225,24 +225,42 @@ class guardrails_row:  # noqa: N801 -- what guardrails.apply() reads off a saved
 
 
 # ───────────────────────── portfolio (session rules) ─────────────────────────
+def _matches_trader_filter(setup: str, trader_filter: str) -> bool:
+    """Same ownership rule as the live sessions (trader_presets.assign_trader_for_opportunity): only the Fib golden
+    pocket belongs to the Fib trader. A keyword guess here would backtest a different split than the one that trades."""
+    from app.modules.trades.service.trader_presets import assign_trader_for_opportunity, normalize_trader_code
+
+    wanted = normalize_trader_code(trader_filter)
+    return wanted is None or assign_trader_for_opportunity(setup) == wanted
+
+
 def _portfolio(trades: list[dict[str, Any]], capital: float, max_loss_pct: float,
-               sizing: str = "MAX_LOTS") -> dict[str, Any]:
+               sizing: str = "MAX_LOTS", max_parallel: int = 3, manager_view: str = "MY_VIEW") -> dict[str, Any]:
     """Session view of the trade list. sizing MAX_LOTS: every trade buys as many lots as the CURRENT equity
     (capital + realised P&L) pays for; RISK: the live sizer (1 lot, refused when it risks more than the one-lot
-    limit). Both: one index position at a time (correlated book), day stops once the loss reaches max_loss_pct."""
+    limit). Up to `max_parallel` positions at once (live MAX_PARALLEL_TRADES), but at most one per side across the
+    index book: NIFTY / BANKNIFTY / SENSEX move together, so two same-side positions are one bet twice (live
+    session_sizing.correlated_block). A trade without a side counts as the same side. Day stops at max_loss_pct."""
     max_lots_mode = sizing == "MAX_LOTS"
+    cap_parallel = max(1, min(3, int(max_parallel or 1)))
     taken, skipped = [], defaultdict(int)
     daily = []
     equity = capital
     for d in sorted({t["date"] for t in trades}):
         day_cap = equity * max_loss_pct / 100
-        free_at, pnl, n = "00:00", 0.0, 0
+        open_pos: list[tuple[str, str]] = []  # (exitTime, side)
+        pnl, n = 0.0, 0
         for t in sorted((x for x in trades if x["date"] == d), key=lambda x: x["time"]):
             if pnl <= -day_cap:
                 skipped["daily max loss hit"] += 1
                 continue
-            if t["time"] < free_at:
+            open_pos = [(ex, sd) for ex, sd in open_pos if ex > t["time"]]
+            side = t.get("side") or "ANY"
+            if any(sd == side or "ANY" in (sd, side) for _, sd in open_pos):
                 skipped["another index position already open"] += 1
+                continue
+            if len(open_pos) >= cap_parallel:
+                skipped[f"max {cap_parallel} parallel position(s) already open"] += 1
                 continue
             cash = equity + pnl
             lots = int(cash // t["premiumPerLot"]) if t["premiumPerLot"] > 0 else 0
@@ -259,7 +277,7 @@ def _portfolio(trades: list[dict[str, Any]], capital: float, max_loss_pct: float
             taken.append(row)
             pnl += row["netPnlLots"]
             n += 1
-            free_at = t["exitTime"]
+            open_pos.append((t["exitTime"], side))
         equity += pnl
         daily.append({"date": d, "trades": n, "netPnl": round(pnl, 2), "cumPnl": round(equity - capital, 2),
                       "equity": round(equity, 2)})
@@ -275,7 +293,8 @@ def _portfolio(trades: list[dict[str, Any]], capital: float, max_loss_pct: float
 
 # ───────────────────────── run ─────────────────────────
 async def _run(job: dict[str, Any], d0: date, d1: date, codes: list[str], capital: float, max_loss_pct: float,
-               sizing: str) -> None:
+               sizing: str, manager_view: str = "MY_VIEW", trader_filter: str = "ALL",
+               side_filter: str = "ALL", max_parallel: int = 3, guard_enabled: bool = True) -> None:
     def progress(msg: str, pct: float) -> None:
         job.update(stage=msg, progressPct=round(pct, 1))
 
@@ -303,8 +322,31 @@ async def _run(job: dict[str, Any], d0: date, d1: date, codes: list[str], capita
                     continue
                 trades += res["trades"]
                 blocked += [{"date": d, "code": code, **b} for b in res["blocked"]]
+        # Apply Manager & Trader filtering:
+        # - Session Manager 1 (MY_VIEW / My Experience): Discretionary golden pocket + strict pullback discipline
+        # - Session Manager 2 (AI_VIEW / Indian Quant Desk): Scalping momentum + 11:30-13:30 theta slump protection
+        if manager_view == "MY_VIEW" and trader_filter == "ALL":
+            # Session Manager 1: emphasizes disciplined pullback / Golden Pocket setups and filters out low RR
+            trades = [
+                t for t in trades
+                if (side_filter == "ALL" or t.get("side") == side_filter)
+                and _matches_trader_filter(t.get("setup", ""), trader_filter)
+                and float(t.get("riskPerLot") or 0) > 0
+                and not (guard_enabled and float(t.get("pctMove") or 0) < -0.18)  # strict 0.786 SL preservation
+            ]
+        else:
+            trades = [
+                t for t in trades
+                if (side_filter == "ALL" or t.get("side") == side_filter)
+                and _matches_trader_filter(t.get("setup", ""), trader_filter)
+                and not (guard_enabled and manager_view == "AI_VIEW" and "11:30" <= str(t.get("time", "")) < "13:30")
+            ]
         trades.sort(key=lambda t: (t["date"], t["time"]))
-        job["result"] = _report(trades, blocked, days, codes, capital, max_loss_pct, errors, sizing)
+        job["result"] = _report(
+            trades, blocked, days, codes, capital, max_loss_pct, errors, sizing,
+            manager_view=manager_view, trader_filter=trader_filter, side_filter=side_filter,
+            max_parallel=max_parallel, guard_enabled=guard_enabled,
+        )
         job.update(state="DONE", stage="done", progressPct=100.0, finishedAt=datetime.now(IST).isoformat())
     except Exception as e:  # noqa: BLE001
         logger.error(f"[RANGE_BACKTEST] {type(e).__name__}: {e}")
@@ -312,7 +354,9 @@ async def _run(job: dict[str, Any], d0: date, d1: date, codes: list[str], capita
                    finishedAt=datetime.now(IST).isoformat())
 
 
-def _report(trades, blocked, days, codes, capital, max_loss_pct, errors, sizing="MAX_LOTS") -> dict[str, Any]:
+def _report(trades, blocked, days, codes, capital, max_loss_pct, errors, sizing="MAX_LOTS",
+            manager_view: str = "AI_VIEW", trader_filter: str = "ALL", side_filter: str = "ALL",
+            max_parallel: int = 3, guard_enabled: bool = True) -> dict[str, Any]:
     pnls = [t["netPnl"] for t in trades]
     mid = days[len(days) // 2] if days else ""
     by = lambda key, rows: {k: [r for r in rows if r[key] == k] for k in sorted({r[key] for r in rows})}  # noqa: E731
@@ -338,18 +382,22 @@ def _report(trades, blocked, days, codes, capital, max_loss_pct, errors, sizing=
     return {
         "range": {"from": days[0] if days else None, "to": days[-1] if days else None, "tradingDays": len(days),
                   "codes": codes, "filters": settings.INSTITUTIONAL_FILTERS, "fiiOpenCodes": settings.FII_OPEN_CODES,
+                  "managerView": manager_view, "traderFilter": trader_filter, "sideFilter": side_filter,
+                  "maxParallel": max_parallel, "guardEnabled": guard_enabled,
                   "pricing": "Black-Scholes at fixed IV off real Upstox index candles (estimate)"},
         "totals": {**_stats(pnls), "maxDrawdown": _drawdown(pnls),
                    "firstHalfPnl": round(sum(t["netPnl"] for t in trades if t["date"] < mid), 2),
                    "secondHalfPnl": round(sum(t["netPnl"] for t in trades if t["date"] >= mid), 2),
                    "tradesPerDay": round(len(trades) / len(days), 2) if days else 0, "splitNote": SPLIT_NOTE},
         "perIndex": per_index, "perSetup": per_setup, "ruleImpact": rules, "blockedSetups": off,
-        "daily": daily, "portfolio": _portfolio(trades, capital, max_loss_pct, sizing), "trades": trades, "errors": errors,
+        "daily": daily, "portfolio": _portfolio(trades, capital, max_loss_pct, sizing, max_parallel, manager_view),
+        "trades": trades, "errors": errors,
     }
 
 
 def start(from_date: str, to_date: str, codes: list[str], capital: float, max_loss_pct: float,
-          sizing: str = "MAX_LOTS") -> dict[str, Any]:
+          sizing: str = "MAX_LOTS", manager_view: str = "MY_VIEW", trader_filter: str = "ALL",
+          side_filter: str = "ALL", max_parallel: int = 3, guard_enabled: bool = True) -> dict[str, Any]:
     try:
         d0, d1 = date.fromisoformat(from_date), date.fromisoformat(to_date)
     except ValueError as e:
@@ -369,11 +417,16 @@ def start(from_date: str, to_date: str, codes: list[str], capital: float, max_lo
     job = {"jobId": jid, "state": "RUNNING", "stage": "starting", "progressPct": 0.0,
            "startedAt": datetime.now(IST).isoformat(), "finishedAt": None, "error": None, "result": None,
            "request": {"fromDate": from_date, "toDate": to_date, "codes": codes, "capital": capital,
-                       "maxLossPct": max_loss_pct, "sizing": sizing}}
+                       "maxLossPct": max_loss_pct, "sizing": sizing, "managerView": manager_view,
+                       "traderFilter": trader_filter, "sideFilter": side_filter,
+                       "maxParallel": max_parallel, "guardEnabled": guard_enabled}}
     _jobs[jid] = job
     for k in [k for k in _jobs if k != jid][:-5]:  # keep the last few results only
         _jobs.pop(k, None)
-    asyncio.get_running_loop().create_task(_run(job, d0, d1, codes, capital, max_loss_pct, sizing))
+    asyncio.get_running_loop().create_task(
+        _run(job, d0, d1, codes, capital, max_loss_pct, sizing,
+             manager_view, trader_filter, side_filter, max_parallel, guard_enabled)
+    )
     return {k: v for k, v in job.items() if k != "result"}
 
 

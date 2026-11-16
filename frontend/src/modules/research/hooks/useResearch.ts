@@ -192,3 +192,12 @@ export function useRunEngine() {
     },
   });
 }
+
+/** Automatic research schedule and its last decision (ran / skipped and why). */
+export function useResearchSchedule() {
+  return useQuery({
+    queryKey: researchQueryKeys.schedule(),
+    queryFn: () => researchApi.getSchedule(),
+    refetchInterval: 30000,
+  });
+}

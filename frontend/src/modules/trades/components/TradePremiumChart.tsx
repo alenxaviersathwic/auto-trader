@@ -1,61 +1,71 @@
 import React from "react";
-import { ActiveTrade } from "../types/trades.types";
+import { ActiveTrade, OAStrikeRow } from "../types/trades.types";
 import { formatRupee } from "../../opportunities/components/formatters";
 
+function computeRsi14(closes: number[]): number[] {
+  if (closes.length < 2) return [];
+  const rsi: number[] = new Array(closes.length).fill(50);
+  let avgGain = 0;
+  let avgLoss = 0;
+  const period = Math.min(14, Math.max(2, closes.length - 1));
+  for (let i = 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+    if (i <= period) {
+      avgGain += gain / period;
+      avgLoss += loss / period;
+    } else {
+      avgGain = (avgGain * (period - 1) + gain) / period;
+      avgLoss = (avgLoss * (period - 1) + loss) / period;
+    }
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + rs);
+  }
+  return rsi;
+}
+
 /**
- * Pro Option Premium 1m Chart & Real-Time Trade Trajectory with:
- * - Shaded Profit Zone (Entry -> Target) & Risk / Locked-Profit Zone (Current SL -> Entry)
- * - ENTRY BUY marker pin
- * - 50% & 80% SL Ratchet Milestone guides
- * - Active Trailing SL line & locked-profit badge
- * - Target & Exit Zone marker callouts (where and why to exit)
- * - Synthesized live price trajectory when 1m candle history is sparse
+ * Real-Data 1m Option Premium Scalper Chart:
+ * - Renders ONLY real 1m candles from Upstox (`t.candles1m`), real Entry / Trailing SL / Target levels,
+ *   and real OA / Max Pain / RSI(14) when real data exists (no synthetic/simulated data).
  */
 export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }) => {
-  const bars = t.candles1m.slice(-40);
-  const width = 820;
-  const height = 300;
-  const padLeft = 18;
-  const padRight = 148;
-  const padTop = 20;
-  const padBottom = 42;
-  const plotW = width - padLeft - padRight;
-  const plotH = height - padTop - padBottom;
+  const bars = t.candles1m.slice(-45);
+  const hasRealCandles = bars.length >= 2;
+  const realOa = t.marketTelemetry?.oaAnalysis;
+  const hasRealOa = Boolean(realOa && realOa.strikes && realOa.strikes.length > 0);
 
-  const targetMove = Math.max(0.5, t.initialTarget - t.entryAt);
-  const milestone50 = t.entryAt + 0.5 * targetMove;
-  const milestone80 = t.entryAt + 0.8 * targetMove;
+  const width = 840;
+  const height = hasRealCandles ? 360 : 270;
+  const padLeft = 18;
+  const padRight = 154;
+  const padTop = 20;
+  const mainH = hasRealCandles ? 236 : 210;
+  const rsiTop = 274;
+  const rsiH = 66;
+  const plotW = width - padLeft - padRight;
+
   const projectedTarget = Number(t.marketTelemetry?.projectedTarget || 0);
   const hasProjectedCeiling = projectedTarget > t.currentTarget + 0.5;
-
-  // Synthesize live trajectory points from entryAt -> trailEvents -> peakPrice -> lastPrice when 1m bars are sparse
-  const trailPoints = [
-    t.entryAt,
-    ...(t.trailEvents || []).map((ev) => Number(ev.ltp || t.entryAt)).filter((v) => v > 0),
-    t.peakPrice > t.entryAt ? t.peakPrice : t.lastPrice,
-    t.exitPrice ?? t.lastPrice,
-  ];
 
   const prices = [
     t.initialStop,
     t.currentStop,
     t.entryAt,
-    milestone50,
-    milestone80,
     t.currentTarget,
     ...(hasProjectedCeiling ? [projectedTarget] : []),
     t.peakPrice,
     t.lastPrice,
     ...(t.exitPrice ? [t.exitPrice] : []),
     ...bars.flatMap((b) => [b.h, b.l]),
-    ...trailPoints,
   ].filter((p) => Number.isFinite(p) && p > 0);
 
   const minP = Math.min(...prices) * 0.96;
   const maxP = Math.max(...prices) * 1.04;
   const spanP = Math.max(1.0, maxP - minP);
   const yFor = (p: number) =>
-    Math.max(padTop + 4, Math.min(padTop + plotH - 4, padTop + ((maxP - p) / spanP) * plotH));
+    Math.max(padTop + 4, Math.min(padTop + mainH - 4, padTop + ((maxP - p) / spanP) * mainH));
 
   const maxVol = Math.max(1, ...bars.map((b) => b.v ?? 0));
 
@@ -65,28 +75,36 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
   const yStop = yFor(t.currentStop);
   const yInitStop = yFor(t.initialStop);
   const yLtp = yFor(t.exitPrice ?? t.lastPrice);
-  const yM50 = yFor(milestone50);
-  const yM80 = yFor(milestone80);
 
   const slLockedProfit = t.currentStop > t.entryAt;
   const exitSignal = t.marketTelemetry.exitSignal;
   const isExited = t.tradeState === "EXITED";
 
-  // Build polyline coordinates for synthesized trajectory when bars.length < 3
-  const polyPoints = trailPoints
-    .map((px, i) => {
+  const boxStartX = hasRealCandles ? padLeft + plotW * 0.6 : padLeft + 12;
+  const boxWidth = padLeft + plotW - boxStartX;
+
+  const lastPointX = hasRealCandles
+    ? padLeft + ((bars.length - 0.5) / bars.length) * plotW
+    : padLeft + plotW * 0.85;
+
+  const rsiSeries = React.useMemo(
+    () => (hasRealCandles ? computeRsi14(bars.map((b) => b.c)) : []),
+    [hasRealCandles, bars],
+  );
+  const currentRsi = rsiSeries.length > 0 ? rsiSeries[rsiSeries.length - 1] : null;
+  const rsiPoints = rsiSeries
+    .map((val, i) => {
       const x =
         padLeft +
-        (trailPoints.length <= 1 ? plotW * 0.5 : (i / (trailPoints.length - 1)) * (plotW * 0.88));
-      const y = yFor(px);
+        (rsiSeries.length <= 1 ? plotW * 0.5 : (i / (rsiSeries.length - 1)) * (plotW * 0.96));
+      const y = rsiTop + ((100 - Math.max(0, Math.min(100, val))) / 100) * rsiH;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
 
-  const lastPointX =
-    bars.length >= 3
-      ? padLeft + ((bars.length - 0.5) / bars.length) * plotW
-      : padLeft + plotW * 0.88;
+  const maxOi = hasRealOa && realOa
+    ? Math.max(1, ...realOa.strikes.flatMap((s: OAStrikeRow) => [s.callOi, s.putOi]))
+    : 1;
 
   return (
     <div className="card" style={{ padding: "var(--space-4)" }}>
@@ -102,12 +120,20 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
       >
         <div>
           <span className="section-title" style={{ margin: 0 }}>
-            Live Trade Graph · Entry, Trailing SL &amp; Exit Marks
+            Live 1m Scalper Chart · Entry, Trailing SL &amp; Target
           </span>
           <span className="micro text-muted" style={{ marginLeft: "var(--space-2)" }}>
-            1m Structure: <strong>{t.marketTelemetry.candleStructure ?? "NEUTRAL"}</strong> · Momentum:{" "}
-            <strong>{t.marketTelemetry.momentumState ?? "STEADY"}</strong> · Vol Ratio:{" "}
+            1m Structure: <strong>{t.marketTelemetry.candleStructure ?? "NEUTRAL"}</strong> · Vol:{" "}
             <strong>{t.marketTelemetry.volumeRatio ?? 1}x</strong>
+            {currentRsi !== null && (
+              <>
+                {" "}
+                · RSI(14):{" "}
+                <strong className={currentRsi >= 55 ? "text-green" : currentRsi <= 45 ? "text-red" : ""}>
+                  {currentRsi.toFixed(1)}
+                </strong>
+              </>
+            )}
           </span>
         </div>
 
@@ -121,7 +147,7 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
             </span>
           )}
           <span className="mono micro text-secondary">
-            {bars.length > 0 ? `${bars.length} × 1m candles` : "Live Tick Trajectory"}
+            {bars.length > 0 ? `${bars.length} × 1m candles (Upstox)` : "Waiting for live 1m candles"}
           </span>
         </div>
       </div>
@@ -130,104 +156,54 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
         viewBox={`0 0 ${width} ${height}`}
         style={{
           width: "100%",
-          height: "300px",
+          height: hasRealCandles ? "350px" : "260px",
           display: "block",
           background: "#131720",
           borderRadius: "4px",
           border: "1px solid var(--border-subtle)",
         }}
       >
-        {/* Shaded Profit Zone (Entry -> Current Target) */}
+        {/* Real Risk-Reward Position Box */}
         <rect
-          x={padLeft}
+          x={boxStartX}
           y={Math.min(yTarget, yEntry)}
-          width={plotW}
-          height={Math.max(2, Math.abs(yEntry - yTarget))}
-          fill="rgba(76, 175, 80, 0.06)"
+          width={boxWidth}
+          height={Math.max(4, Math.abs(yEntry - yTarget))}
+          fill="rgba(34, 197, 94, 0.12)"
         />
-
-        {/* Shaded Risk or Locked-Profit Zone (Current Stop -> Entry) */}
         <rect
-          x={padLeft}
-          y={Math.min(yStop, yEntry)}
-          width={plotW}
-          height={Math.max(2, Math.abs(yStop - yEntry))}
-          fill={slLockedProfit ? "rgba(76, 175, 80, 0.12)" : "rgba(239, 83, 80, 0.07)"}
+          x={boxStartX}
+          y={Math.min(yEntry, yInitStop)}
+          width={boxWidth}
+          height={Math.max(4, Math.abs(yInitStop - yEntry))}
+          fill="rgba(239, 83, 80, 0.12)"
         />
-
-        {/* 80% Milestone Guide (SL Locks 50% Profit) */}
-        {yM80 > yTarget + 12 && yM80 < yEntry - 12 && (
-          <g>
-            <line
-              x1={padLeft}
-              x2={padLeft + plotW}
-              y1={yM80}
-              y2={yM80}
-              stroke="rgba(56, 189, 248, 0.28)"
-              strokeWidth="1"
-              strokeDasharray="2 4"
-            />
-            <text
-              x={padLeft + 6}
-              y={yM80 - 4}
-              fill="rgba(56, 189, 248, 0.75)"
-              fontSize="9.5"
-              fontFamily="monospace"
-            >
-              ◆ 80% ZONE (₹{milestone80.toFixed(1)}) → Lock SL at ₹{(t.entryAt + 0.5 * targetMove).toFixed(1)}
-            </text>
-          </g>
+        {slLockedProfit && (
+          <rect
+            x={boxStartX}
+            y={Math.min(yStop, yEntry)}
+            width={boxWidth}
+            height={Math.max(3, Math.abs(yStop - yEntry))}
+            fill="rgba(34, 197, 94, 0.22)"
+          />
         )}
 
-        {/* 50% Milestone Guide (Step Guard SL Trail) */}
-        {t.traderProfile === "STEP_GUARD" && yM50 > yM80 + 12 && yM50 < yEntry - 12 && (
-          <g>
-            <line
-              x1={padLeft}
-              x2={padLeft + plotW}
-              y1={yM50}
-              y2={yM50}
-              stroke="rgba(255, 152, 0, 0.28)"
-              strokeWidth="1"
-              strokeDasharray="2 4"
-            />
-            <text
-              x={padLeft + 6}
-              y={yM50 - 4}
-              fill="rgba(255, 152, 0, 0.8)"
-              fontSize="9.5"
-              fontFamily="monospace"
-            >
-              ◆ 50% ZONE (₹{milestone50.toFixed(1)}) → Step SL to ₹{(t.entryAt + 0.3 * targetMove).toFixed(1)}
-            </text>
-          </g>
-        )}
+        {/* Real Right-Edge OI Profile Bars (only when real OA telemetry is present) */}
+        {hasRealOa &&
+          realOa &&
+          realOa.strikes.map((row: OAStrikeRow, idx: number) => {
+            const yBand = padTop + 20 + (idx / Math.max(1, realOa.strikes.length - 1)) * (mainH - 40);
+            const putW = Math.max(4, (row.putOi / maxOi) * 44);
+            const callW = Math.max(4, (row.callOi / maxOi) * 44);
+            return (
+              <g key={row.strike} opacity={0.55}>
+                <rect x={padLeft + plotW - callW} y={yBand - 4} width={callW} height={3.5} fill="#ef5350" rx="1" />
+                <rect x={padLeft + plotW - putW} y={yBand + 0.5} width={putW} height={3.5} fill="#4caf50" rx="1" />
+              </g>
+            );
+          })}
 
-        {/* Initial Stop Line (if Current Stop has trailed above it) */}
-        {Math.abs(t.currentStop - t.initialStop) >= 0.1 && (
-          <g>
-            <line
-              x1={padLeft}
-              x2={padLeft + plotW}
-              y1={yInitStop}
-              y2={yInitStop}
-              stroke="rgba(239, 83, 80, 0.35)"
-              strokeWidth="1"
-              strokeDasharray="2 3"
-            />
-            <text
-              x={padLeft + plotW + 6}
-              y={yInitStop + 3}
-              fill="rgba(239, 83, 80, 0.6)"
-              fontSize="9.5"
-              fontFamily="monospace"
-            >
-              INIT SL ₹{t.initialStop.toFixed(2)}
-            </text>
-          </g>
-        )}
-
-        {/* Projected Wave / Fibonacci 1.618 Extension Ceiling Line */}
+        {/* Projected Wave Extension Ceiling Line */}
         {hasProjectedCeiling && Math.abs(yProjected - yTarget) > 14 && (
           <g>
             <line
@@ -242,7 +218,7 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
             <rect
               x={padLeft + plotW + 4}
               y={yProjected - 9}
-              width={136}
+              width={142}
               height={18}
               rx="3"
               fill="rgba(56, 189, 248, 0.16)"
@@ -262,7 +238,7 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
           </g>
         )}
 
-        {/* Active Target / Exit Zone Line */}
+        {/* Active Target Line */}
         <line
           x1={padLeft}
           x2={padLeft + plotW}
@@ -275,7 +251,7 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
         <rect
           x={padLeft + plotW + 4}
           y={yTarget - 9}
-          width={136}
+          width={142}
           height={18}
           rx="3"
           fill="rgba(76, 175, 80, 0.18)"
@@ -314,7 +290,7 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
           ▲ ENTRY ₹{t.entryAt.toFixed(2)}
         </text>
 
-        {/* Active Trailing Stop-Loss Line */}
+        {/* Active Trailing SL Line */}
         <line
           x1={padLeft}
           x2={padLeft + plotW}
@@ -327,7 +303,7 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
         <rect
           x={padLeft + plotW + 4}
           y={yStop - 9}
-          width={136}
+          width={142}
           height={18}
           rx="3"
           fill={slLockedProfit ? "rgba(34, 197, 94, 0.18)" : "rgba(239, 83, 80, 0.18)"}
@@ -345,8 +321,8 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
           ■ SL EXIT ₹{t.currentStop.toFixed(2)}
         </text>
 
-        {/* Candlesticks & Volume Bars (when 1m bars exist) */}
-        {bars.length >= 3 ? (
+        {/* Real 1m Candlesticks & Volume Bars */}
+        {hasRealCandles ? (
           bars.map((b, idx) => {
             const step = plotW / Math.max(1, bars.length);
             const cx = padLeft + idx * step + step * 0.5;
@@ -359,66 +335,35 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
             const yClose = yFor(b.c);
             const top = Math.min(yOpen, yClose);
             const bodyH = Math.max(2, Math.abs(yClose - yOpen));
-            const vH = ((b.v ?? 0) / maxVol) * 28;
+            const vH = ((b.v ?? 0) / maxVol) * 24;
             return (
               <g key={b.t || idx}>
                 <line x1={cx} x2={cx} y1={yHigh} y2={yLow} stroke={color} strokeWidth="1.1" />
                 <rect x={cx - bw / 2} y={top} width={bw} height={bodyH} fill={color} rx="1" />
                 <rect
                   x={cx - bw / 2}
-                  y={height - 8 - vH}
+                  y={padTop + mainH - vH}
                   width={bw}
                   height={vH}
-                  fill={up ? "rgba(76, 175, 80, 0.32)" : "rgba(239, 83, 80, 0.32)"}
+                  fill={up ? "rgba(76, 175, 80, 0.28)" : "rgba(239, 83, 80, 0.28)"}
                 />
               </g>
             );
           })
         ) : (
-          /* Synthesized Live Price Trajectory Curve when 1m bars are not yet available */
-          <g>
-            <polyline
-              fill="none"
-              stroke="#38bdf8"
-              strokeWidth="2.2"
-               points={polyPoints}
-            />
-            {trailPoints.map((px, i) => {
-              const cx =
-                padLeft +
-                (trailPoints.length <= 1
-                  ? plotW * 0.5
-                  : (i / (trailPoints.length - 1)) * (plotW * 0.88));
-              const cy = yFor(px);
-              return (
-                <circle
-                  key={i}
-                  cx={cx}
-                  cy={cy}
-                  r={i === trailPoints.length - 1 ? 4.5 : 3}
-                  fill={i === 0 ? "#cbd5e1" : "#38bdf8"}
-                />
-              );
-            })}
-          </g>
+          <text
+            x={padLeft + plotW * 0.5}
+            y={padTop + mainH * 0.5}
+            fill="#64748b"
+            fontSize="12"
+            fontFamily="monospace"
+            textAnchor="middle"
+          >
+            Waiting for live Upstox 1m candles (plotting real Entry / SL / Target / LTP levels)
+          </text>
         )}
 
-        {/* Entry Marker Pin on Left of Plot */}
-        <g>
-          <circle cx={padLeft + 10} cy={yEntry} r="4" fill="#38bdf8" />
-          <text
-            x={padLeft + 18}
-            y={yEntry - 5}
-            fill="#e2e8f0"
-            fontSize="10"
-            fontWeight="700"
-            fontFamily="monospace"
-          >
-            BUY ENTRY @ ₹{t.entryAt.toFixed(2)}
-          </text>
-        </g>
-
-        {/* Live LTP or Exited Price Line & Marker Pin */}
+        {/* Live LTP Line & Marker */}
         <line
           x1={padLeft}
           x2={padLeft + plotW}
@@ -430,13 +375,13 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
         <circle
           cx={lastPointX}
           cy={yLtp}
-          r="5"
+          r="4.5"
           fill={isExited ? "#a855f7" : exitSignal ? "#ff9800" : "#38bdf8"}
         />
         <rect
           x={padLeft + plotW + 4}
           y={yLtp - 9}
-          width={136}
+          width={142}
           height={18}
           rx="3"
           fill={
@@ -463,6 +408,49 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
               ? `★ EXIT NOW ₹${t.lastPrice.toFixed(2)}`
               : `● LIVE ₹${t.lastPrice.toFixed(2)}`}
         </text>
+
+        {/* Real RSI(14) Sub-Panel (only when real 1m candles exist) */}
+        {hasRealCandles && rsiSeries.length >= 2 && (
+          <g>
+            <line x1={padLeft} x2={padLeft + plotW} y1={rsiTop - 8} y2={rsiTop - 8} stroke="#262626" strokeWidth="1" />
+            <rect
+              x={padLeft}
+              y={rsiTop + 0.3 * rsiH}
+              width={plotW}
+              height={0.4 * rsiH}
+              fill="rgba(168, 85, 247, 0.08)"
+            />
+            <line
+              x1={padLeft}
+              x2={padLeft + plotW}
+              y1={rsiTop + 0.3 * rsiH}
+              y2={rsiTop + 0.3 * rsiH}
+              stroke="rgba(148, 163, 184, 0.28)"
+              strokeDasharray="2 3"
+            />
+            <line
+              x1={padLeft}
+              x2={padLeft + plotW}
+              y1={rsiTop + 0.7 * rsiH}
+              y2={rsiTop + 0.7 * rsiH}
+              stroke="rgba(148, 163, 184, 0.28)"
+              strokeDasharray="2 3"
+            />
+            <polyline fill="none" stroke="#a855f7" strokeWidth="1.5" points={rsiPoints} />
+            <text x={padLeft + 6} y={rsiTop + 10} fill="#94a3b8" fontSize="9.5" fontFamily="monospace">
+              RSI 14{" "}
+              <tspan fill="#c084fc" fontWeight="700">
+                {(currentRsi ?? 50).toFixed(2)}
+              </tspan>
+            </text>
+            <text x={padLeft + plotW + 8} y={rsiTop + 0.3 * rsiH + 3} fill="#64748b" fontSize="9" fontFamily="monospace">
+              70.00
+            </text>
+            <text x={padLeft + plotW + 8} y={rsiTop + 0.7 * rsiH + 3} fill="#64748b" fontSize="9" fontFamily="monospace">
+              30.00
+            </text>
+          </g>
+        )}
       </svg>
 
       {/* Bottom Legend & Exit Guidance Strip */}
@@ -484,10 +472,10 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
             ▲ <strong>Entry:</strong> {formatRupee(t.entryAt)}
           </span>
           <span className="mono text-red">
-            ■ <strong>Stop Exit Mark:</strong> {formatRupee(t.currentStop)}
+            ■ <strong>SL:</strong> {formatRupee(t.currentStop)}
           </span>
           <span className="mono text-green">
-            ▼ <strong>Target Exit Mark:</strong> {formatRupee(t.currentTarget)}
+            ▼ <strong>Target:</strong> {formatRupee(t.currentTarget)}
           </span>
           <span className="mono text-secondary">
             ★ <strong>Peak:</strong> {formatRupee(t.peakPrice)}
@@ -496,7 +484,7 @@ export const TradePremiumChart: React.FC<{ trade: ActiveTrade }> = ({ trade: t }
         <div className="micro text-secondary">
           <strong>Trader Guidance:</strong>{" "}
           {t.marketTelemetry.exitRecommendation ??
-            "Holding position — monitoring 1m candle structure & volume for SL ratchet / exit."}
+            "Monitoring live 1m Upstox candles & volume every second."}
         </div>
       </div>
     </div>

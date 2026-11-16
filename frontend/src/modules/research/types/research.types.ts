@@ -284,3 +284,21 @@ export interface DocumentSearchFilter extends BaseFilter {
   underlyingCode?: string;
   fetchStatus?: string;
 }
+
+
+/** Automatic research: start-up + every N minutes while system usage is below the limit. */
+export interface ResearchSchedule {
+  enabled: boolean;
+  intervalMinutes: number;
+  maxLoadPct: number;
+  window: string;
+  nextRunAt: string | null;
+  last: {
+    at: string | null;
+    trigger: "STARTUP" | "INTERVAL" | null;
+    ran: boolean;
+    reason: string;
+    runId?: number | null;
+    usage?: { usagePct: number; cpuPct: number | null; appPct: number; units: number; capacity: number };
+  };
+}

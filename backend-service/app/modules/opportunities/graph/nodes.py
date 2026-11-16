@@ -9,6 +9,7 @@ from app.core.config.settings import settings
 from app.core.db.session import async_session_factory
 from app.core.logging.logger import logger
 from app.modules.master.llm.ollama_client import OllamaClient
+from app.modules.learning.service.learning_service import learning_service
 from app.modules.opportunities.graph.prompts import SELECT_SYSTEM_PROMPT
 from app.modules.opportunities.graph.state import UnderlyingState
 from app.modules.opportunities.provider.underlying_config import get_config, is_market_open
@@ -150,6 +151,7 @@ async def gather(state: UnderlyingState) -> dict[str, Any]:
     _attach_oi_shift(code, analysis)
     await _attach_institutional_inputs(cfg, analysis)
     raw = setup_detector.detect(analysis, cfg)
+    analysis["learning"] = learning_service.view()  # paused setups + applied autopsy guards (live engine only)
     found, rejected = setup_detector.confirm_timeframes(analysis, raw)
     fo = fii_open.signal(code, analysis.get("spot") or market.get("spot"))
     if fo and not any(x["name"] == fo["name"] for x in found):

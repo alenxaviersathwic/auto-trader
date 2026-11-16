@@ -364,3 +364,103 @@ def test_momentum_short_half_size_and_positioning_overlay():
     full = sz.size_candidate(opp(strategy="NOISE_BREAKOUT"), cap)[0]
     half = sz.size_candidate(opp(strategy="NOISE_BREAKOUT", optionType="PE", sizeMult=0.5), cap)[0]
     assert full.lots == 4 and half.lots == 2
+
+
+# ───────────────────────── traders + risk level (16 Nov 2026) ─────────────────────────
+def test_session_risk_level_filters_what_is_offered_and_explains_why():
+    items = [opp(1, strategy="NOISE_BREAKOUT"), opp(2, strategy="VWAP_PULLBACK"), opp(3, strategy="baseline-rr"),
+             opp(4, strategy="NOISE_BREAKOUT", risks=["Against the bullish trend"]),
+             opp(5, strategy="FIB_GOLDEN_POCKET")]
+    svc, _, _ = make(items, riskLevel="LOW", underlyings=["NIFTY"])
+    r = run(svc.tick(FakeDb(), 7))
+    assert sorted(p.opportunityId for p in r.picks) == [1, 5]  # proven setups, with the trend
+    assert r.scanned["excluded"] == {"LOW risk: not a proven setup": 2, "LOW risk: against the trend": 1}
+    svc, _, _ = make(items, riskLevel="MEDIUM")
+    assert sorted(p.opportunityId for p in run(svc.tick(FakeDb(), 7)).picks) == [1, 2, 5]
+    svc, _, _ = make(items, riskLevel="HIGH")
+    assert len(run(svc.tick(FakeDb(), 7)).picks) == 5
+
+
+def test_picks_belong_to_one_of_two_traders_and_a_switched_off_trader_gets_nothing():
+    items = [opp(1, strategy="NOISE_BREAKOUT"), opp(2, strategy="FIB_GOLDEN_POCKET")]
+    svc, s, _ = make(items, riskLevel="LOW")
+    r = run(svc.tick(FakeDb(), 7))
+    assert {p.opportunityId: p.traderCode for p in r.picks} == {1: "FLOW_MOMENTUM_TRADER", 2: "FIB_GOLDEN_TRADER"}
+    svc, s, _ = make(items, riskLevel="LOW", traders=["FIB_GOLDEN_TRADER"])
+    r = run(svc.tick(FakeDb(), 7))
+    assert [p.opportunityId for p in r.picks] == [2] and r.scanned["excluded"] == {"trader not active in session": 1}
+    svc, s, _ = make(items, riskLevel="LOW", traders=["ORB_WAVE_TRADER"])  # old code stored on an old session
+    assert [p.traderCode for p in run(svc.tick(FakeDb(), 7)).picks] == ["FLOW_MOMENTUM_TRADER"]
+
+
+def test_tightening_the_risk_level_mid_session_withdraws_open_offers_that_no_longer_qualify():
+    svc, s, picks = make([opp(1, strategy="NOISE_BREAKOUT"), opp(2, strategy="baseline-rr")], riskLevel="HIGH")
+    assert len(run(svc.tick(FakeDb(), 7)).picks) == 2
+    s.riskLevel = "LOW"
+    r = run(svc.tick(FakeDb(), 7))
+    assert [p.opportunityId for p in r.picks] == [1]
+    assert next(p for p in picks.rows if p.opportunityId == 2).pickState == "EXPIRED"
+
+
+def test_the_fib_swing_is_copied_from_the_opportunity_to_the_pick():
+    meta = {"kind": "FIB_GOLDEN_POCKET", "premium": {"fib100": 110.0}}
+    svc, _, picks = make([opp(1, strategy="FIB_GOLDEN_POCKET", setupMeta=meta), opp(2, strategy="NOISE_BREAKOUT")],
+                         riskLevel="LOW")
+    run(svc.tick(FakeDb(), 7))
+    by_opp = {p.opportunityId: p for p in picks.rows}
+    assert by_opp[1].setupMeta == meta and by_opp[2].setupMeta is None
+
+
+# ───────────────────────── session manager, learning gate, batches (17 Nov 2026) ─────────────────────────
+def test_loop_names_the_best_suggestion_and_skips_setups_the_learning_loop_blocked(monkeypatch):
+    from app.modules.learning.service.learning_service import learning_service
+
+    monkeypatch.setattr(learning_service, "_loaded", True)
+    monkeypatch.setattr(learning_service, "_view", {"paused": {"INSIDE_BAR": "lost"}, "guards": {}, "scorecards": {}})
+    svc, _, _ = make([opp(1, strategy="NOISE_BREAKOUT", confidence=85), opp(2, strategy="INSIDE_BAR")],
+                     riskLevel="LOW")
+    r = run(svc.tick(FakeDb(), 7))
+    assert [p.opportunityId for p in r.picks] == [1]
+    assert r.scanned["excluded"] == {"setup paused by its scorecard": 1}
+    assert r.manager is not None and r.manager.pickId == r.picks[0].id and r.manager.alternatives == 0
+    assert "NOISE_BREAKOUT has no closed trades yet" in r.manager.reasons[-1]
+
+
+def test_batches_group_by_loop_pass_and_analyse_judges_each_pick():
+    from app.core.filter.base_filter import BaseFilter
+
+    class Opps(FakeOpps):
+        async def analyse_opportunities(self, db, ids):
+            return {1: {"outcome": "TARGET_HIT", "achievedPct": 100.0}, 2: {"outcome": "STOP_HIT"}}
+
+    async def all_for_session(db, sid):
+        return [p for p in picks.rows if p.sessionId == sid]
+
+    svc, s, picks = make([opp(1, strategy="NOISE_BREAKOUT"), opp(2, strategy="NOISE_BREAKOUT")], riskLevel="LOW")
+    svc.opportunities = Opps(svc.opportunities.items)
+    picks.all_for_session = all_for_session
+    run(svc.tick(FakeDb(), 7))
+    page = run(svc.search_batches(FakeDb(), 7, BaseFilter(page=0, limit=10)))
+    assert page.totalItems == 1 and len(page.list[0].picks) == 2 and page.list[0].verdict is None
+    b = run(svc.analyse_batch(FakeDb(), 7, page.list[0].batchKey))
+    verdicts = sorted(p.outcomeAnalysis["managerVerdict"] for p in b.picks)
+    assert verdicts == ["GOOD_SKIP", "MISSED_WINNER"] and b.verdict == "MIXED"
+    assert "missed 1 winner" in b.summary["note"]
+
+
+def test_loop_and_lock_raise_notifications(monkeypatch):
+    from app.core.events import notify as nt
+
+    sent = []
+
+    async def fake_notify(kind, title, body, **kw):
+        sent.append((kind, title, kw.get("session_id")))
+
+    monkeypatch.setattr(nt, "notify", fake_notify)
+    svc, _, picks = make([opp(1, strategy="NOISE_BREAKOUT"), opp(2, strategy="NOISE_BREAKOUT")], riskLevel="LOW")
+    run(svc.tick(FakeDb(), 7))
+    assert sent == [("NEW_SUGGESTION", "2 new setups · t", 7)]
+    run(svc.tick(FakeDb(), 7))
+    assert len(sent) == 1  # nothing new offered: no new notification
+    run(svc.lock(FakeDb(), 7, picks.rows[0].id))
+    assert sent[-1][0] == "TRADE_LOCKED"

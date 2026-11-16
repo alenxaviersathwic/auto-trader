@@ -93,6 +93,8 @@ class TradeOpportunity(BaseEntity):
     validUntil: Mapped[datetime] = mapped_column("valid_until", DateTime(timezone=True), nullable=False)
     # Time Machine odds of this pick at save time (service/timemachine.py); None when there was not enough history
     timeMachine: Mapped[dict[str, Any] | None] = mapped_column("time_machine", JSONB, nullable=True)
+    # What the setup found on the chart (fib_pocket.setup_meta(): the real swing + Fib levels); None for other setups
+    setupMeta: Mapped[dict[str, Any] | None] = mapped_column("setup_meta", JSONB, nullable=True)
     outcome: Mapped[str] = mapped_column("outcome", String(12), nullable=False, default="PENDING")
     resolvedAt: Mapped[datetime | None] = mapped_column("resolved_at", DateTime(timezone=True), nullable=True)
     # Set alongside `outcome` the moment it first resolves (run_service._evaluate_opportunities). realizedPnl is

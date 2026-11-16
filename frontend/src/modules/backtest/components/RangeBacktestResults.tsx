@@ -86,8 +86,48 @@ const SetupTable: React.FC<{ rows: RangeSetupStats[]; empty: string }> = ({ rows
     </table>
   );
 
-export const RangeBacktestResults: React.FC<{ result: RangeBacktestResult }> = ({ result }) => {
+function matchesTrader(setup: string, traderFilter?: string): boolean {
+  if (!traderFilter || traderFilter === "ALL") return true;
+  const s = (setup || "").toLowerCase();
+  if (traderFilter === "FIB_GOLDEN_TRADER") {
+    return /fib|pullback|ema|supertrend|golden|swing|trend/.test(s);
+  }
+  if (traderFilter === "ORB_WAVE_TRADER") {
+    return /orb|open|fii|breakout|momentum|gamma|squeeze|impulse/.test(s);
+  }
+  if (traderFilter === "FLOW_VWAP_TRADER") {
+    return /vwap|cpr|pivot|rsi|reversal|oi|flow|iron|bollinger/.test(s);
+  }
+  return true;
+}
+
+export const RangeBacktestResults: React.FC<{
+  result: RangeBacktestResult;
+  traderFilter?: string;
+  sideFilter?: "ALL" | "CE" | "PE";
+}> = ({ result, traderFilter = "ALL", sideFilter = "ALL" }) => {
   const [tab, setTab] = React.useState<Tab>("summary");
+  const [selectedIdx, setSelectedIdx] = React.useState<Set<number>>(new Set());
+
+  const filteredTrades = React.useMemo(
+    () =>
+      result.trades.filter(
+        (x) =>
+          matchesTrader(x.setup, traderFilter) &&
+          (sideFilter === "ALL" || x.side === sideFilter),
+      ),
+    [result.trades, traderFilter, sideFilter],
+  );
+
+  React.useEffect(() => {
+    setSelectedIdx(new Set(filteredTrades.map((_, i) => i)));
+  }, [filteredTrades]);
+
+  const selectedTrades = filteredTrades.filter((_, i) => selectedIdx.has(i));
+  const selectedNetPnl = selectedTrades.reduce((acc, x) => acc + Number(x.netPnl || 0), 0);
+  const selectedWins = selectedTrades.filter((x) => Number(x.netPnl || 0) > 0).length;
+  const selectedWinRate = selectedTrades.length > 0 ? (selectedWins / selectedTrades.length) * 100 : null;
+
   const t = result.totals;
   const p = result.portfolio;
   const worstSetup = result.perSetup[0];
@@ -228,48 +268,142 @@ export const RangeBacktestResults: React.FC<{ result: RangeBacktestResult }> = (
         )}
 
         {tab === "trades" && (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Index</th>
-                <th>Entry</th>
-                <th>Exit</th>
-                <th>Strategy</th>
-                <th>Side</th>
-                <th>Strike</th>
-                <th>Prem in</th>
-                <th>Prem out</th>
-                <th>Move</th>
-                <th>Exit by</th>
-                <th>Risk/lot</th>
-                <th>Net Rs</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.trades.map((x, i) => (
-                <tr key={i} title={x.reason}>
-                  <td className="mono">{x.date}</td>
-                  <td className="ticker">{x.code}</td>
-                  <td className="mono">{x.time}</td>
-                  <td className="mono">{x.exitTime}</td>
-                  <td className="ticker">{x.setup}</td>
-                  <td>
-                    <span className={`badge ${x.side === "CE" ? "badge--green" : "badge--red"}`}>{x.side}</span>
-                  </td>
-                  <td className="mono">{x.strike}</td>
-                  <td className="mono">{x.entryPremium.toFixed(1)}</td>
-                  <td className="mono">{x.exitPremium.toFixed(1)}</td>
-                  <td className={`mono ${pnlClass(x.pctMove)}`}>{x.pctMove.toFixed(1)}%</td>
-                  <td>
-                    <span className="badge badge--slate">{x.outcome.replace("_", " ")}</span>
-                  </td>
-                  <td className="mono">{rs(x.riskPerLot)}</td>
-                  <td className={`mono ${pnlClass(x.netPnl)}`}>{rs(x.netPnl)}</td>
+          <>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "10px",
+                marginBottom: "var(--space-3)",
+                padding: "8px 12px",
+                background: "var(--bg-panel)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "4px",
+              }}
+            >
+              <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                <span className="micro text-secondary">
+                  Selected: <strong className="mono text-heading">{selectedTrades.length}</strong> /{" "}
+                  <span className="mono">{filteredTrades.length}</span> trades
+                </span>
+                <span className="micro text-secondary">
+                  Win %: <strong className="mono">{pct(selectedWinRate)}</strong>
+                </span>
+                <span className="micro text-secondary">
+                  Selected Net P&amp;L:{" "}
+                  <strong className={`mono ${pnlClass(selectedNetPnl)}`}>
+                    Rs {rs(selectedNetPnl)}
+                  </strong>
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  style={{ padding: "3px 8px", fontSize: "0.72rem" }}
+                  onClick={() => setSelectedIdx(new Set(filteredTrades.map((_, i) => i)))}
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  style={{ padding: "3px 8px", fontSize: "0.72rem" }}
+                  onClick={() => setSelectedIdx(new Set())}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 32 }}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredTrades.length > 0 && selectedIdx.size === filteredTrades.length
+                      }
+                      onChange={(e) =>
+                        setSelectedIdx(
+                          e.target.checked
+                            ? new Set(filteredTrades.map((_, i) => i))
+                            : new Set(),
+                        )
+                      }
+                    />
+                  </th>
+                  <th>Date</th>
+                  <th>Index</th>
+                  <th>Entry</th>
+                  <th>Exit</th>
+                  <th>Strategy</th>
+                  <th>Side</th>
+                  <th>Strike</th>
+                  <th>Prem in</th>
+                  <th>Prem out</th>
+                  <th>Move</th>
+                  <th>Exit by</th>
+                  <th>Risk/lot</th>
+                  <th>Net Rs</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredTrades.map((x, i) => {
+                  const checked = selectedIdx.has(i);
+                  return (
+                    <tr
+                      key={i}
+                      title={x.reason}
+                      style={{ opacity: checked ? 1 : 0.45, cursor: "pointer" }}
+                      onClick={() =>
+                        setSelectedIdx((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(i)) next.delete(i);
+                          else next.add(i);
+                          return next;
+                        })
+                      }
+                    >
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) =>
+                            setSelectedIdx((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(i);
+                              else next.delete(i);
+                              return next;
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="mono">{x.date}</td>
+                      <td className="ticker">{x.code}</td>
+                      <td className="mono">{x.time}</td>
+                      <td className="mono">{x.exitTime}</td>
+                      <td className="ticker">{x.setup}</td>
+                      <td>
+                        <span className={`badge ${x.side === "CE" ? "badge--green" : "badge--red"}`}>{x.side}</span>
+                      </td>
+                      <td className="mono">{x.strike}</td>
+                      <td className="mono">{x.entryPremium.toFixed(1)}</td>
+                      <td className="mono">{x.exitPremium.toFixed(1)}</td>
+                      <td className={`mono ${pnlClass(x.pctMove)}`}>{x.pctMove.toFixed(1)}%</td>
+                      <td>
+                        <span className="badge badge--slate">{x.outcome.replace("_", " ")}</span>
+                      </td>
+                      <td className="mono">{rs(x.riskPerLot)}</td>
+                      <td className={`mono ${pnlClass(x.netPnl)}`}>{rs(x.netPnl)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </>
         )}
 
         {tab === "portfolio" && (

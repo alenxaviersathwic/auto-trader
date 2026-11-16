@@ -8,6 +8,12 @@ from app.core.pagination.page_result import PageResult
 from app.modules.sessions.entity.trading_session_entity import TradingSession
 from app.modules.sessions.repository.trading_session_repository import TradingSessionRepository
 from app.modules.sessions.service import session_hours
+from app.modules.sessions.service.session_risk import (
+    LEGACY_RISK_LEVEL,
+    normalize_risk_level,
+    profile_for,
+)
+from app.modules.trades.service.trader_presets import normalize_trader_codes
 from app.modules.sessions.schema.trading_session_schema import (
     TradingSessionCreateRequest,
     TradingSessionResponse,
@@ -22,6 +28,7 @@ _UPDATABLE_FIELDS = (
     "underlyings",
     "commodityItems",
     "traders",
+    "riskLevel",
     "sessionType",
     "routeThroughUpstox",
 )
@@ -55,7 +62,9 @@ class TradingSessionService:
             scope=entity.scope,
             underlyings=entity.underlyings or [],
             commodityItems=entity.commodityItems or [],
-            traders=getattr(entity, "traders", None) or ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"],
+            traders=normalize_trader_codes(getattr(entity, "traders", None)),
+            riskLevel=normalize_risk_level(getattr(entity, "riskLevel", None) or LEGACY_RISK_LEVEL),
+            riskProfile=profile_for(getattr(entity, "riskLevel", None) or LEGACY_RISK_LEVEL).as_dict(),
             sessionType=entity.sessionType,
             routeThroughUpstox=entity.routeThroughUpstox,
             sessionStatus=entity.sessionStatus,
@@ -93,7 +102,8 @@ class TradingSessionService:
             scope=request.scope.upper(),
             underlyings=request.underlyings,
             commodityItems=request.commodityItems,
-            traders=request.traders or ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"],
+            traders=normalize_trader_codes(request.traders),
+            riskLevel=normalize_risk_level(request.riskLevel),
             sessionType=request.sessionType.upper(),
             routeThroughUpstox=request.routeThroughUpstox,
             startAt=start_at,
@@ -139,8 +149,10 @@ class TradingSessionService:
         for field in _UPDATABLE_FIELDS:
             if field in data and data[field] is not None:
                 value = data[field]
-                if field == "sessionType":
+                if field in ("sessionType", "riskLevel"):
                     value = value.upper()
+                elif field == "traders":
+                    value = normalize_trader_codes(value)
                 setattr(entity, field, value)
 
         if data.get("startTime") or data.get("closeTime"):

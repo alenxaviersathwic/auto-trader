@@ -32,8 +32,19 @@ async def start_range_backtest(body: RangeBacktestRequest) -> ApiResponse[dict[s
     """Starts a FROM-TO backtest in the background: fetches Upstox candles (+ VIX, NSE participant OI), replays the
     live strategy minute by minute, and reports trades, P&L per index / strategy / day, and what each rule saved or
     cost. Poll GET /backtest/range/{jobId} for progress and the result."""
-    job = range_svc.start(body.fromDate, body.toDate, [c.upper() for c in body.codes], body.capital, body.maxLossPct,
-                          body.sizing)
+    job = range_svc.start(
+        body.fromDate,
+        body.toDate,
+        [c.upper() for c in body.codes],
+        body.capital,
+        body.maxLossPct,
+        body.sizing,
+        manager_view=body.managerView,
+        trader_filter=body.traderFilter,
+        side_filter=body.sideFilter,
+        max_parallel=body.maxParallel,
+        guard_enabled=body.guardEnabled,
+    )
     return success(data=job, message=f"Backtest started for {body.fromDate} to {body.toDate}")
 
 

@@ -3,6 +3,16 @@ import { BaseFilter } from "../../../core/types/filter.types";
 export type SessionScope = "INDEX" | "COMMODITY";
 export type SessionType = "FULL_AUTO" | "SEMI_AUTO" | "MANUAL";
 export type SessionStatus = "ACTIVE" | "CLOSED" | "EXPIRED";
+/** Entry strictness of a session (which opportunities it accepts). Default LOW. */
+export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
+
+export interface RiskProfile {
+  level: RiskLevel;
+  setups: string[];
+  minRewardRisk: number;
+  allowAgainstTrend: boolean;
+  summary: string;
+}
 
 export interface TradingSession {
   id: number;
@@ -17,6 +27,8 @@ export interface TradingSession {
   underlyings: string[];
   commodityItems: string[];
   traders?: string[];
+  riskLevel: RiskLevel;
+  riskProfile?: RiskProfile | null;
   sessionType: SessionType;
   routeThroughUpstox: boolean;
   sessionStatus: SessionStatus;
@@ -42,6 +54,7 @@ export interface TradingSessionCreatePayload {
   underlyings?: string[];
   commodityItems?: string[];
   traders?: string[];
+  riskLevel?: RiskLevel;
   sessionType?: SessionType;
   routeThroughUpstox?: boolean;
   /** HH:MM IST. Blank = now if created at/after 09:25, else 09:15. */
@@ -57,6 +70,7 @@ export interface TradingSessionUpdatePayload {
   underlyings?: string[];
   commodityItems?: string[];
   traders?: string[];
+  riskLevel?: RiskLevel;
   sessionType?: SessionType;
   routeThroughUpstox?: boolean;
   sessionStatus?: SessionStatus;
@@ -123,7 +137,64 @@ export interface SessionPick {
   usagePct: number;
   /** Seconds until the opportunity behind this pick expires (0 once LOCKED / EXPIRED). */
   secondsLeft: number;
+  /** The session manager's after-the-fact check, written by "Analyse" on its batch. */
+  outcomeAnalysis?: PickAnalysis | null;
   createdAt: string;
+}
+
+export type ManagerVerdict =
+  | "TAKEN_WIN"
+  | "TAKEN_LOSS"
+  | "TAKEN_RUNNING"
+  | "LOCKED_NOT_ENTERED"
+  | "MISSED_WINNER"
+  | "GOOD_SKIP"
+  | "NO_MOVE"
+  | "PENDING";
+
+export interface PickAnalysis {
+  managerVerdict: ManagerVerdict;
+  opportunityOutcome: "TARGET_HIT" | "STOP_HIT" | "EXPIRED" | "PENDING";
+  note: string;
+  achievedPct: number | null;
+  maxGainPct: number | null;
+  hitAt: string | null;
+  candleError: string | null;
+  trade: { tradeId: number; tradeState: string; netPnl: number; exitReason: string | null; verdict: string | null } | null;
+  analysedAt: string;
+}
+
+export type BatchVerdict = "SUCCESS" | "FAILURE" | "MIXED" | "NO_MOVE" | "PENDING";
+
+/** Every pick one loop pass offered, with the session manager's verdict once analysed. */
+export interface SessionBatch {
+  batchKey: string;
+  batchNo: number;
+  offeredAt: string;
+  picks: SessionPick[];
+  analysedAt: string | null;
+  verdict: BatchVerdict | null;
+  summary: {
+    picks: number;
+    locked: number;
+    entered: number;
+    note?: string;
+    hits?: number;
+    misses?: number;
+    noMove?: number;
+    taken?: number;
+    pending?: number;
+    resolved?: number;
+  };
+}
+
+/** The session manager's pick of the open offers, and why. */
+export interface SessionManagerAdvice {
+  pickId: number;
+  headline: string;
+  reasons: string[];
+  cautions: string[];
+  alternatives: number;
 }
 
 export interface SessionCapital {
@@ -161,6 +232,8 @@ export interface SessionLoop {
   lockedPicks?: SessionPick[];
   capital: SessionCapital;
   scanned: { candidates: number; excluded: Record<string, number> };
+  /** Best suggestion right now (only while picks are open). */
+  manager?: SessionManagerAdvice | null;
 }
 
 export interface SessionPickSearchFilter extends BaseFilter {

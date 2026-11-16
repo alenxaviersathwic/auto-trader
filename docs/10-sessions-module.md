@@ -209,3 +209,26 @@ So the live table the loop queries every second starts each day empty, an APSche
 - The loop state lives in one process (single uvicorn worker).
 - `realized_pnl` stays 0 until the execution phase exists, so current capital equals starting capital for now.
 - The session never receives updates from the engine; an opportunity that is later resolved as target or stop hit does not change the pick.
+
+---
+
+## Risk level (added 16 Nov 2026)
+
+`trading_sessions.risk_level` = `LOW` (default) | `MEDIUM` | `HIGH`. It is set on create, can be changed on a running session (`PUT /sessions/{id}` with `riskLevel`), and is returned with `riskProfile`.
+
+It changes **entry strictness only** (`sessions/service/session_risk.py`). Position size, the session loss limit (`maxLossPercentage`), the one-lot allowance (`MAX_ONE_LOT_RISK_PCT`) and the 3 parallel-trade cap are identical at every level.
+
+| Level | Setups accepted (`setups.SETUP_POLICY`) | Trend | Min reward:risk |
+|---|---|---|---|
+| `LOW` | `CORE` + `CONFIRMED` (the backtested momentum engine and the confirmed Fib pocket) | with the trend only | 1.5 |
+| `MEDIUM` | `CORE` + `MERGED` + `CONFIRMED` (any coded setup) | with the trend only | 1.3 |
+| `HIGH` | everything the engine saves, including AI picks without a coded setup | against-trend allowed | engine floor |
+
+- The gate runs in `SessionLoopService.tick` on every candidate; skipped candidates are counted in `scanned.excluded` under e.g. `LOW risk: not a proven setup`.
+- Tightening the level mid-session expires open offers that no longer qualify. Locked picks and running trades are not touched.
+- The model's `confidence` is not part of the gate: it is not calibrated, and on the 3-5 Nov 2026 opportunities the confidence-based label did not separate winners from losers.
+- Sessions created before migration `0025` are `HIGH`, which is how they behaved.
+
+## One trading screen (`/sessions/$id`)
+
+Top bar: Mode, Risk and Upstox routing switches plus scanner start / stop. Below the capital strip, one column per trader (`TraderColumn.tsx`) shows its running trades (`RunningTradeCard.tsx`: live levels, exit signal, square off), locked picks ready to enter, and open setups with Lock Trade. A trader can be switched off per session. `/trades` is now trade history.

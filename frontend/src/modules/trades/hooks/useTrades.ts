@@ -7,6 +7,7 @@ import {
   getTrade,
   insertDirectTrade,
   listTraderPresets,
+  llmAnalyzeTrade,
   previewTradeSizing,
   searchTrades,
 } from "../api/trades.api";
@@ -27,11 +28,13 @@ export function useTraderPresets() {
   });
 }
 
-export function useTradeSearch(filter: TradeSearchFilter) {
+/** `refetchIntervalMs` keeps a list with running trades live (prices, stop, target); omit for a static list. */
+export function useTradeSearch(filter: TradeSearchFilter, refetchIntervalMs?: number) {
   return useQuery({
     queryKey: tradesQueryKeys.list(filter),
     queryFn: () => searchTrades(filter),
     placeholderData: keepPreviousData,
+    refetchInterval: refetchIntervalMs && refetchIntervalMs > 0 ? refetchIntervalMs : false,
   });
 }
 
@@ -100,6 +103,17 @@ export function useExitTrade(tradeId: number) {
       queryClient.setQueryData(tradesQueryKeys.detail(tradeId), updated);
       queryClient.invalidateQueries({ queryKey: tradesQueryKeys.lists() });
       queryClient.invalidateQueries({ queryKey: sessionsQueryKeys.detail(updated.sessionId) });
+    },
+  });
+}
+
+export function useLlmAnalyzeTrade(tradeId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => llmAnalyzeTrade(tradeId),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(tradesQueryKeys.detail(tradeId), updated);
+      queryClient.invalidateQueries({ queryKey: tradesQueryKeys.lists() });
     },
   });
 }

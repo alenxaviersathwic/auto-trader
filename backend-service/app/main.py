@@ -100,6 +100,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Strategy/rule registry seeding failed on startup: {e}")
 
+    # 2b. Notifications hub listens on the event bus before any loop can raise one
+    try:
+        from app.modules.notifications.service import notification_hub
+
+        notification_hub.register()
+    except Exception as e:
+        logger.error(f"Notification hub setup failed: {e}")
+
     # 3. Resume the loop of every ACTIVE session and RUNNING trade dated today (their loops died with the last process)
     try:
         from app.modules.sessions.engine import session_loop_runner
@@ -144,6 +152,14 @@ async def lifespan(app: FastAPI):
         register_positioning_job()
     except Exception as e:
         logger.error(f"Participant OI job setup failed: {e}")
+
+    # 3e. Research Engine at start-up and every 30 min while system usage < 50% (research/job/research_schedule_job.py)
+    try:
+        from app.modules.research.job import register_research_schedule
+
+        register_research_schedule()
+    except Exception as e:
+        logger.error(f"Research schedule setup failed: {e}")
 
     # 4. Start scheduler
     start_scheduler()
@@ -257,6 +273,8 @@ def create_application() -> FastAPI:
     from app.modules.trades.controller import trade_router
     from app.modules.backtest.controller import backtest_router
     from app.modules.system.controller import system_router
+    from app.modules.learning.controller import learning_router
+    from app.modules.notifications.controller import notification_router
 
     app.include_router(user_router, prefix=settings.API_V1_PREFIX)
     app.include_router(oauth_router, prefix=settings.API_V1_PREFIX)
@@ -270,6 +288,8 @@ def create_application() -> FastAPI:
     app.include_router(session_pick_router, prefix=settings.API_V1_PREFIX)
     app.include_router(trade_router, prefix=settings.API_V1_PREFIX)
     app.include_router(backtest_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(learning_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(notification_router, prefix=settings.API_V1_PREFIX)
     app.include_router(system_router, prefix=settings.API_V1_PREFIX)  # System Status + engine registry (was never mounted)
 
     app.include_router(strategy_mcp_router)

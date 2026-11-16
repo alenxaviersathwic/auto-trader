@@ -27,6 +27,8 @@ and the menu turns that plan into an option premium target/stop through the cont
   NOISE_BREAKOUT   first 5-min close outside the noise area (Zarattini et al. 2024): the move is no longer noise
   LATE_DAY_MOMENTUM  14:30-15:05: first-half-hour return and the day's return agree and price is outside the noise
                    area on that side (Gao et al. JFE 2018: the first half hour predicts the last)
+  FIB_GOLDEN_POCKET  pullback into the 0.50-0.618 retracement of an impulse swing that turns back, taken only when
+                   the option chain (OI) and futures volume both confirm it (service/fib_pocket.py)
 
 Day type (service/day_type.py) decides which setups may trade at all (confirm_timeframes()):
   PIN / RANGE        only REVERSAL and RANGE-family setups (theta beats trend-following inside the noise area)
@@ -46,6 +48,8 @@ Futures OI buildup confirms (+1) or contradicts (-1, flagged) each signal; volum
 
 from typing import Any
 
+from app.modules.learning.service import learning_rules
+from app.modules.opportunities.service import fib_pocket
 from app.modules.opportunities.service.market_analysis import ema, next_level
 
 MIN_SETUP_RR = 1.3  # underlying reward:risk below this is not a setup
@@ -182,6 +186,7 @@ def detect(a: dict[str, Any], cfg: Any) -> list[dict[str, Any]]:
                 out.append(_signal("MOMENTUM_FLAG", side, p, 3 + spike, reason))
 
     out += _extra_setups(a, bars, lv, atr5, regime, trend, spike, tick)
+    out += fib_pocket.detect(a, bars, atr5, tick)  # 18. Fib golden pocket (OI + volume confirmed)
 
     # confirmation by futures OI buildup and trend
     bu = (a.get("buildup") or {}).get("state")
@@ -424,6 +429,100 @@ def _extra_setups(a: dict[str, Any], bars: list[dict[str, Any]], lv: dict[str, A
         if fh < 0 and day_ret < 0 and noise.get("state") == "BELOW" and red:
             add("LATE_DAY_MOMENTUM", "PE", max(b["h"] for b in recent) + tick, 3,
                 f"first half hour {fh:+.2f}% and day {day_ret:+.2f}% both down, below the noise area into the close")
+
+    # 18. Rising/Converging Wedge & Triangle Breakout / Breakdown + RSI(14) + OI/Max Pain alignment
+    if len(bars) >= 12:
+        win = bars[-13:-1]
+        mid = len(win) // 2
+        h1, h2 = max(b["h"] for b in win[:mid]), max(b["h"] for b in win[mid:])
+        l1, l2 = min(b["l"] for b in win[:mid]), min(b["l"] for b in win[mid:])
+        span1, span2 = h1 - l1, h2 - l2
+        rsi_val = (a.get("rsi") or {}).get("14") or (a.get("indicators") or {}).get("rsi14")
+        converging = span1 > 0 and span2 > 0 and span2 < span1 * 0.90 and l2 >= l1
+        if converging:
+            if last["c"] > h2 and green and (rsi_val is None or float(rsi_val) >= 54):
+                add(
+                    "WEDGE_BREAKOUT",
+                    "CE",
+                    min(last["l"], l2) - tick,
+                    4 + spike,
+                    f"Wedge breakout above {h2:.1f} (higher lows {l1:.1f}->{l2:.1f})"
+                    + (f" with RSI14={float(rsi_val):.1f}" if rsi_val is not None else ""),
+                )
+            elif last["c"] < l2 and red and (rsi_val is None or float(rsi_val) <= 46):
+                add(
+                    "WEDGE_BREAKDOWN",
+                    "PE",
+                    max(last["h"], h2) + tick,
+                    4 + spike,
+                    f"Rising wedge breakdown below {l2:.1f} (from {l1:.1f}->{l2:.1f})"
+                    + (f" with RSI14={float(rsi_val):.1f}" if rsi_val is not None else ""),
+                )
+
+    # 19. Fast 1m/5m Scalper Impulse: tight stop under impulse bar, quick scalp momentum with volume >= 1.25x
+    if len(bars) >= 4:
+        prev_b = bars[-2]
+        body_sz = abs(last["c"] - last["o"])
+        bar_rng = max(tick, last["h"] - last["l"])
+        vol_ok = spike >= 1 or (float(last.get("v") or 0) >= 1.25 * max(1.0, float(prev_b.get("v") or 0)))
+        if vol_ok and body_sz >= bar_rng * 0.55 and atr5 > 0 and bar_rng >= 0.45 * atr5:
+            if green and last["c"] > prev_b["h"] and vw_ok_ce:
+                add("SCALP_IMPULSE", "CE", last["l"] - tick, 4 + spike,
+                    f"Scalper impulse bar above {prev_b['h']:.1f} with tight SL {last['l'] - tick:.1f}")
+            elif red and last["c"] < prev_b["l"] and vw_ok_pe:
+                add("SCALP_IMPULSE", "PE", last["h"] + tick, 4 + spike,
+                    f"Scalper impulse breakdown below {prev_b['l']:.1f} with tight SL {last['h'] + tick:.1f}")
+
+    # 20. Post-1:45 PM Expiry Gamma Blast (NIFTY Tuesday / SENSEX Thursday)
+    # Trigger: Time >= 13:45 IST, tight afternoon base breakout crossing round-number/heavy OI strike with volume spike
+    last_t = str(last.get("t") or "")[11:16]
+    is_expiry_time = "13:45" <= last_t <= "15:15"
+    if is_expiry_time and len(bars) >= 6:
+        prior_5 = bars[-6:-1]
+        hi_5 = max(b["h"] for b in prior_5)
+        lo_5 = min(b["l"] for b in prior_5)
+        consolidation_tight = (hi_5 - lo_5) <= 1.8 * atr5
+        if consolidation_tight:
+            if green and last["c"] > hi_5 and (spike >= 1 or (vw and last["c"] > vw)):
+                add(
+                    "GAMMA_BLAST",
+                    "CE",
+                    lo_5 - tick,
+                    5 + spike,
+                    f"Post-1:45 PM Expiry Gamma Blast breakout above {hi_5:.1f} (tight base {hi_5 - lo_5:.1f} pts)",
+                )
+            elif red and last["c"] < lo_5 and (spike >= 1 or (vw and last["c"] < vw)):
+                add(
+                    "GAMMA_BLAST",
+                    "PE",
+                    hi_5 + tick,
+                    5 + spike,
+                    f"Post-1:45 PM Expiry Gamma Blast breakdown below {lo_5:.1f} (tight base {hi_5 - lo_5:.1f} pts)",
+                )
+
+    # 21. Liquidity Sweep & Trapped Stop-Hunt Reversal
+    # Trigger: Sweep of PDH or PDL by >= 0.1 ATR that immediately closes back inside with VWAP reclaim
+    pdh = lv.get("pdh")
+    pdl = lv.get("pdl")
+    if pdl and last["l"] <= pdl - 0.1 * atr5 and last["c"] > pdl and green:
+        sl = min(last["l"], min((b["l"] for b in bars[-3:]), default=last["l"])) - tick
+        add(
+            "LIQUIDITY_SWEEP",
+            "CE",
+            sl,
+            5 + spike,
+            f"Liquidity sweep below PDL {pdl:.1f} reclaimed with bullish reversal candle",
+        )
+    elif pdh and last["h"] >= pdh + 0.1 * atr5 and last["c"] < pdh and red:
+        sl = max(last["h"], max((b["h"] for b in bars[-3:]), default=last["h"])) + tick
+        add(
+            "LIQUIDITY_SWEEP",
+            "PE",
+            sl,
+            5 + spike,
+            f"Liquidity sweep above PDH {pdh:.1f} rejected with bearish reversal candle",
+        )
+
     return out
 
 
@@ -494,6 +593,7 @@ def unfilled_gap_block(lv: dict[str, Any], fam: str) -> str | None:
 #                        bias TREND or EXPANSION on that side); never on its own
 #   SHORT_PREMIUM_ONLY   mean-reversion reads: not bought as options any more; they only inform where a defined-risk
 #                        short-premium structure is centred (iron_fly.py), and only in a positive-gamma regime
+#   CONFIRMED            a pattern setup that may trade only with its own OI + volume confirmations (fib_pocket.py)
 #   DROPPED              no entry at all (kept detectable for research replays / the funnel report)
 SETUP_POLICY: dict[str, str] = {
     "NOISE_BREAKOUT": "CORE", "LATE_DAY_MOMENTUM": "CORE",
@@ -503,7 +603,15 @@ SETUP_POLICY: dict[str, str] = {
     # 12 Nov 2026 price-action study (6 months, v3 gates, MOMO trail): INSIDE_BAR alone 14 trades PF 14.7, both halves +;
     # on top of the core set +1.1k, H1 unchanged. Scalp (fixed 1R / 1.5R) exits lost after costs on every setup tested.
     "INSIDE_BAR": "CORE",
+    "SCALP_IMPULSE": "CORE",
+    "WEDGE_BREAKOUT": "CORE",
+    "WEDGE_BREAKDOWN": "CORE",
+    "GAMMA_BLAST": "CORE",
+    "LIQUIDITY_SWEEP": "CORE",
     "FII_OPEN_DRIVE": "CORE",  # opening CE on prior-day FII futures buying (fii_open.py); off unless FII_OPEN_CODES
+    # 16 Nov 2026: the Fib Golden-Pocket Trader's only setup. CONFIRMED = trades only when fib_pocket.py found BOTH
+    # its OI and its volume confirmation (a signal carrying `confirmBlock` is rejected). Not backtested yet.
+    "FIB_GOLDEN_POCKET": "CONFIRMED",
     "ORB": "DROPPED", "EMA_CROSS_RETEST": "DROPPED", "PDH_PDL_RETEST": "DROPPED",
     "MOMENTUM_FLAG": "DROPPED", "SHORT_COVERING_SPIKE": "DROPPED", "SUPERTREND_FLIP": "DROPPED",
     "SUPERTREND_RETEST": "DROPPED", "CPR_BREAKOUT": "DROPPED",
@@ -513,8 +621,13 @@ SETUP_POLICY: dict[str, str] = {
 def policy_block(a: dict[str, Any], s: dict[str, Any]) -> str | None:
     """Why the setup policy does not allow this signal as an OPTION BUY, or None."""
     pol = SETUP_POLICY.get(s["name"], "DROPPED")  # unknown / new setups must be classified before they trade
+    # what finished trades taught (modules/learning): a paused setup or an applied guard. Live engine only: the
+    # analysis carries "learning" only when the live graph attached it, so backtests are never affected.
+    learned = learning_rules.engine_block(a.get("learning"), s["name"], (a.get("session") or {}).get("minutesToClose"))
+    if learned:
+        return learned
     g = a.get("gamma") or {}
-    if g.get("enabled") and pol in ("CORE", "MERGED"):
+    if g.get("enabled") and pol in ("CORE", "MERGED", "CONFIRMED"):
         r = g.get("route") or {}
         if s["side"] == "PE" and r.get("momentumShort") is False:
             return f"dealer gamma {g.get('regime')}: momentum shorts blocked (mean-reverting tape)"
@@ -528,6 +641,8 @@ def policy_block(a: dict[str, Any], s: dict[str, Any]) -> str | None:
         return extra
     if pol == "CORE":
         return None
+    if pol == "CONFIRMED":
+        return s.get("confirmBlock")
     if pol == "DROPPED":
         return f"{s['name']} dropped (no evidence of edge after costs)"
     if pol == "SHORT_PREMIUM_ONLY":

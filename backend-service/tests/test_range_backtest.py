@@ -40,3 +40,18 @@ def test_portfolio_applies_session_rules():
     m = rs._portfolio(rows, 50000, 4.0, "MAX_LOTS")  # 50k buys 2 lots of a 20k premium; 90k premium skipped
     assert [x["lots"] for x in m["tradeList"]] == [2, 2] and m["netPnl"] == 2 * 500 - 2 * 300
     assert m["skipped"] == {"another index position already open": 1, "premium above available capital": 1}
+
+
+def test_portfolio_allows_parallel_positions_on_opposite_sides_only():
+    t = lambda tm, ex, side, pnl: {"date": "2026-11-10", "time": tm, "exitTime": ex, "netPnl": pnl, "side": side,  # noqa: E731
+                                   "riskPerLot": 1000, "premiumPerLot": 10000, "lotSize": 65}
+    rows = [t("10:00", "11:00", "CE", 500), t("10:10", "10:50", "PE", 300), t("10:20", "10:40", "CE", 200)]
+    p = rs._portfolio(rows, 50000, 4.0, "RISK")
+    assert p["trades"] == 2 and p["skipped"] == {"another index position already open": 1}
+
+
+def test_trader_filter_matches_live_ownership():
+    assert rs._matches_trader_filter("FIB_GOLDEN_POCKET", "FIB_GOLDEN_TRADER")
+    assert not rs._matches_trader_filter("EMA_CROSS_RETEST", "FIB_GOLDEN_TRADER")  # a keyword guess said Fib
+    assert rs._matches_trader_filter("WEDGE_BREAKOUT", "FLOW_MOMENTUM_TRADER")
+    assert rs._matches_trader_filter("ANY", "ALL")

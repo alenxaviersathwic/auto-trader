@@ -5,6 +5,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.modules.opportunities.provider.underlying_config import UnderlyingConfig
+from app.modules.opportunities.service import fib_pocket
 from app.modules.opportunities.service.costs import CHEAP_PREMIUM, TICK, round_trip_cost_pct, slippage_pct
 
 # 11 Nov 2026 research review (gap 5): at ~1% round-trip charges a 1.5% spread made a +5% target need a ~65% win
@@ -449,6 +450,7 @@ def build_menu(
                         "setupStrength": setup["strength"] if setup else 0,
                         "chartStop": setup["stop"] if setup else None,
                         "chartTarget": setup["target"] if setup else None,
+                        "setupMeta": fib_pocket.setup_meta(setup, spot, ltp, delta) if setup else None,
                         "volumeConfirmed": False,  # filled by the node from the analysis
                         "withTrend": bias == "NEUTRAL" or (side == "CE") == (bias == "BULLISH"),
                         "strike": row["strike"],

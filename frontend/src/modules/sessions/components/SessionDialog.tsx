@@ -15,6 +15,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { TRADER_CODES, TRADER_META } from "../../trades/components/traderMeta";
 import { sessionCreateSchema, SessionCreateFormValues } from "../schemas/sessionForm.schema";
 import { TradingSessionCreatePayload } from "../types/sessions.types";
 import { ApiError } from "../../../core/api/apiError";
@@ -87,35 +88,23 @@ const SESSION_MODES: Array<{
   },
 ];
 
-const PRESET_TRADERS: Array<{
-  code: string;
-  name: string;
-  tag: string;
-  badgeClass: string;
-  desc: string;
-}> = [
+
+const TRADER_MANAGERS = [
   {
-    code: "FIB_GOLDEN_TRADER",
-    name: "Fibonacci Golden-Pocket Specialist",
-    tag: "FIB 0.618 → 1.618",
+    id: "MY_VIEW",
+    traderCode: "FIB_GOLDEN_TRADER",
+    name: "Session Manager 1 · My Experience",
+    tag: "MANAGER 1",
     badgeClass: "badge--cyan",
-    desc: "Finds 0.50–0.618 Fibonacci pullbacks; trails SL along 1.0 → 1.272 → 1.618 extension waves.",
   },
   {
-    code: "ORB_WAVE_TRADER",
-    name: "ORB & Momentum Wave Runner",
-    tag: "STEP-WAVE 100→120→150",
+    id: "AI_VIEW",
+    traderCode: "FLOW_MOMENTUM_TRADER",
+    name: "Session Manager 2 · Indian Quant Desk",
+    tag: "MANAGER 2",
     badgeClass: "badge--green",
-    desc: "Captures Opening Range Breakouts; steps SL to 75 & Target 100 → 120 → 150 when wave extends.",
   },
-  {
-    code: "FLOW_VWAP_TRADER",
-    name: "Institutional VWAP & OI Flow Trader",
-    tag: "VWAP + OI FLOW",
-    badgeClass: "badge--amber",
-    desc: "Tracks institutional option-chain OI unwinding & VWAP reclaim; ratchets SL at 50% & 80% milestones.",
-  },
-];
+] as const;
 
 const DEFAULT_VALUES: SessionCreateFormValues = {
   name: "",
@@ -126,7 +115,8 @@ const DEFAULT_VALUES: SessionCreateFormValues = {
   scope: "INDEX",
   underlyings: ["NIFTY"],
   commodityItems: [],
-  traders: ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"],
+  traders: [...TRADER_CODES],
+  riskLevel: "LOW",
   sessionType: "MANUAL",
   routeThroughUpstox: false,
   startTime: defaultStartTime(),
@@ -171,12 +161,11 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
   const sessionType = watch("sessionType");
   const userId = Number(watch("userId") || 0);
   const capital = Number(watch("capital") || 0);
-  const maxLossPercentage = Number(watch("maxLossPercentage") || 0);
   const startTime = watch("startTime");
   const closeTime = watch("closeTime");
   const underlyings = watch("underlyings") || [];
   const commodityItems = watch("commodityItems") || [];
-  const traders = watch("traders") || ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"];
+  const traders = watch("traders") || [...TRADER_CODES];
   const routeThroughUpstox = Boolean(watch("routeThroughUpstox"));
 
   const selectedUser = useMemo(
@@ -244,8 +233,6 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
     setValue(field, next, { shouldValidate: true, shouldDirty: true });
   };
 
-  const maxLossRupees = Math.max(0, (capital * maxLossPercentage) / 100);
-
   const onSubmit = async (values: SessionCreateFormValues) => {
     setServerError(null);
     try {
@@ -276,17 +263,17 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="drawer drawer--wide" onClick={(e) => e.stopPropagation()}>
-        <div className="drawer-header">
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+        <div className="drawer-header" style={{ padding: "10px 18px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
             <div className="header-icon-box">
-              <Activity size={18} className="text-blue" />
+              <Activity size={16} className="text-blue" />
             </div>
             <div>
-              <h2 className="page-title" style={{ fontSize: "1.05rem" }}>
+              <h2 className="page-title" style={{ fontSize: "0.98rem" }}>
                 New Trading Session
               </h2>
-              <p className="text-secondary micro">
-                Configure capital, automation mode, underlyings &amp; Upstox order execution
+              <p className="text-secondary micro" style={{ margin: 0 }}>
+                Capital, LLM manager psychology, opportunities traders &amp; Upstox execution
               </p>
             </div>
           </div>
@@ -297,29 +284,26 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
             disabled={isSubmitting}
             aria-label="Close"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
-        <div className="drawer-body">
+        <div className="drawer-body" style={{ padding: "12px 18px" }}>
           {serverError && (
-            <div className="form-error" style={{ marginBottom: "var(--space-4)" }}>
+            <div className="form-error" style={{ marginBottom: 8 }}>
               {serverError}
             </div>
           )}
 
-          {/* Executive Live Session Preview Strip */}
-          <div className="session-summary-strip">
+          {/* Compact Session Preview Strip */}
+          <div
+            className="session-summary-strip"
+            style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", padding: "6px 10px", marginBottom: 10 }}
+          >
             <div className="session-summary-cell">
               <span className="session-summary-label">Session Capital</span>
               <span className="session-summary-value">
                 ₹{capital > 0 ? capital.toLocaleString("en-IN") : "0"}
-              </span>
-            </div>
-            <div className="session-summary-cell">
-              <span className="session-summary-label">Max Loss Budget ({maxLossPercentage || 0}%)</span>
-              <span className="session-summary-value text-red">
-                -₹{maxLossRupees.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
               </span>
             </div>
             <div className="session-summary-cell">
@@ -330,17 +314,17 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
             </div>
             <div className="session-summary-cell">
               <span className="session-summary-label">Parallel Open Trades</span>
-              <span className="session-summary-value text-green">Max 3 at once (No total limit)</span>
+              <span className="session-summary-value text-green">Max 3 concurrent</span>
             </div>
           </div>
 
           <form id="session-form" onSubmit={handleSubmit(onSubmit)} autoComplete="off">
-            {/* Section 1: Identity, Capital & Risk Window */}
-            <div className="session-section-card">
-              <div className="session-section-head">
+            {/* Section 1: Identity, Capital & Trading Window */}
+            <div className="session-section-card" style={{ padding: "10px 12px", marginBottom: 10 }}>
+              <div className="session-section-head" style={{ marginBottom: 8 }}>
                 <span className="session-section-title">
-                  <Wallet size={14} className="text-blue" />
-                  <span>1. Account, Capital &amp; Trading Window</span>
+                  <Wallet size={13} className="text-blue" />
+                  <span>1. Account, Capital &amp; Window</span>
                 </span>
                 {selectedUser && (
                   <span
@@ -355,7 +339,10 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
                 )}
               </div>
 
-              <div className="form-grid">
+              <div
+                className="form-grid"
+                style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}
+              >
                 <div className="form-group">
                   <label className="form-label" htmlFor="userId">
                     Trading Account (User)
@@ -403,22 +390,6 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label" htmlFor="maxLossPercentage">
-                    Max Loss Halt (% of Capital)
-                  </label>
-                  <input
-                    id="maxLossPercentage"
-                    type="number"
-                    step="0.5"
-                    className={`input font-mono ${errors.maxLossPercentage ? "input--error" : ""}`}
-                    {...register("maxLossPercentage")}
-                  />
-                  {errors.maxLossPercentage && (
-                    <span className="form-error">{errors.maxLossPercentage.message}</span>
-                  )}
-                </div>
-
-                <div className="form-group">
                   <label className="form-label" htmlFor="startTime">
                     <Clock size={12} style={{ display: "inline", marginRight: 4 }} />
                     Start Time (IST)
@@ -449,16 +420,16 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
             </div>
 
             {/* Section 2: Session Execution Mode (Manual / Semi-Auto / Full-Auto) */}
-            <div className="session-section-card">
-              <div className="session-section-head">
+            <div className="session-section-card" style={{ padding: "10px 12px", marginBottom: 10 }}>
+              <div className="session-section-head" style={{ marginBottom: 8 }}>
                 <span className="session-section-title">
-                  <Bot size={14} className="text-blue" />
+                  <Bot size={13} className="text-blue" />
                   <span>2. Trader Execution Mode</span>
                 </span>
                 <span className="badge badge--blue">{sessionType}</span>
               </div>
 
-              <div className="session-mode-grid">
+              <div className="session-mode-grid" style={{ gap: 8 }}>
                 {SESSION_MODES.map((m) => {
                   const active = sessionType === m.value;
                   return (
@@ -466,6 +437,7 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
                       key={m.value}
                       type="button"
                       className={`session-mode-card ${active ? "session-mode-card--active" : ""}`}
+                      style={{ padding: "8px 10px" }}
                       onClick={() => setValue("sessionType", m.value, { shouldDirty: true })}
                     >
                       <div className="session-mode-card__top">
@@ -480,62 +452,116 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
                           {m.tag}
                         </span>
                       </div>
-                      <span className="session-mode-card__desc">{m.desc}</span>
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Section 2B: Specialist Preset Traders Assigned to This Session */}
-            <div className="session-section-card">
-              <div className="session-section-head">
+            {/* Section 3: Session Manager Psychology & Opportunities Traders */}
+            <div className="session-section-card" style={{ padding: "10px 12px", marginBottom: 10 }}>
+              <div className="session-section-head" style={{ marginBottom: 8 }}>
                 <span className="session-section-title">
-                  <Cpu size={14} className="text-blue" />
-                  <span>3. Assigned Preset Traders ({traders.length} / 3 Active)</span>
+                  <Cpu size={13} className="text-blue" />
+                  <span>3. Session Manager Psychology &amp; Traders</span>
                 </span>
-                <button
-                  type="button"
-                  className="btn btn--ghost"
-                  style={{ padding: "2px 8px", fontSize: "0.7rem" }}
-                  onClick={() =>
-                    setValue(
-                      "traders",
-                      PRESET_TRADERS.map((t) => t.code),
-                      { shouldValidate: true, shouldDirty: true },
-                    )
-                  }
-                >
-                  Enable All 3 Traders
-                </button>
+                <span className="micro text-muted">
+                  {traders.length}/{TRADER_CODES.length} active
+                </span>
               </div>
-              <div className="session-mode-grid">
-                {PRESET_TRADERS.map((tr) => {
-                  const active = traders.includes(tr.code);
+
+              <div
+                className="session-mode-grid"
+                style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginBottom: 8 }}
+              >
+                {TRADER_MANAGERS.map((mgr) => {
+                  const active = traders.includes(mgr.traderCode);
                   return (
                     <button
-                      key={tr.code}
+                      key={mgr.id}
                       type="button"
                       className={`session-mode-card ${active ? "session-mode-card--active" : ""}`}
-                      onClick={() => toggleChip("traders", tr.code)}
+                      style={{ padding: "8px 10px" }}
+                      onClick={() => toggleChip("traders", mgr.traderCode)}
                     >
                       <div className="session-mode-card__top">
                         <span
                           className="session-mode-card__title"
-                          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: "0.8rem" }}
                         >
-                          {active && <CheckCircle2 size={13} className="text-green" />}
-                          {tr.name}
+                          {active && <CheckCircle2 size={12} className="text-green" />}
+                          {mgr.name}
                         </span>
-                        <span className={`badge ${active ? tr.badgeClass : "badge--slate"}`}>
-                          {tr.tag}
+                        <span className={`badge ${active ? mgr.badgeClass : "badge--slate"}`}>
+                          {mgr.tag}
                         </span>
                       </div>
-                      <span className="session-mode-card__desc">{tr.desc}</span>
                     </button>
                   );
                 })}
               </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 6,
+                  paddingTop: 6,
+                  borderTop: "1px solid var(--border-subtle)",
+                }}
+              >
+                <span className="label text-secondary" style={{ fontSize: "0.74rem" }}>
+                  Opportunities Trader Scanners ({traders.length} / {TRADER_CODES.length} active)
+                </span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    style={{ padding: "2px 8px", fontSize: "0.68rem" }}
+                    onClick={() =>
+                      setValue("traders", [...TRADER_CODES], {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      })
+                    }
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    style={{ padding: "2px 8px", fontSize: "0.68rem" }}
+                    onClick={() =>
+                      setValue("traders", [], { shouldValidate: true, shouldDirty: true })
+                    }
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div className="toggle-chip-group">
+                {TRADER_CODES.map((code) => {
+                  const active = traders.includes(code);
+                  const meta = TRADER_META[code];
+                  return (
+                    <button
+                      key={code}
+                      type="button"
+                      className={`toggle-chip ${active ? "toggle-chip--active" : ""}`}
+                      onClick={() => toggleChip("traders", code)}
+                    >
+                      {active && <CheckCircle2 size={12} />}
+                      <span>{meta.name}</span>
+                      <span className={`badge ${active ? meta.badgeClass : "badge--slate"}`} style={{ fontSize: "0.62rem" }}>
+                        {meta.tag}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
               {errors.traders && (
                 <span className="form-error" style={{ display: "block", marginTop: 6 }}>
                   {errors.traders.message as string}
@@ -544,10 +570,10 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
             </div>
 
             {/* Section 4: Scope & Underlyings */}
-            <div className="session-section-card">
-              <div className="session-section-head">
+            <div className="session-section-card" style={{ padding: "10px 12px", marginBottom: 10 }}>
+              <div className="session-section-head" style={{ marginBottom: 8 }}>
                 <span className="session-section-title">
-                  <Layers size={14} className="text-blue" />
+                  <Layers size={13} className="text-blue" />
                   <span>4. Market Scope &amp; Underlyings</span>
                 </span>
                 <div style={{ display: "flex", gap: "var(--space-2)" }}>
@@ -702,6 +728,7 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
               aria-checked={routeThroughUpstox}
               tabIndex={0}
               className={`upstox-toggle-card ${routeThroughUpstox ? "upstox-toggle-card--live" : ""}`}
+              style={{ padding: "10px 12px" }}
               onClick={() =>
                 setValue("routeThroughUpstox", !routeThroughUpstox, { shouldDirty: true })
               }
@@ -714,7 +741,7 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
             >
               <div className="upstox-toggle-card__left">
                 <div className="upstox-toggle-card__icon">
-                  {routeThroughUpstox ? <Zap size={18} /> : <ShieldAlert size={18} />}
+                  {routeThroughUpstox ? <Zap size={16} /> : <ShieldAlert size={16} />}
                 </div>
                 <div>
                   <div className="upstox-toggle-card__title">
@@ -723,11 +750,6 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
                       {routeThroughUpstox ? "LIVE UPSTOX ORDERS ON" : "SIMULATED MODE"}
                     </span>
                   </div>
-                  <p className="upstox-toggle-card__desc">
-                    {routeThroughUpstox
-                      ? "ENABLED — Places real intraday MARKET BUY orders on entry and SELL orders on exit directly via Upstox HFT API (api-hft.upstox.com/v2/order/place)."
-                      : "DISABLED — Paper execution mode. The Trader loop streams live Upstox LTP & 1m candles and trails SL/target without sending real broker orders."}
-                  </p>
                 </div>
               </div>
 

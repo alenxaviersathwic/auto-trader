@@ -21,8 +21,8 @@ class SessionPickResponse(BaseModel):
     expiry: str
     instrumentKey: Optional[str] = None
     strategy: Optional[str] = None
-    traderCode: str = "ORB_WAVE_TRADER"
-    traderName: str = "ORB & Momentum Wave Runner"
+    traderCode: str = "FLOW_MOMENTUM_TRADER"
+    traderName: str = "Flow & Momentum Trader"
     confidence: int
     entry: float
     entryMax: float
@@ -53,6 +53,7 @@ class SessionPickResponse(BaseModel):
     winProbPct: float = 0.0              # win probability the size was scaled by (the opportunity's confidence)
     usagePct: float = 0.0                # share of the free capital this pick uses
     secondsLeft: float = 0.0  # seconds until the opportunity expires (0 once LOCKED / EXPIRED)
+    outcomeAnalysis: Optional[dict[str, Any]] = None  # session manager's check, written by "Analyse"
     createdAt: datetime
 
 
@@ -72,6 +73,16 @@ class SessionCapitalResponse(BaseModel):
     activeTradeIds: list[int] = []
 
 
+class SessionManagerResponse(BaseModel):
+    """The session manager's pick of the open offers, and why (session_manager.best_suggestion)."""
+
+    pickId: int
+    headline: str
+    reasons: list[str]
+    cautions: list[str]
+    alternatives: int
+
+
 class SessionLoopResponse(BaseModel):
     """Result of one loop tick."""
 
@@ -84,6 +95,23 @@ class SessionLoopResponse(BaseModel):
     lockedPicks: list[SessionPickResponse] = []  # LOCKED picks awaiting entry (SEMI_AUTO / MANUAL)
     capital: SessionCapitalResponse
     scanned: dict[str, Any]  # {"candidates": n, "excluded": {reason: n}}
+    manager: Optional[SessionManagerResponse] = None  # best suggestion now (only while picks are open)
+
+
+class SessionBatchResponse(BaseModel):
+    """Every pick one loop pass offered (same offeredAt), with the session manager's check once analysed."""
+
+    batchKey: str          # ISO offeredAt of the pass; pass it back to /batches/analyse
+    batchNo: int           # 1 = the session's first batch
+    offeredAt: datetime
+    picks: list[SessionPickResponse]
+    analysedAt: Optional[datetime] = None
+    verdict: Optional[str] = None  # SUCCESS | FAILURE | MIXED | NO_MOVE | PENDING (None = not analysed yet)
+    summary: dict[str, Any] = {}
+
+
+class BatchAnalyseRequest(BaseModel):
+    batchKey: str
 
 
 class SessionPickSearchFilter(BaseFilter):

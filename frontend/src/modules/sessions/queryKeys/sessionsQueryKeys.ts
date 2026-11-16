@@ -1,3 +1,4 @@
+import { BaseFilter } from "../../../core/types/filter.types";
 import { SessionPickSearchFilter, TradingSessionSearchFilter } from "../types/sessions.types";
 
 /**
@@ -11,4 +12,6 @@ export const sessionsQueryKeys = {
   detail: (id: number) => [...sessionsQueryKeys.details(), id] as const,
   picks: (id: number) => [...sessionsQueryKeys.all, "picks", id] as const,
   pickList: (id: number, filter: SessionPickSearchFilter) => [...sessionsQueryKeys.picks(id), filter] as const,
+  batches: (id: number) => [...sessionsQueryKeys.all, "batches", id] as const,
+  batchList: (id: number, filter: BaseFilter) => [...sessionsQueryKeys.batches(id), filter] as const,
 };

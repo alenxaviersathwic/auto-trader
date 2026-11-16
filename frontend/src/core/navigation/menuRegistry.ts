@@ -42,7 +42,7 @@ class MenuRegistry {
   }
 }
 
-import { Users, TrendingUp, BotMessageSquare, Sparkles, CalendarClock, History, Activity } from "lucide-react";
+import { Users, TrendingUp, BotMessageSquare, Sparkles, CalendarClock, History, Activity, Bell } from "lucide-react";
 
 export const menuRegistry = new MenuRegistry();
 
@@ -64,10 +64,10 @@ menuRegistry.register({
   order: 2,
 });
 
-// Register Active Trader Desk navigation item (3 Preset Traders + Live Positions)
+// Trade history: the two traders' results and every trade (trading itself happens on the session screen)
 menuRegistry.register({
   id: "active-trader",
-  label: "Traders & Live Desk",
+  label: "Trade history",
   path: "/trades",
   icon: Activity,
   order: 2.5,
@@ -123,3 +123,12 @@ export function useMenuItems(): MenuItem[] {
 
   return items;
 }
+
+// Notification settings: which events alert you, and how
+menuRegistry.register({
+  id: "notification-settings",
+  label: "Notifications",
+  path: "/settings/notifications",
+  icon: Bell,
+  order: 9,
+});

@@ -4,7 +4,12 @@ from datetime import datetime
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.opportunities.entity.opportunity_entity import OpportunityIteration, OpportunityMaster, TradeOpportunity
+from app.modules.opportunities.entity.opportunity_entity import (
+    OpportunityIteration,
+    OpportunityMaster,
+    OptionChainSnapshot,
+    TradeOpportunity,
+)
 
 
 class OpportunityRepository:
@@ -95,6 +100,16 @@ class OpportunityRepository:
             .order_by(TradeOpportunity.createdAt.desc(), TradeOpportunity.rank.asc())
         )
         return list((await session.execute(q)).scalars().all())
+
+    async def by_ids(self, session: AsyncSession, ids: Iterable[int]) -> list[TradeOpportunity]:
+        """Rows by id (any outcome); used by the session manager's batch analysis."""
+        wanted = list({int(i) for i in ids})
+        if not wanted:
+            return []
+        res = await session.execute(
+            select(TradeOpportunity).where(TradeOpportunity.status == 1).where(TradeOpportunity.id.in_(wanted))
+        )
+        return list(res.scalars().all())
 
     async def pending(self, session: AsyncSession) -> list[TradeOpportunity]:
         res = await session.execute(
@@ -201,7 +216,41 @@ def risk_level(confidence: int, reward_risk: float, spread_pct: float) -> str:
     return "HIGH"
 
 
+class OptionChainSnapshotRepository:
+    """Reads option_chain_snapshots (written by service/chain_recorder.py)."""
+
+    async def latest(self, session: AsyncSession, code: str, expiry: str, since: datetime) -> OptionChainSnapshot | None:
+        """Newest snapshot of one underlying / expiry recorded at or after `since`."""
+        res = await session.execute(
+            select(OptionChainSnapshot)
+            .where(OptionChainSnapshot.status == 1)
+            .where(OptionChainSnapshot.underlyingCode == code)
+            .where(OptionChainSnapshot.expiry == expiry)
+            .where(OptionChainSnapshot.createdAt >= since)
+            .order_by(OptionChainSnapshot.createdAt.desc())
+            .limit(1)
+        )
+        return res.scalars().first()
+
+    async def latest_before(
+        self, session: AsyncSession, code: str, expiry: str, before: datetime, not_before: datetime
+    ) -> OptionChainSnapshot | None:
+        """Newest snapshot recorded in [`not_before`, `before`] -- the comparison point for OI change."""
+        res = await session.execute(
+            select(OptionChainSnapshot)
+            .where(OptionChainSnapshot.status == 1)
+            .where(OptionChainSnapshot.underlyingCode == code)
+            .where(OptionChainSnapshot.expiry == expiry)
+            .where(OptionChainSnapshot.createdAt <= before)
+            .where(OptionChainSnapshot.createdAt >= not_before)
+            .order_by(OptionChainSnapshot.createdAt.desc())
+            .limit(1)
+        )
+        return res.scalars().first()
+
+
 opportunity_repository = OpportunityRepository()
+option_chain_snapshot_repository = OptionChainSnapshotRepository()
 opportunity_master_repository = OpportunityMasterRepository()
 opportunity_iteration_repository = OpportunityIterationRepository()
 

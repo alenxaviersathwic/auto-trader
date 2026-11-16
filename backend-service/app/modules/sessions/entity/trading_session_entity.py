@@ -37,8 +37,10 @@ class TradingSession(BaseEntity):
         "traders",
         JSONB,
         nullable=False,
-        default=lambda: ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"],
+        default=lambda: ["FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER"],
     )
+    # Entry strictness (sessions/service/session_risk.py): LOW | MEDIUM | HIGH. Editable while the session runs.
+    riskLevel: Mapped[str] = mapped_column("risk_level", String(8), nullable=False, default="LOW")
 
     sessionType: Mapped[str] = mapped_column(
         "session_type", String(12), nullable=False, default="MANUAL"

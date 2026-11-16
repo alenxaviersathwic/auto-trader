@@ -16,6 +16,11 @@ from app.core.pagination.page_result import PageResult
 from app.modules.opportunities.service.costs import round_trip_cost_pct
 from app.modules.opportunities.service.menu_builder import MOMO_EXIT
 from app.modules.opportunities.service.run_service import opportunity_run_service
+from app.core.events import notify as nt
+from app.core.logging.logger import logger
+from app.modules.learning.service import learning_rules
+from app.modules.learning.service.learning_service import learning_service
+from app.modules.opportunities.service import chain_view
 from app.modules.opportunities.service.setups import SETUP_POLICY
 from app.modules.sessions.service.session_sizing import (
     RISK_PER_TRADE_PCT,
@@ -38,9 +43,11 @@ from app.modules.trades.schema.trade_schema import (
 )
 from app.modules.trades.service import trader_brain
 from app.modules.trades.service.trader_presets import (
+    ALL_PRESET_TRADER_CODES,
     TRADER_PRESETS,
     assign_trader_for_opportunity,
     get_trader_preset,
+    normalize_trader_code,
 )
 from app.modules.trades.service.upstox_order_client import (
     UpstoxOrderClient,
@@ -67,6 +74,57 @@ def _session_loop_service():
 
 def _utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+FIB_SOURCE_SWING = "SETUP_SWING"  # levels of the real chart swing the Fib setup found (fib_pocket.setup_meta())
+FIB_SOURCE_PLAN = "PLAN"          # no chart swing known: multiples of the planned move (entry -> target)
+
+
+def _fib_levels(entry_at: float, initial_stop: float, initial_target: float,
+                setup_meta: dict[str, Any] | None) -> dict[str, Any]:
+    """Level set stored on a trade (marketTelemetry.fibLevels), in option-premium prices.
+
+    With a Fib setup behind the trade the levels are the real swing's, shifted by the difference between the fill
+    and the premium at signal time, and the underlying swing is kept alongside. Otherwise they are plain multiples
+    of the planned move and are labelled PLAN -- no swing low / high is made up."""
+    rt = trader_brain.round_tick
+    prem = (setup_meta or {}).get("premium") if (setup_meta or {}).get("kind") == "FIB_GOLDEN_POCKET" else None
+    if prem and setup_meta.get("premiumAtSignal"):
+        shift = entry_at - float(setup_meta["premiumAtSignal"])
+        lv = {k: rt(max(0.05, float(prem[k]) + shift)) for k in ("fib500", "fib618", "fib786", "fib100", "fib1272", "fib1618")}
+        return {
+            "source": FIB_SOURCE_SWING, **lv,
+            "swingLow": rt(max(0.05, float(prem["swingStart"]) + shift)), "swingHigh": lv["fib100"],
+            "underlying": setup_meta.get("underlying"), "depth": setup_meta.get("depth"),
+            "oiConfirm": setup_meta.get("oiConfirm"), "volumeConfirm": setup_meta.get("volumeConfirm"),
+            "why": setup_meta.get("why"),
+        }
+    move = max(0.05, initial_target - entry_at)
+    return {
+        "source": FIB_SOURCE_PLAN,
+        "fib500": rt(entry_at + 0.50 * move), "fib618": rt(entry_at + 0.50 * move), "fib786": rt(initial_stop),
+        "fib100": rt(initial_target), "fib1272": rt(entry_at + 1.272 * move), "fib1618": rt(entry_at + 1.618 * move),
+    }
+
+
+def _real_extensions(fib: dict[str, Any] | None) -> tuple[float, float] | None:
+    """(1.272, 1.618) premium extensions when the trade carries a real swing, else None."""
+    if not fib or fib.get("source") != FIB_SOURCE_SWING:
+        return None
+    return float(fib["fib1272"]), float(fib["fib1618"])
+
+
+OA_REFRESH_SECONDS = 60  # the OI ladder on a running trade is re-read from the recorded chain this often
+
+
+def _oa_is_fresh(oa: dict[str, Any] | None, now: datetime) -> bool:
+    """True when `oa` is a real chain reading (chain_view) taken within OA_REFRESH_SECONDS."""
+    if not oa or oa.get("source") != chain_view.SOURCE or not oa.get("asOf"):
+        return False
+    try:
+        return (now - _utc(datetime.fromisoformat(oa["asOf"]))).total_seconds() < OA_REFRESH_SECONDS
+    except ValueError:
+        return False
 
 
 def _trade_close_at(strategy: str | None, session_close: datetime | None, now: datetime) -> datetime | None:
@@ -417,15 +475,8 @@ class TradeService:
             pick.strategy, int(pick.confidence), float(pick.rewardRisk)
         )
         preset = get_trader_preset(trader_code)
-        planned_move = max(0.05, initial_target - entry_at)
-        oa_analysis = self._build_oa_analysis(
-            underlying_code=pick.underlyingCode,
-            option_type=pick.optionType,
-            strike=float(pick.strike),
-            entry_at=entry_at,
-            initial_stop=initial_stop,
-            initial_target=initial_target,
-        )
+        oa_analysis = await self._oa_analysis(db, pick.underlyingCode, pick.expiry, pick.optionType, pick.strike)
+        fib_levels = _fib_levels(entry_at, initial_stop, initial_target, getattr(pick, "setupMeta", None))
 
         entity = ActiveTrade(
             sessionId=s.id,
@@ -482,18 +533,8 @@ class TradeService:
                 "inRunnerMode": False,
                 "traderCode": trader_code,
                 "traderName": preset["name"],
-                "projectedTarget": trader_brain.round_tick(entry_at + 1.618 * planned_move),
-                "fibLevels": {
-                    "swingLow": trader_brain.round_tick(initial_stop * 0.94),
-                    "swingHigh": trader_brain.round_tick(initial_target),
-                    "fib382": trader_brain.round_tick(entry_at + 0.382 * planned_move),
-                    "fib500": trader_brain.round_tick(entry_at + 0.50 * planned_move),
-                    "fib618": trader_brain.round_tick(entry_at + 0.50 * planned_move),
-                    "fib786": trader_brain.round_tick(initial_stop),
-                    "fib100": trader_brain.round_tick(initial_target),
-                    "fib1272": trader_brain.round_tick(entry_at + 1.272 * planned_move),
-                    "fib1618": trader_brain.round_tick(entry_at + 1.618 * planned_move),
-                },
+                "projectedTarget": fib_levels["fib1618"],
+                "fibLevels": fib_levels,
                 "oaAnalysis": oa_analysis,
                 "execution": execution,
             },
@@ -501,71 +542,27 @@ class TradeService:
         saved = await self.repo.save(db, entity)
         await db.commit()
         _pilot_runner().start(saved.id)
+        await nt.notify(nt.TRADE_ENTERED, f"Trade entered · #{saved.id}",
+                        f"{saved.underlyingCode} {float(saved.strike):g} {saved.optionType} · {saved.lots} lot(s) at "
+                        f"₹{float(saved.entryAt):.2f} · stop ₹{float(saved.initialStop):.2f} · target "
+                        f"₹{float(saved.initialTarget):.2f}"
+                        + (" · Upstox" if saved.routeThroughUpstox else " · simulated"),
+                        severity="success", session_id=saved.sessionId, trade_id=saved.id,
+                        link=f"/trades/{saved.id}")
         return self.to_response(saved)
 
     @staticmethod
-    def _build_oa_analysis(
-        underlying_code: str,
-        option_type: str,
-        strike: float,
-        entry_at: float,
-        initial_stop: float,
-        initial_target: float,
-        custom: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Builds Option Chain / Open Interest (OA) strike structure telemetry for the contract."""
-        if custom and custom.get("strikes"):
-            return custom
-        code = underlying_code.upper()
-        step = 100.0 if code in {"BANKNIFTY", "SENSEX"} else 50.0 if code in {"NIFTY", "FINNIFTY"} else 25.0
-        is_ce = option_type.upper() == "CE"
-        strikes_list: list[dict[str, Any]] = []
-        for offset in (-3, -2, -1, 0, 1, 2, 3):
-            st = round(strike + offset * step, 2)
-            # Call OI builds higher at resistance (+2/+3 strikes); Put OI builds higher at support (-1/-2 strikes)
-            if is_ce:
-                call_oi = int(1850000 * (1.35 if offset == 2 else 1.15 if offset == 1 else 0.72 if offset <= 0 else 0.95))
-                put_oi = int(2150000 * (1.42 if offset in (-1, 0) else 1.10 if offset == -2 else 0.65))
-                call_chg = -14.5 if offset in (0, 1) else 22.4 if offset == 2 else 8.2
-                put_chg = 28.6 if offset in (-1, 0) else 12.1
-            else:
-                call_oi = int(2150000 * (1.42 if offset in (0, 1) else 1.10 if offset == 2 else 0.65))
-                put_oi = int(1850000 * (1.35 if offset == -2 else 1.15 if offset == -1 else 0.72 if offset >= 0 else 0.95))
-                call_chg = 28.6 if offset in (0, 1) else 12.1
-                put_chg = -14.5 if offset in (-1, 0) else 22.4 if offset == -2 else 8.2
-            role = (
-                "ACTIVE_STRIKE"
-                if offset == 0
-                else ("CALL_OI_WALL" if (is_ce and offset == 2) or (not is_ce and offset == 1) else "")
-                or ("PUT_OI_WALL" if (is_ce and offset == -1) or (not is_ce and offset == -2) else "CHAIN")
-            )
-            strikes_list.append(
-                {
-                    "strike": st,
-                    "callOi": call_oi,
-                    "putOi": put_oi,
-                    "callOiChgPct": call_chg,
-                    "putOiChgPct": put_chg,
-                    "volumeRatio": round(1.55 if offset == 0 else 1.25 if abs(offset) == 1 else 0.92, 2),
-                    "role": role,
-                }
-            )
-        pcr = round(1.24 if is_ce else 0.78, 2)
-        support_strike = round(strike - step if is_ce else strike - 2 * step, 2)
-        resistance_strike = round(strike + 2 * step if is_ce else strike + step, 2)
-        return {
-            "pcr": pcr,
-            "maxPain": round(strike + (step if is_ce else -step), 2),
-            "putOiSupportWall": support_strike,
-            "callOiResistanceWall": resistance_strike,
-            "gammaWall": resistance_strike if is_ce else support_strike,
-            "oiBuildup": "SHORT_COVERING + PUT_WRITING_FLOOR" if is_ce else "LONG_UNWINDING + CALL_WRITING_CEILING",
-            "verdict": (
-                f"OA confirms {'CE' if is_ce else 'PE'} edge: PCR {pcr} with strong OI floor at {support_strike:,.0f} "
-                f"(backing SL ₹{initial_stop:.1f}) and unwinding toward {resistance_strike:,.0f} (Target ₹{initial_target:.1f})."
-            ),
-            "strikes": strikes_list,
-        }
+    async def _oa_analysis(
+        db: AsyncSession, underlying_code: str, expiry: str, option_type: str, strike: float
+    ) -> dict[str, Any] | None:
+        """Real option-chain OI ladder around the contract (opportunities/service/chain_view.py), or None when no
+        chain snapshot was recorded in the last few minutes. Never estimated: until 16 Nov 2026 this returned
+        hard-coded OI numbers, which the trade screen then showed as if they were the live chain."""
+        try:
+            return await chain_view.oa_analysis(db, underlying_code.upper(), expiry, option_type, float(strike))
+        except Exception as e:  # noqa: BLE001 -- the OI picture is context only; it must never block a trade or tick
+            logger.warning(f"[OA] {underlying_code} {strike}{option_type}: {type(e).__name__}: {e}")
+            return None
 
     async def insert_direct_trade(self, db: AsyncSession, request: TradeDirectInsertRequest) -> TradeResponse:
         """
@@ -626,7 +623,7 @@ class TradeService:
                     scope=scope,
                     underlyings=[code] if scope == "INDEX" else ["NIFTY"],
                     commodityItems=[code] if scope == "COMMODITY" else [],
-                    traders=["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"],
+                    traders=list(ALL_PRESET_TRADER_CODES),
                     sessionType="MANUAL",
                     routeThroughUpstox=False,
                     startAt=start_at,
@@ -650,9 +647,7 @@ class TradeService:
         quantity = lots * lot_units
         capital_used = round(quantity * entry_at, 2)
 
-        trader_code = request.traderCode if request.traderCode in {p["code"] for p in TRADER_PRESETS} else assign_trader_for_opportunity(
-            request.strategy, int(request.confidence), (initial_target - entry_at) / max(0.05, entry_at - initial_stop)
-        )
+        trader_code = normalize_trader_code(request.traderCode) or assign_trader_for_opportunity(request.strategy)
         preset = get_trader_preset(trader_code)
         win_rate_pct = await opportunity_run_service.resolve_win_rate_pct(
             db, code, request.strategy, int(request.confidence)
@@ -660,23 +655,18 @@ class TradeService:
         profile = trader_brain.select_profile(win_rate_pct, int(request.confidence))
 
         planned_move = max(0.05, initial_target - entry_at)
-        swing_low = round(float(request.swingLow if request.swingLow else initial_stop * 0.94), 2)
-        swing_high = round(float(request.swingHigh if request.swingHigh else initial_target), 2)
-        oa_analysis = self._build_oa_analysis(
-            underlying_code=code,
-            option_type=request.optionType,
-            strike=float(request.strike),
-            entry_at=entry_at,
-            initial_stop=initial_stop,
-            initial_target=initial_target,
-            custom=request.oaAnalysis,
-        )
+        fib_levels = _fib_levels(entry_at, initial_stop, initial_target, None)
+        if request.swingLow and request.swingHigh and request.swingHigh > request.swingLow:
+            # a swing the user typed in is kept as typed; nothing is invented when it is missing
+            fib_levels.update(swingLow=round(float(request.swingLow), 2), swingHigh=round(float(request.swingHigh), 2))
+        expiry_str = request.expiry or now.astimezone(_IST).strftime("%Y-%m-%d")
+        # request.oaAnalysis (an OI ladder sent by the client) is ignored: only recorded chain data is stored
+        oa_analysis = await self._oa_analysis(db, code, expiry_str, request.optionType, request.strike)
 
         gross, charges, net, pnl_pct = self._compute_pnl(
             entry_at, entry_at, quantity, lot_units, code
         )
         synthetic_pick_id = -(int(time.time() * 1000) % 900_000_000 + 1)
-        expiry_str = request.expiry or now.astimezone(_IST).strftime("%Y-%m-%d")
 
         initial_event = {
             "at": now.isoformat(),
@@ -747,18 +737,8 @@ class TradeService:
                 "inRunnerMode": False,
                 "traderCode": trader_code,
                 "traderName": preset["name"],
-                "projectedTarget": trader_brain.round_tick(entry_at + 1.618 * planned_move),
-                "fibLevels": {
-                    "swingLow": swing_low,
-                    "swingHigh": swing_high,
-                    "fib382": trader_brain.round_tick(entry_at + 0.382 * planned_move),
-                    "fib500": trader_brain.round_tick(entry_at + 0.50 * planned_move),
-                    "fib618": trader_brain.round_tick(entry_at + 0.50 * planned_move),
-                    "fib786": trader_brain.round_tick(initial_stop),
-                    "fib100": trader_brain.round_tick(initial_target),
-                    "fib1272": trader_brain.round_tick(entry_at + 1.272 * planned_move),
-                    "fib1618": trader_brain.round_tick(entry_at + 1.618 * planned_move),
-                },
+                "projectedTarget": fib_levels["fib1618"],
+                "fibLevels": fib_levels,
                 "oaAnalysis": oa_analysis,
                 "execution": {"plannedEntry": entry_at, "requestedEntry": entry_at, "orderType": "FIB_OA_DESK"},
             },
@@ -766,6 +746,13 @@ class TradeService:
         saved = await self.repo.save(db, entity)
         await db.commit()
         _pilot_runner().start(saved.id)
+        await nt.notify(nt.TRADE_ENTERED, f"Trade entered · #{saved.id}",
+                        f"{saved.underlyingCode} {float(saved.strike):g} {saved.optionType} · {saved.lots} lot(s) at "
+                        f"₹{float(saved.entryAt):.2f} · stop ₹{float(saved.initialStop):.2f} · target "
+                        f"₹{float(saved.initialTarget):.2f}"
+                        + (" · Upstox" if saved.routeThroughUpstox else " · simulated"),
+                        severity="success", session_id=saved.sessionId, trade_id=saved.id,
+                        link=f"/trades/{saved.id}")
         return self.to_response(saved)
 
     async def open_exposure(self, db: AsyncSession, session_id: int) -> list[tuple[str, str]]:
@@ -779,7 +766,7 @@ class TradeService:
         return await self.repo.net_pnl_exited_since(db, user_id, monday.astimezone(UTC))
 
     async def list_presets(self, db: AsyncSession) -> list[TraderPresetResponse]:
-        """Returns the 3 institutional Preset Traders enriched with live & historical trade stats."""
+        """The two Traders with their real stats from the latest 100 trades (no closed trades = win rate 0)."""
         page = await self.repo.search(db, TradeSearchFilter(page=0, limit=100, sortBy="createdAt", sortDir="desc"))
         all_trades = page.list
         out: list[TraderPresetResponse] = []
@@ -788,13 +775,13 @@ class TradeService:
             matching = [
                 t
                 for t in all_trades
-                if (t.marketTelemetry or {}).get("traderCode") == code
-                or assign_trader_for_opportunity(t.strategy, int(t.confidence), 1.5) == code
+                if (normalize_trader_code((t.marketTelemetry or {}).get("traderCode"))
+                    or assign_trader_for_opportunity(t.strategy)) == code
             ]
             active_cnt = sum(1 for t in matching if t.tradeState == "RUNNING")
             exited = [t for t in matching if t.tradeState == "EXITED"]
             wins = sum(1 for t in exited if float(t.netPnl or 0) > 0)
-            win_rate = round((wins / len(exited)) * 100.0, 1) if exited else 76.0
+            win_rate = round((wins / len(exited)) * 100.0, 1) if exited else 0.0  # 0 with no closed trades
             net_pnl = round(sum(float(t.netPnl or 0) for t in matching), 2)
             out.append(
                 TraderPresetResponse(
@@ -915,6 +902,31 @@ class TradeService:
         )
         t.trailEvents = events
         await _session_loop_service().record_trade_realized_pnl(db, t.sessionId, net)
+        await self._learn_from(db, t)
+        await nt.notify(
+            nt.TRADE_EXITED, f"Trade closed · #{t.id} {t.underlyingCode} {float(t.strike):g} {t.optionType}",
+            f"{exit_reason.replace('_', ' ').lower()} at ₹{exit_price:.2f} · net "
+            f"{'+' if net >= 0 else '-'}₹{abs(net):,.2f} ({pnl_pct:+.2f}%)",
+            severity="success" if net > 0 else "danger", session_id=t.sessionId, trade_id=t.id,
+            link=f"/trades/{t.id}", data={"netPnl": net, "exitReason": exit_reason})
+
+    async def _learn_from(self, db: AsyncSession, t: ActiveTrade) -> None:
+        """Autopsy agent: every finished trade is analysed and feeds the setup scorecards and guards. Never blocks
+        an exit: a failure here is logged and the trade stays closed."""
+        try:
+            from app.modules.opportunities.provider.underlying_config import get_config
+
+            risks: list[Any] = []
+            if int(t.pickId) > 0:
+                try:
+                    pick = await _session_loop_service().get_pick_entity(db, t.sessionId, t.pickId)
+                    risks = list(pick.risks or [])
+                except NotFoundException:
+                    risks = []
+            cfg = get_config(t.underlyingCode)
+            await learning_service.on_trade_closed(db, t, risks, cfg.exchange if cfg else None)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[AUTOPSY] trade {t.id}: {type(e).__name__}: {e}")
 
     async def tick(self, db: AsyncSession, trade_id: int) -> TradeLiveSnapshot:
         """One 1-second tick of the trade's dedicated pilot loop."""
@@ -923,6 +935,7 @@ class TradeService:
             if not t:
                 raise NotFoundException(message=f"Trade {trade_id} not found")
             now = datetime.now(UTC)
+            await learning_service.ensure_loaded(db)
             candles = await self._candles_for(db, t)
             if t.tradeState != "RUNNING":
                 return TradeLiveSnapshot(tradeId=t.id, serverTime=now, trade=self.to_response(t, candles_1m=candles))
@@ -952,34 +965,38 @@ class TradeService:
                 peak_price=float(t.peakPrice),
                 ltp=ltp,
                 trader_profile=t.traderProfile,
+                trader_code=(t.marketTelemetry or {}).get("traderCode")
+                or assign_trader_for_opportunity(t.strategy),
+                fib_extensions=_real_extensions((t.marketTelemetry or {}).get("fibLevels")),
                 candles_1m=candles,
                 now=now,
                 close_at=_trade_close_at(t.strategy, s.closeAt, now),
-                momentum_trail=MOMO_EXIT if SETUP_POLICY.get(t.strategy or "") in ("CORE", "MERGED") else None,
+                momentum_trail=learning_rules.trail_override(learning_service.view(), t.strategy, MOMO_EXIT)
+                if SETUP_POLICY.get(t.strategy or "") in ("CORE", "MERGED") else None,
             )
             prev_tel = t.marketTelemetry or {}
-            trader_code = prev_tel.get("traderCode") or assign_trader_for_opportunity(
-                t.strategy, int(t.confidence), 1.5
+            trader_code = normalize_trader_code(prev_tel.get("traderCode")) or assign_trader_for_opportunity(
+                t.strategy
             )
             preset = get_trader_preset(trader_code)
-            merged_fib = {
-                **(prev_tel.get("fibLevels") or {}),
+            prev_fib = prev_tel.get("fibLevels") or {}
+            # levels from the real chart swing are fixed at entry; plan-based ones follow the brain
+            merged_fib = prev_fib if prev_fib.get("source") == FIB_SOURCE_SWING else {
+                **prev_fib,
                 **(decision.telemetry.get("fibLevels") or {}),
             }
-            oa_analysis = prev_tel.get("oaAnalysis") or self._build_oa_analysis(
-                underlying_code=t.underlyingCode,
-                option_type=t.optionType,
-                strike=float(t.strike),
-                entry_at=float(t.entryAt),
-                initial_stop=float(t.initialStop),
-                initial_target=float(t.initialTarget),
-            )
+            oa_analysis = prev_tel.get("oaAnalysis")
+            if not _oa_is_fresh(oa_analysis, now):
+                # refreshed about once a minute from the recorded chain; older fabricated ladders are dropped
+                oa_analysis = await self._oa_analysis(db, t.underlyingCode, t.expiry, t.optionType, t.strike) or (
+                    oa_analysis if (oa_analysis or {}).get("source") == chain_view.SOURCE else None
+                )
             t.marketTelemetry = {
                 **decision.telemetry,
                 "fibLevels": merged_fib,
                 "oaAnalysis": oa_analysis,
                 "traderCode": trader_code,
-                "traderName": prev_tel.get("traderName") or preset["name"],
+                "traderName": preset["name"],
                 "sessionType": s.sessionType,
                 "exitSignal": decision.exitReason if decision.action == "EXIT" else None,
                 "exitRecommendation": decision.reason,
@@ -993,6 +1010,11 @@ class TradeService:
                 if s.sessionType == "SEMI_AUTO":
                     sig_action = f"EXIT_SIGNAL:{decision.exitReason or 'TARGET_HIT'}"
                     events = list(t.trailEvents or [])
+                    if prev_tel.get("exitSignal") != decision.exitReason:
+                        await nt.notify(nt.EXIT_SIGNAL, f"Exit now · #{t.id} {t.underlyingCode} {float(t.strike):g} "
+                                        f"{t.optionType}", f"{decision.reason}. LTP ₹{ltp:.2f}, P&L ₹{float(t.netPnl):,.0f}.",
+                                        severity="warning", session_id=t.sessionId, trade_id=t.id,
+                                        link=f"/trades/{t.id}")
                     if not events or events[-1].get("action") != sig_action:
                         events.append(
                             {
@@ -1104,6 +1126,77 @@ class TradeService:
             snap = TradeLiveSnapshot(tradeId=t.id, serverTime=now, trade=self.to_response(t, candles_1m=candles))
             _pilot_runner().publish_snapshot(t.id, snap)
             _pilot_runner().stop(t.id)
+            return snap.trade
+
+    async def llm_analyze(self, db: AsyncSession, trade_id: int, risk_level: str | None = None) -> TradeResponse:
+        """Invokes LangGraph `position_trail_graph` to evaluate live 1m candles + Risk Profile with the LLM."""
+        from app.modules.trades.graph import position_trail_graph
+
+        async with self._lock_for(trade_id):
+            t = await self.repo.get_by_id(db, trade_id)
+            if not t:
+                raise NotFoundException(message=f"Trade {trade_id} not found")
+            if t.tradeState != "RUNNING":
+                return self.to_response(t)
+
+            candles = await self._candles_for(db, t)
+            trader_code = (t.marketTelemetry or {}).get("traderCode") or assign_trader_for_opportunity(
+                t.strategy, int(t.confidence), 1.5
+            )
+            if not risk_level:  # the session's own LOW / MEDIUM / HIGH (one risk setting, stored on the session)
+                try:
+                    sess = await _session_loop_service().get_session_entity(db, t.sessionId)
+                    risk_level = getattr(sess, "riskLevel", None) or "HIGH"
+                except NotFoundException:
+                    risk_level = "HIGH"
+            out = await position_trail_graph.ainvoke(
+                {
+                    "tradeId": t.id,
+                    "contract": f"{t.underlyingCode} {int(t.strike)} {t.optionType}",
+                    "traderCode": trader_code,
+                    "riskLevel": risk_level,
+                    "entryAt": float(t.entryAt),
+                    "initialStop": float(t.initialStop),
+                    "initialTarget": float(t.initialTarget),
+                    "currentStop": float(t.currentStop),
+                    "currentTarget": float(t.currentTarget),
+                    "ltp": float(t.lastPrice),
+                    "peakPrice": float(t.peakPrice),
+                    "candles1m": candles,
+                }
+            )
+            dec = out.get("decision") or {}
+            action = dec.get("action", "HOLD")
+            now = datetime.now(UTC)
+            old_stop = float(t.currentStop)
+            old_tgt = float(t.currentTarget)
+            new_stop = float(dec.get("newStop") or old_stop)
+            new_tgt = float(dec.get("newTarget") or old_tgt)
+            reason_txt = dec.get("reasoning") or "LangGraph LLM evaluation completed"
+            used_fallback = bool(out.get("usedFallback", False))
+            prefix = "LLM (Rule Fallback)" if used_fallback else "LangGraph LLM"
+
+            if action in ("TRAIL_SL", "STEP_TARGET"):
+                t.currentStop = new_stop
+                t.currentTarget = new_tgt
+
+            events = list(t.trailEvents or [])
+            events.append(
+                {
+                    "at": now.isoformat(),
+                    "action": f"LLM_{action}",
+                    "oldStop": old_stop,
+                    "newStop": float(t.currentStop),
+                    "oldTarget": old_tgt,
+                    "newTarget": float(t.currentTarget),
+                    "ltp": float(t.lastPrice),
+                    "reason": f"[{prefix} · {risk_level}] {reason_txt}",
+                }
+            )
+            t.trailEvents = events
+            await db.commit()
+            snap = TradeLiveSnapshot(tradeId=t.id, serverTime=now, trade=self.to_response(t, candles_1m=candles))
+            _pilot_runner().publish_snapshot(t.id, snap)
             return snap.trade
 
 

@@ -9,6 +9,8 @@ from app.modules.sessions.schema.session_pick_schema import SessionLoopResponse
 SCOPE_VALUES = ("INDEX", "COMMODITY")
 SESSION_TYPE_VALUES = ("FULL_AUTO", "SEMI_AUTO", "MANUAL")
 SESSION_STATUS_VALUES = ("ACTIVE", "CLOSED", "EXPIRED")
+RISK_LEVEL_VALUES = ("LOW", "MEDIUM", "HIGH")
+DEFAULT_TRADERS = ("FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER")
 HHMM_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"  # 24-hour HH:MM, read as IST
 
 
@@ -24,9 +26,10 @@ class TradingSessionCreateRequest(BaseModel):
     underlyings: list[str] = Field(default_factory=list, description="Selected index underlyings (scope=INDEX)")
     commodityItems: list[str] = Field(default_factory=list, description="Selected commodities (scope=COMMODITY)")
     traders: list[str] = Field(
-        default_factory=lambda: ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"],
-        description="Selected specialist Traders active in this session",
+        default_factory=lambda: list(DEFAULT_TRADERS),
+        description="Traders active in this session: FIB_GOLDEN_TRADER and / or FLOW_MOMENTUM_TRADER",
     )
+    riskLevel: str = Field(default="LOW", description="Entry strictness: LOW | MEDIUM | HIGH")
     sessionType: str = Field(default="MANUAL", description="FULL_AUTO | SEMI_AUTO | MANUAL")
     routeThroughUpstox: bool = Field(default=False, description="False = fully simulated session")
     startTime: Optional[str] = Field(default=None, pattern=HHMM_PATTERN, description="HH:MM IST. Blank = now if created at/after 09:25, else 09:15")
@@ -39,6 +42,8 @@ class TradingSessionCreateRequest(BaseModel):
             raise ValueError(f"scope must be one of {SCOPE_VALUES}")
         if self.sessionType.upper() not in SESSION_TYPE_VALUES:
             raise ValueError(f"sessionType must be one of {SESSION_TYPE_VALUES}")
+        if self.riskLevel.upper() not in RISK_LEVEL_VALUES:
+            raise ValueError(f"riskLevel must be one of {RISK_LEVEL_VALUES}")
         if scope == "INDEX" and not self.underlyings:
             raise ValueError("underlyings is required when scope is INDEX")
         if scope == "COMMODITY" and not self.commodityItems:
@@ -55,6 +60,7 @@ class TradingSessionUpdateRequest(BaseModel):
     underlyings: Optional[list[str]] = None
     commodityItems: Optional[list[str]] = None
     traders: Optional[list[str]] = None
+    riskLevel: Optional[str] = Field(default=None, description="LOW | MEDIUM | HIGH")
     sessionType: Optional[str] = None
     routeThroughUpstox: Optional[bool] = None
     sessionStatus: Optional[str] = Field(default=None, description="ACTIVE | CLOSED | EXPIRED")
@@ -65,6 +71,8 @@ class TradingSessionUpdateRequest(BaseModel):
     def _validate(self) -> "TradingSessionUpdateRequest":
         if self.sessionType is not None and self.sessionType.upper() not in SESSION_TYPE_VALUES:
             raise ValueError(f"sessionType must be one of {SESSION_TYPE_VALUES}")
+        if self.riskLevel is not None and self.riskLevel.upper() not in RISK_LEVEL_VALUES:
+            raise ValueError(f"riskLevel must be one of {RISK_LEVEL_VALUES}")
         if self.sessionStatus is not None and self.sessionStatus.upper() not in SESSION_STATUS_VALUES:
             raise ValueError(f"sessionStatus must be one of {SESSION_STATUS_VALUES}")
         return self
@@ -84,7 +92,9 @@ class TradingSessionResponse(BaseModel):
     scope: str
     underlyings: list[str]
     commodityItems: list[str]
-    traders: list[str] = ["FIB_GOLDEN_TRADER", "ORB_WAVE_TRADER", "FLOW_VWAP_TRADER"]
+    traders: list[str] = list(DEFAULT_TRADERS)
+    riskLevel: str = "LOW"
+    riskProfile: Optional[dict] = None  # what the level allows (session_risk.RiskProfile.as_dict())
     sessionType: str
     routeThroughUpstox: bool
     sessionStatus: str

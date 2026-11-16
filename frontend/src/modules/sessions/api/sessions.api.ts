@@ -1,6 +1,8 @@
 import { httpClient } from "../../../core/api/httpClient";
 import { PageResult } from "../../../core/types/pagination.types";
+import { BaseFilter } from "../../../core/types/filter.types";
 import {
+  SessionBatch,
   SessionPick,
   SessionPickSearchFilter,
   TradingSession,
@@ -48,4 +50,14 @@ export async function searchSessionPicks(
   filter: SessionPickSearchFilter
 ): Promise<PageResult<SessionPick>> {
   return httpClient.post(`/sessions/${id}/picks/search`, filter);
+}
+
+/** Picks grouped by the loop pass that offered them, newest first. */
+export async function searchSessionBatches(id: number, filter: BaseFilter): Promise<PageResult<SessionBatch>> {
+  return httpClient.post(`/sessions/${id}/batches/search`, filter);
+}
+
+/** Session manager checks one batch against real 1-minute candles and the trades taken from it. */
+export async function analyseSessionBatch(id: number, batchKey: string): Promise<SessionBatch> {
+  return httpClient.post(`/sessions/${id}/batches/analyse`, { batchKey });
 }

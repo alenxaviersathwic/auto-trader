@@ -3,6 +3,7 @@ import {
   useCandidates,
   useRunEngine,
   useRunStatus,
+  useResearchSchedule,
 } from "../hooks/useResearch";
 import { CandidateDrawer } from "../components/CandidateDrawer";
 import { ResearchCandidate } from "../types/research.types";
@@ -25,6 +26,7 @@ export const ResearchEnginePage: React.FC = () => {
 
   // Live status hook (polls GET /api/v1/research/run-status)
   const { data: runStatus, refetch: refetchStatus } = useRunStatus();
+  const { data: schedule } = useResearchSchedule();
 
   // Run engine trigger mutation (POST /api/v1/research/run)
   const runEngineMutation = useRunEngine();
@@ -237,6 +239,25 @@ export const ResearchEnginePage: React.FC = () => {
                 {indexOpportunityCount + commodityOpportunityCount}
               </span>
             </div>
+            {schedule && (
+              <div
+                className="sp-stat-pill"
+                title={`Automatic research every ${schedule.intervalMinutes} min, ${schedule.window} IST, while system usage < ${schedule.maxLoadPct}%. Last: ${schedule.last.reason}`}
+              >
+                <span className="sp-stat-label">Auto</span>
+                <span className="sp-stat-val mono">
+                  {!schedule.enabled
+                    ? "OFF"
+                    : schedule.last.at
+                      ? `${schedule.last.ran ? "ran" : "skipped"} ${new Date(schedule.last.at).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false })}`
+                      : "waiting"}
+                  {schedule.last.usage ? ` · ${schedule.last.usage.usagePct.toFixed(0)}% load` : ""}
+                  {schedule.nextRunAt
+                    ? ` · next ${new Date(schedule.nextRunAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false })}`
+                    : ""}
+                </span>
+              </div>
+            )}
             {isRunning && (
               <div className="sp-stat-pill sp-stat-pill--live">
                 <RefreshCw size={12} className="sp-spin" />

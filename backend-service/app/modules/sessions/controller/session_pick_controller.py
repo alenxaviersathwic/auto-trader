@@ -12,7 +12,10 @@ from app.core.pagination.page_result import PageResult
 from app.core.response.api_response import ApiResponse
 from app.core.response.response_helper import success
 from app.modules.sessions.engine import session_loop_runner
+from app.core.filter.base_filter import BaseFilter
 from app.modules.sessions.schema.session_pick_schema import (
+    BatchAnalyseRequest,
+    SessionBatchResponse,
     SessionPickResponse,
     SessionPickSearchFilter,
 )
@@ -93,3 +96,27 @@ async def search_picks(id: int, filter_obj: SessionPickSearchFilter, session: As
     """Paged history of the picks offered in a session, filterable by pickState."""
     page = await _loop_service.search_picks(session, id, filter_obj)
     return success(data=page, message="Session picks fetched successfully")
+
+
+@session_pick_router.post(
+    "/{id}/batches/search",
+    response_model=ApiResponse[PageResult[SessionBatchResponse]],
+    status_code=status.HTTP_200_OK,
+    summary="Search a session's batches",
+)
+async def search_batches(id: int, filter_obj: BaseFilter, session: AsyncSession = Depends(get_db)):
+    """Picks grouped by the loop pass that offered them, newest first, with the manager's verdict once analysed."""
+    page = await _loop_service.search_batches(session, id, filter_obj)
+    return success(data=page, message="Session batches fetched successfully")
+
+
+@session_pick_router.post(
+    "/{id}/batches/analyse",
+    response_model=ApiResponse[SessionBatchResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Analyse one batch: success or failure",
+)
+async def analyse_batch(id: int, body: BatchAnalyseRequest, session: AsyncSession = Depends(get_db)):
+    """Checks every pick of the batch against real 1-minute candles and the trades taken from it."""
+    batch = await _loop_service.analyse_batch(session, id, body.batchKey)
+    return success(data=batch, message=f"Batch analysed: {batch.verdict or 'pending'}")

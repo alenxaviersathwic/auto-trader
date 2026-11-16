@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { SideMenu } from "./SideMenu";
 import { httpClient } from "../../api/httpClient";
 import { useDefaultUser } from "../../../modules/users/hooks/useUsers";
+import { NotificationCenter } from "../../../modules/notifications/components/NotificationCenter";
 import {
   Clock,
   Layers,
@@ -110,6 +111,7 @@ export const AppLayout: React.FC = () => {
           <Outlet />
         </main>
       </div>
+      <NotificationCenter />
     </div>
   );
 };

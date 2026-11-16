@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { AppLayout } from "../../core/components/layout/AppLayout";
 import { UsersPage } from "../../modules/users/pages/UsersPage";
+import { NotificationSettingsPage } from "../../modules/notifications/pages/NotificationSettingsPage";
 import { StrategiesPage } from "../../modules/strategies/pages/StrategiesPage";
 import { StrategyDetailPage } from "../../modules/strategies/pages/StrategyDetailPage";
 import { StrategyEditorPage } from "../../modules/strategies/pages/StrategyEditorPage";
@@ -48,6 +49,12 @@ const settingsUsersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/users",
   component: UsersPage,
+});
+
+const notificationSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings/notifications",
+  component: NotificationSettingsPage,
 });
 
 const usersRoute = createRoute({
@@ -114,12 +121,6 @@ const opportunityDetailRoute = createRoute({
   component: OpportunityDetailPage,
 });
 
-const traderSheetSearchSchema = z.object({
-  sheet: z.enum(["SUGGESTIONS", "TRADE_INSPECT", "INSERT_TRADE"]).optional(),
-  trader: z.string().optional(),
-  tradeId: z.coerce.number().int().positive().optional(),
-});
-
 const sessionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sessions",
@@ -129,14 +130,12 @@ const sessionsRoute = createRoute({
 const sessionDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sessions/$id",
-  validateSearch: traderSheetSearchSchema,
   component: SessionDetailPage,
 });
 
 const tradesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/trades",
-  validateSearch: traderSheetSearchSchema,
   component: TradesPage,
 });
 
@@ -169,6 +168,7 @@ const legacySuggestionRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   settingsUsersRoute,
+  notificationSettingsRoute,
   usersRoute,
   strategiesRoute,
   strategyCreateRoute,

@@ -61,6 +61,17 @@ class Settings(BaseSettings):
     #   Aug17-Nov +18.9k -> +44.7k). ENTRY_10_1430 also keeps LATE_DAY_MOMENTUM (net negative over 6 months) out.
     INSTITUTIONAL_FILTERS: str = "NIFTY_NOISE_STRICT,TREND_5_20,NO_VWAP_PULLBACK,ENTRY_10_1430,IB_GATE,PE_EXTRA,DMA50"
     FII_OPEN_CODES: str = "NIFTY"  # FII_OPEN_DRIVE opening trade (fii_open.py); "" = off
+    # Research Engine on its own: at start-up, then every N minutes while system usage is below the limit
+    RESEARCH_AUTO_ENABLED: bool = True
+    RESEARCH_AUTO_INTERVAL_MIN: int = 30
+    RESEARCH_AUTO_MAX_LOAD_PCT: float = 50.0
+    RESEARCH_AUTO_WINDOW: str = "07:00-23:30"  # IST
+    RESEARCH_AUTO_STARTUP_DELAY_S: int = 60
+    # app load capacity (system/service/system_load.py): session loops + session scanners + trade pilots
+    SYSTEM_APP_CAPACITY: int = 12
+
+    # Autopsy guards (modules/learning): False = proposed, you apply them; True = applied as soon as proposed
+    AUTOPSY_AUTO_APPLY_GUARDS: bool = False
     MAX_ONE_LOT_RISK_PCT: float = 4.0  # one lot may risk up to this % of session capital when 0.5% buys < 1 lot (4% = Rs 2,000 at Rs 50k, set 13 Nov 2026)
 
     # Logging
