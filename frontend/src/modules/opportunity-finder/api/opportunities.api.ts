@@ -12,6 +12,7 @@ import {
   StartOpportunityParams,
   StartOpportunityResult,
   TodayMasters,
+  UnderlyingChartData,
 } from "../types/opportunities.types";
 
 /** One iteration = market data + one local-AI call (+ one retry): allow well past the 30s default. */
@@ -75,6 +76,11 @@ export const opportunitiesApi = {
   /** Evaluates target achievement % for ONE opportunity inside a batch over entry -> validUntil. */
   async checkOpportunity(opportunityId: number): Promise<OpportunityCheckItem> {
     return httpClient.post(`/opportunities/${opportunityId}/check`, {});
+  },
+
+  /** Live 5-minute chart data, key levels, and latest scanner diagnostics for an underlying. */
+  async getUnderlyingChart(code: string): Promise<UnderlyingChartData> {
+    return httpClient.get(`/opportunities/chart/${encodeURIComponent(code)}`);
   },
 };
 

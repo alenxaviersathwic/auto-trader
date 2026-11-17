@@ -21,6 +21,7 @@ import { useSessionLoop } from "../hooks/useSessionLoop";
 import { sessionsQueryKeys } from "../queryKeys/sessionsQueryKeys";
 import { TradeLockModal } from "../components/TradeLockModal";
 import { SessionEditModal } from "../components/SessionEditModal";
+import { UnderlyingChartModal } from "../components/UnderlyingChartModal";
 import { SuggestionCard } from "../components/SuggestionCard";
 import { BatchHistory } from "../components/BatchHistory";
 import { RunningTradeCard } from "../components/RunningTradeCard";
@@ -83,6 +84,7 @@ export const SessionDetailPage: React.FC = () => {
 
   const [tab, setTab] = useState<Tab>("CURRENT");
   const [editOpen, setEditOpen] = useState(false);
+  const [chartCode, setChartCode] = useState<string | null>(null);
   const [lockedPick, setLockedPick] = useState<SessionPick | null>(null);
   const [lockFailure, setLockFailure] = useState<string | null>(null);
   const failureTimer = useRef<number | undefined>(undefined);
@@ -306,7 +308,15 @@ export const SessionDetailPage: React.FC = () => {
           <div className="sd-side-actions">
             <span className="sd2-underlyings">
               {underlyings.map((c) => (
-                <span key={c} className="sd2-ul">{c}</span>
+                <button
+                  key={c}
+                  type="button"
+                  className="sd2-ul sd2-ul--btn"
+                  onClick={() => setChartCode(c)}
+                  title={`Open ${c} live chart & agent diagnostics`}
+                >
+                  {c}
+                </button>
               ))}
             </span>
             {isActive && (
@@ -440,14 +450,16 @@ export const SessionDetailPage: React.FC = () => {
             </span>
             <div className="sd-mgr-bar__chips">
               {scanners.map((sc) => (
-                <span
+                <button
                   key={sc.code}
-                  className={`sd-scan-chip ${sc.error ? "sd-scan-chip--err" : sc.on ? "sd-scan-chip--on" : ""}`}
-                  title={`${sc.code}: ${sc.note}`}
+                  type="button"
+                  className={`sd-scan-chip sd-scan-chip--btn ${sc.error ? "sd-scan-chip--err" : sc.on ? "sd-scan-chip--on" : ""}`}
+                  title={`${sc.code}: ${sc.note} — click for live chart & diagnostics`}
+                  onClick={() => setChartCode(sc.code)}
                 >
                   <span className="mono">{sc.code}</span>
                   <span className="micro">{sc.error ? "err" : `${sc.scans}×`}</span>
-                </span>
+                </button>
               ))}
             </div>
           </div>
@@ -490,6 +502,7 @@ export const SessionDetailPage: React.FC = () => {
           onClose={() => setEditOpen(false)}
         />
       )}
+      {chartCode && <UnderlyingChartModal code={chartCode} onClose={() => setChartCode(null)} />}
       {lockedPick && <TradeLockModal pick={lockedPick} onClose={() => setLockedPick(null)} />}
     </div>
   );

@@ -677,6 +677,78 @@ class OpportunityRunService:
                 "result": i.result, "summary": i.summary, "savedCount": i.savedCount, "details": i.details,
                 "durationMs": i.durationMs, "createdAt": i.createdAt.isoformat()}
 
+    async def chart_view(self, session: AsyncSession, code: str) -> dict[str, Any]:
+        """Live 5-minute chart data + key levels + latest scanner diagnostics for an underlying."""
+        from app.modules.opportunity_finder.service import fib_pocket
+        from app.modules.opportunity_finder.service.market_analysis import analyze, ema
+
+        norm = code.strip().upper()
+        cfg = get_config(norm)
+        if cfg is None:
+            raise NotFoundException(f"Unknown underlying {norm}")
+        last_it = await iteration_repo.latest_for_code(session, norm)
+        bars5: list[dict[str, Any]] = []
+        ema9: list[float] = []
+        ema21: list[float] = []
+        levels: dict[str, Any] = {}
+        vwap_val: float | None = None
+        noise: dict[str, Any] | None = None
+        regime: str | None = None
+        trend15: str | None = None
+        day_type: dict[str, Any] | None = None
+        fib_watch: list[dict[str, Any]] = []
+        spot: float | None = None
+        market_error: str | None = None
+        try:
+            market = await market_data.fetch(cfg, session)
+            analysis = analyze(cfg, market)
+            bars5 = (analysis.get("bars5") or [])[-80:]
+            closes = [b["c"] for b in bars5]
+            if closes:
+                ema9 = [round(v, 2) for v in ema(closes, 9)]
+                ema21 = [round(v, 2) for v in ema(closes, 21)]
+            lv = analysis.get("levels") or {}
+            levels = {
+                k: round(float(lv[k]), 2)
+                for k in ("pdh", "pdl", "pdc", "orHigh", "orLow", "dayHigh", "dayLow", "pivot")
+                if lv.get(k) is not None
+            }
+            vwap_val = (analysis.get("vwap") or {}).get("value")
+            if vwap_val is not None:
+                vwap_val = round(float(vwap_val), 2)
+            noise = analysis.get("noise")
+            regime = analysis.get("regime")
+            trend15 = analysis.get("trend15")
+            day_type = analysis.get("dayType")
+            fib_watch = fib_pocket.watch(analysis.get("bars5") or [], analysis.get("atr5") or 0.0)
+            spot = analysis.get("spot") or market.get("spot")
+        except Exception as exc:  # noqa: BLE001
+            market_error = f"{type(exc).__name__}: {exc}"
+            if last_it and isinstance(last_it.details, dict):
+                spot = last_it.details.get("spot")
+                regime = last_it.details.get("regime")
+                trend15 = last_it.details.get("trend15")
+                day_type = last_it.details.get("dayType")
+                noise = last_it.details.get("noise")
+                fib_watch = last_it.details.get("fibWatch") or []
+        return {
+            "code": cfg.code,
+            "type": cfg.type,
+            "spot": spot,
+            "bars5": bars5,
+            "ema9": ema9,
+            "ema21": ema21,
+            "levels": levels,
+            "vwap": vwap_val,
+            "noise": noise,
+            "regime": regime,
+            "trend15": trend15,
+            "dayType": day_type,
+            "fibWatch": fib_watch,
+            "lastScan": self.iteration_dict(last_it) if last_it else None,
+            "marketError": market_error,
+        }
+
     @staticmethod
     def to_dict(s: TradeOpportunity, now: datetime) -> dict[str, Any]:
         return {

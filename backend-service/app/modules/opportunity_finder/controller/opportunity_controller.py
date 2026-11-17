@@ -170,3 +170,9 @@ async def search_iterations(
     page = PageResult(list=[svc.iteration_dict(i) for i in items], page=f.page, limit=f.limit,
                       totalPages=-(-total // f.limit), totalItems=total)
     return success(data=page, message="Iteration diagnostics retrieved")
+
+
+@opportunity_router.get("/opportunities/chart/{code}", response_model=ApiResponse[dict[str, Any]], status_code=OK)
+async def get_underlying_chart(code: str, session: AsyncSession = Depends(get_db)) -> ApiResponse[dict[str, Any]]:
+    """Live 5-minute chart data, key levels, and latest scanner diagnostics for an underlying."""
+    return success(data=await svc.chart_view(session, code), message="Underlying chart retrieved")

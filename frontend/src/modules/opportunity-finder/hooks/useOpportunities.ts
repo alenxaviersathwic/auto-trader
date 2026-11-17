@@ -169,3 +169,13 @@ export function useRecentIterations(masterId: number | null, limit = 12, refetch
     refetchInterval: refetchMs,
   });
 }
+
+/** Live 5-minute chart + key levels + latest scanner diagnostics for a clicked underlying. */
+export function useUnderlyingChart(code: string | null) {
+  return useQuery({
+    queryKey: opportunitiesQueryKeys.chart(code ?? ""),
+    queryFn: () => opportunitiesApi.getUnderlyingChart(code!),
+    enabled: Boolean(code),
+    refetchInterval: 15000,
+  });
+}

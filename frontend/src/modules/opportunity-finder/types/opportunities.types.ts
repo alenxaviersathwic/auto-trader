@@ -330,3 +330,39 @@ export interface BatchCheckResult {
   results: OpportunityCheckItem[];
   batches: Record<number, BatchCheckSummary>;
 }
+
+export interface UnderlyingBar5 {
+  t: string;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v?: number;
+}
+
+export interface UnderlyingChartData {
+  code: string;
+  type: "INDEX" | "COMMODITY";
+  spot: number | null;
+  bars5: UnderlyingBar5[];
+  ema9: number[];
+  ema21: number[];
+  levels: {
+    pdh?: number;
+    pdl?: number;
+    pdc?: number;
+    orHigh?: number;
+    orLow?: number;
+    dayHigh?: number;
+    dayLow?: number;
+    pivot?: number;
+  };
+  vwap: number | null;
+  noise: { state?: "ABOVE" | "INSIDE" | "BELOW"; lower?: number; upper?: number; sigmaPct?: number } | null;
+  regime: string | null;
+  trend15: string | null;
+  dayType: { type?: string; side?: "CE" | "PE" | null; reasons?: string[] } | null;
+  fibWatch: FibWatch[];
+  lastScan: OpportunityIteration | null;
+  marketError: string | null;
+}

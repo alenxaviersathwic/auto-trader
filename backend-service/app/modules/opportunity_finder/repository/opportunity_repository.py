@@ -145,6 +145,16 @@ class OpportunityIterationRepository:
         await session.flush()
         return row
 
+    async def latest_for_code(self, session: AsyncSession, code: str) -> OpportunityIteration | None:
+        res = await session.execute(
+            select(OpportunityIteration)
+            .where(OpportunityIteration.status == 1)
+            .where(OpportunityIteration.underlyingCode == code.upper())
+            .order_by(OpportunityIteration.id.desc())
+            .limit(1)
+        )
+        return res.scalars().first()
+
 
 class OpportunityMasterRepository:
     """Reads and writes opportunity_masters (one row per card per Start)."""
