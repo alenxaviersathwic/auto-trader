@@ -25,13 +25,10 @@ import { SuggestionCard } from "../components/SuggestionCard";
 import { BatchHistory } from "../components/BatchHistory";
 import { RunningTradeCard } from "../components/RunningTradeCard";
 import { SessionTradesPanel } from "../components/SessionTradesPanel";
-import { AutopsySubAgent } from "../components/agents/AutopsySubAgent";
 import { RISK_META } from "../components/riskLevels";
 import { useTradeSearch } from "../../trade-history/hooks/useTrades";
 import { tradesQueryKeys } from "../../trade-history/queryKeys/tradesQueryKeys";
-import { DEFAULT_TRADER_CODES, DESK_CODE, TRADER_META, managerFor, normalizeTraderCodes } from "../../trade-history/components/traderMeta";
-import { DeskPanel } from "../../commodity-desk/components/DeskPanel";
-import { NewsSubAgent } from "../../commodity-desk/components/NewsSubAgent";
+import { TRADER_META, managerFor, normalizeTraderCodes } from "../../trade-history/components/traderMeta";
 import { TraderCode } from "../../trade-history/types/trades.types";
 import { useAutopsies } from "../../autopsy/hooks/useLearning";
 import { learningQueryKeys } from "../../autopsy/queryKeys/learningQueryKeys";
@@ -283,17 +280,6 @@ export const SessionDetailPage: React.FC = () => {
             </div>
           )}
         </section>
-
-        <div className="sd-secondary-agents">
-          {sessionFinders.includes(DESK_CODE) ? (
-            <DeskPanel codes={underlyings} />
-          ) : (
-            <NewsSubAgent codes={underlyings} />
-          )}
-          {(managerCode ? [managerCode] : DEFAULT_TRADER_CODES).map((code) => (
-            <AutopsySubAgent key={code} managerCode={code} nested collapsible />
-          ))}
-        </div>
       </div>
 
       {/* RIGHT 40%: session details (read-only) with Edit button, session manager, active finders, trades */}
