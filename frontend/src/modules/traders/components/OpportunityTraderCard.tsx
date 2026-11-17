@@ -1,5 +1,5 @@
 import React from "react";
-import { ListChecks, Settings2 } from "lucide-react";
+import { Info } from "lucide-react";
 import { TRADER_META, traderForStrategy } from "../../trade-history/components/traderMeta";
 import { useUpdateOpportunityFinder } from "../hooks/useOpportunityFinders";
 import { OPTION_TYPES, OpportunityFinder, OptionType } from "../types/opportunityFinder.types";
@@ -16,27 +16,30 @@ interface Props {
   /** Indices scanned today (shared by both traders). */
   todayCards: OpportunityCardItem[];
   onOpenToday: () => void;
+  /** Opens the "How this finder works" popup. */
+  onOpenHowItWorks: () => void;
   /** The finder's profile from the API (markets it works on, drivers); undefined while loading. */
   finder?: OpportunityFinder;
   /** The finder's live working view under its stats (the Commodity Desk shows its sub-agents here). */
   children?: React.ReactNode;
 }
 
-/** One opportunity finder, all rendered alike: the markets it works on, what it checks before entering, how it
- *  manages the trade, and how its setups did. Only strategy and method differ between finders. */
+/** Compact clickable finder summary card. Clicking the card opens a popup showing how that finder works. */
 export const OpportunityTraderCard: React.FC<Props> = ({
   code,
   scorecards,
   autopsies,
   todayCards,
   onOpenToday,
+  onOpenHowItWorks,
   finder,
   children,
 }) => {
   const meta = TRADER_META[code];
   const updateFinder = useUpdateOpportunityFinder();
   const markets: OptionType[] = finder?.optionTypes ?? [];
-  const toggleMarket = (t: OptionType) => {
+  const toggleMarket = (e: React.MouseEvent, t: OptionType) => {
+    e.stopPropagation();
     const next = markets.includes(t) ? markets.filter((m) => m !== t) : [...markets, t];
     if (next.length === 0) return; // a finder always works on at least one market
     updateFinder.mutate({ code, body: { optionTypes: next } });
@@ -48,7 +51,19 @@ export const OpportunityTraderCard: React.FC<Props> = ({
   const avgR = done.length ? done.reduce((s, a) => s + a.rMultiple, 0) / done.length : null;
 
   return (
-    <section className="te-panel" aria-label={meta.name}>
+    <section
+      className="te-panel te-panel--clickable"
+      aria-label={meta.name}
+      onClick={onOpenHowItWorks}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpenHowItWorks();
+        }
+      }}
+    >
       <div className="te-panel__head">
         <span className="te-panel__title">
           <span className={`badge ${meta.badgeClass} mono`}>{meta.tag}</span> {meta.name}
@@ -66,14 +81,14 @@ export const OpportunityTraderCard: React.FC<Props> = ({
                   ? "A finder works on at least one market"
                   : `${markets.includes(t) ? "Stop" : "Start"} finding ${t.toLowerCase()} opportunities`
               }
-              onClick={() => toggleMarket(t)}
+              onClick={(e) => toggleMarket(e, t)}
             >
               {t}
             </button>
           ))}
         </span>
       </div>
-      {finder?.drivers && <span className="micro text-secondary">{finder.drivers}</span>}
+      <span className="micro text-secondary">{meta.tagline}</span>
 
       <div className="tr-stats">
         <div>
@@ -96,47 +111,19 @@ export const OpportunityTraderCard: React.FC<Props> = ({
         </div>
       </div>
 
-      <TraderTodayStrip trader={code} cards={todayCards} onOpen={onOpenToday} />
+      <div onClick={(e) => e.stopPropagation()}>
+        <TraderTodayStrip trader={code} cards={todayCards} onOpen={onOpenToday} />
+      </div>
       {children}
 
-      <span className="label">
-        <ListChecks size={12} /> Checks before it enters
-      </span>
-      <ol className="tr-list">
-        {meta.checks.map((c) => (
-          <li key={c}>{c}</li>
-        ))}
-      </ol>
-
-      <span className="label">
-        <Settings2 size={12} /> How it manages the trade
-      </span>
-      <p className="micro text-secondary tr-text">{meta.manages}</p>
-
-      <span className="label">Its setups (last 14 days)</span>
-      {mine.length === 0 ? (
-        <span className="micro text-muted">No closed trades on its setups yet.</span>
-      ) : (
-        mine.map((c) => (
-          <div key={c.setup} className="te-row">
-            <span className="te-row__main">
-              <span className="te-row__title">
-                {c.setup.replace(/_/g, " ")}
-                <span className={`te-pill ${c.scoreStatus === "PAUSED" ? "te-pill--red" : "te-pill--green"}`}>
-                  {c.scoreStatus}
-                </span>
-              </span>
-              <span className="te-row__sub">
-                {c.closedTrades} trades · {c.wins}W/{c.losses}L · avg {c.avgR >= 0 ? "+" : ""}
-                {c.avgR.toFixed(2)}R{c.statusReason ? ` · ${c.statusReason}` : ""}
-              </span>
-            </span>
-            <span className={`mono micro tr-amt ${c.netPnl >= 0 ? "text-green" : "text-red"}`}>
-              {formatSignedRupee(c.netPnl, true)}
-            </span>
-          </div>
-        ))
-      )}
+      <div className="tr-card-foot">
+        <span className="micro text-muted">
+          {mine.length > 0 ? `${mine.length} active setup${mine.length === 1 ? "" : "s"} (14d)` : `${meta.checks.length} entry checks`}
+        </span>
+        <span className="tr-card-foot__cta micro">
+          <Info size={12} /> How it works
+        </span>
+      </div>
     </section>
   );
 };

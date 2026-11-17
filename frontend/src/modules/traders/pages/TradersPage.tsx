@@ -2,14 +2,14 @@ import React, { useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Bot, Cpu } from "lucide-react";
 import { OpportunityTraderCard } from "../components/OpportunityTraderCard";
+import { FinderHowItWorksModal } from "../components/FinderHowItWorksModal";
 import { TraderTodaySheet } from "../components/TraderTodaySheet";
 import { useOpportunityCards } from "../../opportunity-finder/hooks/useOpportunities";
 import { SessionManagerCard } from "../components/SessionManagerCard";
 import { AutopsySubAgent } from "../../sessions/components/agents/AutopsySubAgent";
 import { RISK_LEVELS, RISK_META, RISK_NOTE } from "../../sessions/components/riskLevels";
-import { useSessionSearch } from "../../sessions/hooks/useSessions";
 import { useAutopsies, useScorecards } from "../../autopsy/hooks/useLearning";
-import { DESK_CODE, SESSION_MANAGERS, TRADER_CODES } from "../../trade-history/components/traderMeta";
+import { DESK_CODE, SESSION_MANAGERS, TRADER_CODES, traderForStrategy } from "../../trade-history/components/traderMeta";
 import { useOpportunityFinders } from "../hooks/useOpportunityFinders";
 import { DeskPanel } from "../../commodity-desk/components/DeskPanel";
 import { TraderCode } from "../../trade-history/types/trades.types";
@@ -26,12 +26,12 @@ export const TradersPage: React.FC = () => {
 
   const cards = useScorecards({ page: 0, limit: 50, sortBy: "netPnl", sortDir: "asc" }, REFRESH_MS);
   const autopsies = useAutopsies({ page: 0, limit: 200, sortBy: "createdAt", sortDir: "desc" }, REFRESH_MS);
-  const sessions = useSessionSearch({ page: 0, limit: 50, sessionStatus: "ACTIVE" });
   const autopsyList = autopsies.data?.list ?? [];
   // Indices with a scanner today: both opportunity traders read the same scans, each for its own setups.
   const { cards: oppCards } = useOpportunityCards(false);
   const todayCards = oppCards.filter((c) => c.master);
   const [openTrader, setOpenTrader] = useState<TraderCode | null>(null);
+  const [selectedFinder, setSelectedFinder] = useState<TraderCode | null>(null);
   const finders = useOpportunityFinders().data ?? [];
   const finderOf = (code: TraderCode) => finders.find((f) => f.code === code);
   // a finder sees only the scanners of the markets in its optionTypes
@@ -78,7 +78,6 @@ export const TradersPage: React.FC = () => {
       {tab === "traders" ? (
         <div className="tr-main">
         <div className="tr-grid">
-          {/* every finder rendered the same way; only its strategy, markets and live working view differ */}
           {order.map((code) => (
             <OpportunityTraderCard
               key={code}
@@ -88,11 +87,21 @@ export const TradersPage: React.FC = () => {
               autopsies={autopsyList}
               todayCards={cardsFor(code)}
               onOpenToday={() => setOpenTrader(code)}
-            >
-              {code === DESK_CODE ? <DeskPanel /> : null}
-            </OpportunityTraderCard>
+              onOpenHowItWorks={() => setSelectedFinder(code)}
+            />
           ))}
         </div>
+        {selectedFinder && (
+          <FinderHowItWorksModal
+            code={selectedFinder}
+            finder={finderOf(selectedFinder)}
+            scorecards={(cards.data?.list ?? []).filter((c) => traderForStrategy(c.setup) === selectedFinder)}
+            onClose={() => setSelectedFinder(null)}
+            onOpenToday={() => setOpenTrader(selectedFinder)}
+          >
+            {selectedFinder === DESK_CODE ? <DeskPanel /> : null}
+          </FinderHowItWorksModal>
+        )}
         {openTrader && (
           <TraderTodaySheet trader={openTrader} cards={cardsFor(openTrader)} onClose={() => setOpenTrader(null)} />
         )}
@@ -101,7 +110,7 @@ export const TradersPage: React.FC = () => {
         <div className="tr-main">
             <div className="tr-grid">
               {SESSION_MANAGERS.map((m) => (
-                <SessionManagerCard key={m.traderCode} manager={m} activeSessions={sessions.data?.list ?? []}>
+                <SessionManagerCard key={m.traderCode} manager={m}>
                   <AutopsySubAgent managerCode={m.traderCode} nested />
                 </SessionManagerCard>
               ))}

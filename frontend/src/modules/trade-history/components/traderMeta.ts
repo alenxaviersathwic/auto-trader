@@ -6,11 +6,20 @@ export const TRADER_CODES: TraderCode[] = ["FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_T
 export const DEFAULT_TRADER_CODES: TraderCode[] = ["FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER"];
 export const DESK_CODE: TraderCode = "COMMODITY_DESK_TRADER";
 
+export interface TraderWorkflowStep {
+  title: string;
+  detail: string;
+}
+
 export interface TraderMeta {
   code: TraderCode;
   name: string;
   tag: string;
   badgeClass: string;
+  /** Short one-line tagline for the finder card. */
+  tagline: string;
+  /** Distinct workflow steps shown in the "How it works" popup. */
+  workflow: TraderWorkflowStep[];
   /** What the trader checks before it takes a trade, in order. */
   checks: string[];
   /** How it manages the position once entered. */
@@ -23,6 +32,13 @@ export const TRADER_META: Record<TraderCode, TraderMeta> = {
     name: "Fib Golden-Pocket Trader",
     tag: "FIB + PA + OI + VOL",
     badgeClass: "badge--cyan",
+    tagline: "3-ATR impulse → 0.50–0.618 pocket pullback → Price Action + OI + Volume confirmation",
+    workflow: [
+      { title: "1. Spot 3-ATR Impulse", detail: "Scans 5-min bars for a directional swing ≥ 3× ATR5." },
+      { title: "2. Wait for Golden Pocket", detail: "Tracks corrective pullback into the 0.50–0.618 Fibonacci zone." },
+      { title: "3. Reject & Confirm", detail: "Requires pin bar / engulfing / inside-bar break + OI wall support + quiet pullback volume." },
+      { title: "4. Step-Target Trail", detail: "Stop behind 0.786; locks 50% at 0.80 progress, trails to 1.272 and 1.618 extensions." },
+    ],
     checks: [
       "Pullback into the 0.50–0.618 pocket of a 3 ATR swing",
       "Price action: a corrective pullback, then a pin bar, engulfing or inside-bar break at the pocket",
@@ -37,6 +53,13 @@ export const TRADER_META: Record<TraderCode, TraderMeta> = {
     name: "Flow & Momentum Trader",
     tag: "FLOW + MOMENTUM",
     badgeClass: "badge--green",
+    tagline: "Intraday breakouts, inside bars & FII open drive aligned with 15m trend & 1m trigger",
+    workflow: [
+      { title: "1. Detect Coded Setup", detail: "Watches 5-min closes for Noise Breakout, Inside Bar, Scalp Impulse, Wedge, or FII Open Drive." },
+      { title: "2. Align Multi-Timeframe", detail: "15-min trend must agree on direction; 1-min close must hold above/below EMA9 without chasing." },
+      { title: "3. Select MOMO Contract", detail: "Picks liquid ATM/ITM option (spread & OI checked) and validates via Time Machine replay odds." },
+      { title: "4. Runner Trail Exit", detail: "Moves stop to breakeven at +1.5R, then trails 2R under peak with no fixed target cap." },
+    ],
     checks: [
       "Noise-area breakout, FII open drive, late-day momentum",
       "VWAP pullback / range breakout only inside an active breakout",
@@ -50,6 +73,13 @@ export const TRADER_META: Record<TraderCode, TraderMeta> = {
     name: "Commodity Desk",
     tag: "DESK + AGENTS",
     badgeClass: "badge--amber",
+    tagline: "Multi-agent MCX desk combining session clock, macro news, OI chain & LLM head trader",
+    workflow: [
+      { title: "1. MCX Session & Macro", detail: "Checks Asia / Europe / US open phase, EIA inventory / US data, and Research Engine briefs." },
+      { title: "2. Futures & Option Chain", detail: "Reads 1m/5m/15m futures structure along with MCX option PCR, OI walls, and ATM spreads." },
+      { title: "3. Head Trader Synthesis", detail: "Code risk gate filters candidates, then the LLM head trader writes its thesis and selects one setup." },
+      { title: "4. Momentum Trail", detail: "Breakeven at +1.5R, then trails 2R under the peak price." },
+    ],
     checks: [
       "Session clock: MCX phase (Asia / Europe / US open), EIA and US data releases",
       "Price structure on 1, 5 and 15-minute futures: trend pullback, fresh range break, Fib pocket",
