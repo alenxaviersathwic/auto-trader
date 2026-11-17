@@ -8,7 +8,8 @@ export type NotificationKind =
   | "TRADE_EXITED"
   | "SESSION_HALTED"
   | "LEARNING"
-  | "RESEARCH";
+  | "RESEARCH"
+  | "MARKET_MOVE";
 
 export type NotificationSeverity = "info" | "success" | "warning" | "danger";
 

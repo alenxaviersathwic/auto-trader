@@ -42,6 +42,8 @@ class SessionPickResponse(BaseModel):
     availableAtPick: float
     reasons: list[Any]
     risks: list[Any]
+    # the timeframes the setup was confirmed on: {"15m": {trend, source}, "1m": {close, ema9, trigger}}
+    timeframes: Optional[dict[str, Any]] = None
     pickState: str
     signalAt: datetime
     holdUntil: datetime

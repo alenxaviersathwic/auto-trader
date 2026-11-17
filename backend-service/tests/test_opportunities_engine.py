@@ -2,11 +2,11 @@ from datetime import datetime
 
 import pytest
 
-from app.modules.opportunities.graph import nodes
-from app.modules.opportunities.graph.builder import underlying_graph
-from app.modules.opportunities.provider.underlying_config import get_config
-from app.modules.opportunities.schema.opportunity_schema import AiAnswer, AiPick
-from app.modules.opportunities.service.menu_builder import build_menu, direction_bias
+from app.modules.opportunity_finder.graph import nodes
+from app.modules.opportunity_finder.graph.builder import underlying_graph
+from app.modules.opportunity_finder.provider.underlying_config import get_config
+from app.modules.opportunity_finder.schema.opportunity_schema import AiAnswer, AiPick
+from app.modules.opportunity_finder.service.menu_builder import build_menu, direction_bias
 
 
 def _leg(key, ltp, delta):
@@ -181,7 +181,7 @@ async def test_against_trend_put_needs_a_listed_strategy(patched, monkeypatch):
 
 
 def test_volume_confirmation_and_dry_market():
-    from app.modules.opportunities.service.menu_builder import volume_adjustment, volume_confirms
+    from app.modules.opportunity_finder.service.menu_builder import volume_adjustment, volume_confirms
 
     up_high = {"volume": {"ratio5m": 1.8, "spike": True, "dry": False, "lastBarUp": True}}
     assert volume_confirms(up_high, "CE") and not volume_confirms(up_high, "PE")
@@ -194,7 +194,7 @@ def test_market_hours_gate():
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
-    from app.modules.opportunities.provider.underlying_config import is_market_open
+    from app.modules.opportunity_finder.provider.underlying_config import is_market_open
 
     tz = ZoneInfo("Asia/Kolkata")
     crude, nifty = get_config("CRUDEOIL"), get_config("NIFTY")
@@ -241,7 +241,7 @@ def test_reversal_setups_get_a_tighter_atm_stop_than_other_families():
 
 
 def test_pcr_adjustment_is_confluence_only_and_small():
-    from app.modules.opportunities.service.menu_builder import PCR_BONUS, pcr_adjustment
+    from app.modules.opportunity_finder.service.menu_builder import PCR_BONUS, pcr_adjustment
 
     bullish_shift = {"pcrChg": 0.12, "peOiChgPct": 3.0, "ceOiChgPct": 0.5, "pcr": 1.1}
     assert pcr_adjustment({"oiShift": bullish_shift}, "CE") == PCR_BONUS
@@ -250,12 +250,12 @@ def test_pcr_adjustment_is_confluence_only_and_small():
     assert pcr_adjustment({"oiShift": bearish_shift}, "PE") == PCR_BONUS
     assert pcr_adjustment({}, "CE") == 0
     # weaker evidence than a coded setup (SETUP_BONUS) or a volume spike (VOLUME_BONUS): never the deciding factor
-    from app.modules.opportunities.service.menu_builder import SETUP_BONUS, VOLUME_BONUS
+    from app.modules.opportunity_finder.service.menu_builder import SETUP_BONUS, VOLUME_BONUS
     assert PCR_BONUS < SETUP_BONUS and PCR_BONUS < VOLUME_BONUS
 
 
 def test_expected_edge_needs_real_probability():
-    from app.modules.opportunities.service.menu_builder import expected_edge_pct
+    from app.modules.opportunity_finder.service.menu_builder import expected_edge_pct
 
     assert expected_edge_pct(70, 7.5, 3.75) > 3
     assert expected_edge_pct(30, 7.5, 3.75) < 0
@@ -295,7 +295,7 @@ async def test_time_machine_drops_the_side_history_runs_against(patched, monkeyp
     """A falling history: the PE plan leans to its target and is kept with the odds; the CE plan is dropped."""
     import random
 
-    from app.modules.opportunities.service import timemachine as tm
+    from app.modules.opportunity_finder.service import timemachine as tm
 
     rnd = random.Random(5)
     bars = []

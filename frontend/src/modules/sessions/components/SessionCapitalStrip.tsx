@@ -1,6 +1,6 @@
 import React from "react";
 import { SessionCapital } from "../types/sessions.types";
-import { formatRupee } from "../../opportunities/components/formatters";
+import { formatRupee } from "../../opportunity-finder/components/formatters";
 
 /** Capital, current capital, free cash, and active parallel Trader slots (max 3 open at once). */
 export const SessionCapitalStrip: React.FC<{ capital: SessionCapital; maxLossPercentage?: number }> = ({

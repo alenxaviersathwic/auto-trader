@@ -1,7 +1,7 @@
 """Time Machine (service/timemachine.py): pool, replays, real-history walk, lean/verdict, gates and horizon."""
 import random
 
-from app.modules.opportunities.service import timemachine as tm
+from app.modules.opportunity_finder.service import timemachine as tm
 
 
 def _session(day: str, start: float, drift: float, rnd: random.Random, bars: int = 75, open_hhmm: str = "09:15"):

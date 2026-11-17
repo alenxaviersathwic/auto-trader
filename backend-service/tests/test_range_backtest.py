@@ -1,6 +1,6 @@
 from app.modules.backtest.service import premium_sim
 from app.modules.backtest.service import range_backtest_service as rs
-from app.modules.opportunities.provider.underlying_config import get_config
+from app.modules.opportunity_finder.provider.underlying_config import get_config
 
 
 def test_rule_names_are_stable():
@@ -50,8 +50,36 @@ def test_portfolio_allows_parallel_positions_on_opposite_sides_only():
     assert p["trades"] == 2 and p["skipped"] == {"another index position already open": 1}
 
 
-def test_trader_filter_matches_live_ownership():
-    assert rs._matches_trader_filter("FIB_GOLDEN_POCKET", "FIB_GOLDEN_TRADER")
-    assert not rs._matches_trader_filter("EMA_CROSS_RETEST", "FIB_GOLDEN_TRADER")  # a keyword guess said Fib
-    assert rs._matches_trader_filter("WEDGE_BREAKOUT", "FLOW_MOMENTUM_TRADER")
-    assert rs._matches_trader_filter("ANY", "ALL")
+def test_session_block_mirrors_the_live_session():
+    fib = {"name": "FIB_GOLDEN_POCKET", "side": "CE", "rr": 1.8}
+    momo = {"name": "NOISE_BREAKOUT", "side": "CE", "rr": 2.0}
+    # the other trader's setup is out of the session's scope (not a rule that "blocked" it)
+    assert rs.session_block(fib, "FLOW_MOMENTUM_TRADER", "LOW", "UP") == (False, None)
+    assert rs.session_block(momo, "FIB_GOLDEN_TRADER", "LOW", "UP") == (False, None)
+    assert rs.session_block(momo, "ALL", "LOW", "UP") == (True, None)
+    assert rs.session_block(fib, "FIB_GOLDEN_TRADER", "LOW", "UP") == (True, None)
+    # the live risk gate: trend side, reward:risk, setup class
+    assert "against the trend" in rs.session_block(momo, "ALL", "LOW", "DOWN")[1]
+    assert rs.session_block(momo, "ALL", "HIGH", "DOWN") == (True, None)
+    assert "reward:risk" in rs.session_block({**fib, "rr": 1.2}, "FIB_GOLDEN_TRADER", "LOW", "UP")[1]
+    assert "not a proven setup" in rs.session_block({"name": "VWAP_PULLBACK", "side": "CE", "rr": 2}, "ALL", "LOW",
+                                                     "UP")[1]
+
+
+def test_fib_sim_follows_the_fib_trader():
+    cfg = get_config("NIFTY")
+    bm = lambda b: int(b["t"][11:13]) * 60 + int(b["t"][14:16])  # noqa: E731
+    close = 15 * 60 + 30
+    # entry 25000, stop 24960, swing (1.0) 25060, extensions 25080 / 25100
+    up = _bars([25000 + i for i in range(300)])
+    r = premium_sim.simulate_fib(cfg, up, 10, "CE", 24960, 25060, 25080, 25100, 7, bm, close_min=close)
+    assert r and r.outcome == "TARGET" and r.netPnl > 0 and r.riskPerLot > 0
+    down = _bars([25000 - i for i in range(300)])
+    r = premium_sim.simulate_fib(cfg, down, 10, "CE", 24960, 25060, 25080, 25100, 7, bm, close_min=close)
+    assert r and r.outcome == "STOP" and r.netPnl < 0
+    # runs 90% of the way, then falls back: the 50% lock (80% reached) closes it in profit, not at the stop
+    path = [25000 + i * 6 for i in range(10)] + [25054 - i * 3 for i in range(100)]
+    r = premium_sim.simulate_fib(cfg, _bars([25000] * 10 + path), 10, "CE", 24960, 25060, 25080, 25100, 7, bm,
+                                 close_min=close)
+    assert r and r.outcome == "LOCKED" and r.netPnl > 0
+

@@ -42,7 +42,7 @@ async def token() -> str:
     if os.environ.get("UPSTOX_ACCESS_TOKEN"):
         return os.environ["UPSTOX_ACCESS_TOKEN"]
     from app.core.db.session import async_session_factory
-    from app.modules.opportunities.provider.upstox_market_data import market_data
+    from app.modules.opportunity_finder.provider.upstox_market_data import market_data
 
     async with async_session_factory() as s:
         return await market_data._token(s)

@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.modules.opportunities.service import run_service as rs
-from app.modules.opportunities.service.run_service import DEDUPE_MINUTES, opportunity_run_service as svc
+from app.modules.opportunity_finder.service import run_service as rs
+from app.modules.opportunity_finder.service.run_service import DEDUPE_MINUTES, opportunity_run_service as svc
 
 CREATED = datetime(2026, 11, 5, 5, 34, 5, tzinfo=UTC)  # 11:04:05 IST
 ENTRY, STOP, TARGET = 100.0, 97.0, 106.0

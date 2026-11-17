@@ -21,7 +21,7 @@ import backtest_month_real as bm  # noqa: E402
 import backtest_setups as bt  # noqa: E402
 from app.modules.backtest.service import edge_stats as es  # noqa: E402
 from app.core.config.settings import settings  # noqa: E402
-from app.modules.opportunities.service import menu_builder as mb  # noqa: E402
+from app.modules.opportunity_finder.service import menu_builder as mb  # noqa: E402
 
 DATA = bm.ROOT.parent / "logs" / "realdata"
 CACHE = Path.home() / "month_cands.pkl"

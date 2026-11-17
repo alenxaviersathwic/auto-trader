@@ -30,8 +30,8 @@ import backtest_month_real as bm  # noqa: E402
 import backtest_setups as bt  # noqa: E402
 from app.core.config.settings import settings  # noqa: E402
 from app.modules.backtest.service import edge_stats as es  # noqa: E402
-from app.modules.opportunities.provider.underlying_config import get_config  # noqa: E402
-from app.modules.opportunities.service import event_calendar, expiry_drift as ed, institutional_filters as inst  # noqa: E402
+from app.modules.opportunity_finder.provider.underlying_config import get_config  # noqa: E402
+from app.modules.opportunity_finder.service import event_calendar, expiry_drift as ed, institutional_filters as inst  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 CODES = ("NIFTY", "BANKNIFTY", "SENSEX")

@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS: NotificationSettings = {
     SESSION_HALTED: true,
     LEARNING: true,
     RESEARCH: false,
+    MARKET_MOVE: true,
   },
 };
 

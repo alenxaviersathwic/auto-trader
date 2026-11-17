@@ -12,10 +12,10 @@ The documentation is organized into modular, deep-dive specifications covering s
 |---|---|---|
 | [**00. System Architecture**](00-system-architecture.md) | High-Level Architecture | System topology, single Uvicorn worker process model, tech stack matrix, directory layout, strict naming conventions, and repository standards. |
 | [**01. Core Infrastructure**](01-core-infrastructure.md) | Shared Core Services | BaseEntity, EntityStatus enum, soft-deletes, universal `ApiResponse` envelope, search & pagination (`BaseFilter`), AES-GCM crypto, APScheduler, and event bus. |
-| [**02. Master AI Module**](02-master-ai-module.md) | AI Master Co-Pilot (`master`) | LangGraph 11-step conversational agent, intent routing, gap analysis, back-translation, proposal lifecycle, FastMCP client, tool gateway, and LLM providers. |
+| [**02. AI Master Module**](02-ai-master-module.md) | AI Master Co-Pilot (`ai_master` / `ai-master`) | LangGraph 11-step conversational agent, intent routing, gap analysis, back-translation, proposal lifecycle, FastMCP client, tool gateway, and LLM providers. |
 | [**03. Strategies & Rules Module**](03-strategies-rules-module.md) | Quantitative DSL & Health (`strategies`) | Rule/Strategy AST definition, evaluation engine, versioning, conflict detection, backtesting indicators, reliability scoring, health quarantine, and FastMCP server. |
 | [**04. Research Engine Module**](04-research-engine-module.md) | Autonomous Market Intelligence (`research`) | Multi-source RSS ingestion, polite web crawling, SearxNG search, claim extraction & verification, pgvector 768-dim embeddings, scoring & clearance, and LangGraph pipeline. |
-| [**05. Opportunities Module**](05-opportunities-module.md) | Real-Time Trade Scanner (`opportunities`) | Upstox market data provider, instrument catalog, day context & volatility regimes, menu builder, strategy selector, transaction costs, vector trade memory, and card sessions. |
+| [**05. Opportunity Finder Module**](05-opportunity-finder-module.md) | Real-Time Trade Scanner (`opportunity_finder` / `opportunity-finder`) | Upstox market data provider, instrument catalog, day context & volatility regimes, menu builder, strategy selector, transaction costs, vector trade memory, and card sessions. |
 | [**06. Users & Broker Module**](06-users-broker-module.md) | Authentication & Brokerage (`users`) | Multi-user management, Upstox OAuth2 flow, automated token refresh daemon (APScheduler), AES-GCM secret encryption, and live account/margin synchronization. |
 | [**07. System & Runtime Module**](07-system-module.md) | System Registry & Diagnostics (`system`) | Centralized execution engine registry, system-wide health checks (PostgreSQL, pgvector, Upstox), background task lifecycle, and runtime state monitoring. |
 | [**08. Frontend Architecture**](08-frontend-architecture.md) | React 19 SPA & UI Systems | React 19 + TypeScript, TanStack Query key factories, TanStack Router, TanStack Table manual pagination, Zod form validation, and Zerodha Kite dark trading theme. |
@@ -118,8 +118,29 @@ graph TB
 ## 👥 Audience Guides
 
 - **New Developers**: Start with [00. System Architecture](00-system-architecture.md) and [01. Core Infrastructure](01-core-infrastructure.md) to understand coding conventions, database patterns, and API response wrappers.
-- **Quantitative & Strategy Developers**: Read [03. Strategies & Rules Module](03-strategies-rules-module.md) and [05. Opportunities Module](05-opportunities-module.md) to learn how rules are defined, evaluated, and converted into live trade opportunities.
-- **AI & Agent Developers**: Read [02. Master AI Module](02-master-ai-module.md) and [04. Research Engine Module](04-research-engine-module.md) to explore LangGraph state machines, MCP server implementations, and vector search pipelines.
+- **Quantitative & Strategy Developers**: Read [03. Strategies & Rules Module](03-strategies-rules-module.md) and [05. Opportunity Finder Module](05-opportunity-finder-module.md) to learn how rules are defined, evaluated, and converted into live trade opportunities.
+- **AI & Agent Developers**: Read [02. AI Master Module](02-ai-master-module.md) and [04. Research Engine Module](04-research-engine-module.md) to explore LangGraph state machines, MCP server implementations, and vector search pipelines.
 - **Frontend Engineers**: Read [08. Frontend Architecture](08-frontend-architecture.md) to understand the component hierarchies, TanStack Query patterns, and Kite dark theme styling.
-- [12. Learning module: session manager, batches, autopsy agent](12-learning-module.md)
+- [12. Autopsy module: session manager, batches, the managers' autopsy sub-agents](12-autopsy-module.md)
+- [13 · Commodity Desk](13-commodity-desk-module.md)
+- [14. Opportunity finders: one model, markets (optionTypes), managers per session](14-opportunity-finders.md)
 - [13. Notifications and automatic research](13-notifications-and-research-schedule.md)
+
+## Module names = menu names (17 Nov 2026)
+
+| Menu | Backend `app/modules/` | Frontend `src/modules/` | API prefix (unchanged) |
+|---|---|---|---|
+| Sessions | `sessions` | `sessions` | `/sessions` |
+| Traders | `opportunity_finders` table (defaults in `trade_history/service/trader_presets.py`) | `traders` | `/opportunity-finders` |
+| ↳ Opportunity finders | `opportunity_finder` (was `opportunities`) | `opportunity-finder` | `/opportunities` |
+| ↳ Session managers' autopsy | `autopsy` (was `learning`) | `autopsy` | `/learning` |
+| Research Engine | `research` | `research` | `/research` |
+| Backtest | `backtest` | `backtest` | `/backtest` |
+| Trade history | `trade_history` (was `trades`; also runs the live trade pilots) | `trade-history` | `/trades` |
+| Strategies & Rules | `strategies` | `strategies` | `/strategies`, `/rules` |
+| Traders → Commodity Desk | `commodity_desk` | `commodity-desk` | `/commodity-desk` |
+| AI Master | `ai_master` (was `master`) | `ai-master` | `/master` |
+| Notifications | `notifications` | `notifications` | `/notifications` |
+| Users & Accounts | `users` | `users` | `/users` |
+
+API URLs were kept so bookmarks, the frontend client and scripts keep working; only folder / package names changed.

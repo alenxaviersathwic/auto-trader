@@ -27,6 +27,8 @@ export interface TradingSession {
   underlyings: string[];
   commodityItems: string[];
   traders?: string[];
+  /** Opportunity finders feeding the session (their optionTypes cover its scope). */
+  finders?: string[];
   riskLevel: RiskLevel;
   riskProfile?: RiskProfile | null;
   sessionType: SessionType;
@@ -54,6 +56,8 @@ export interface TradingSessionCreatePayload {
   underlyings?: string[];
   commodityItems?: string[];
   traders?: string[];
+  /** Opportunity finders feeding the session (their optionTypes cover its scope). */
+  finders?: string[];
   riskLevel?: RiskLevel;
   sessionType?: SessionType;
   routeThroughUpstox?: boolean;
@@ -70,6 +74,8 @@ export interface TradingSessionUpdatePayload {
   underlyings?: string[];
   commodityItems?: string[];
   traders?: string[];
+  /** Opportunity finders feeding the session (their optionTypes cover its scope). */
+  finders?: string[];
   riskLevel?: RiskLevel;
   sessionType?: SessionType;
   routeThroughUpstox?: boolean;
@@ -90,8 +96,15 @@ export interface TradingSessionSearchFilter extends BaseFilter {
 export type PickState = "OFFERED" | "LOCKED" | "EXPIRED";
 
 /** One trade offered to the trader, sized to the session. Prices are option premium; money fields are rupees. */
+/** The timeframes a pick's setup was confirmed on: 15-minute trend, 1-minute trigger (5-minute = the setup). */
+export interface PickTimeframes {
+  "15m"?: { trend: "UP" | "DOWN" | "FLAT"; source: "15m" | "15m+prev" | "5m-proxy" | "none" };
+  "1m"?: { close: number | null; ema9: number | null; trigger: number | null };
+}
+
 export interface SessionPick {
   id: number;
+  timeframes?: PickTimeframes | null;
   sessionId: number;
   opportunityId: number;
   opportunityRef: string;

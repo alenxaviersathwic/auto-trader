@@ -2,7 +2,7 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from app.modules.opportunities.service import guardrails as g
+from app.modules.opportunity_finder.service import guardrails as g
 
 NOW = datetime(2026, 11, 9, 9, 0, tzinfo=UTC)
 

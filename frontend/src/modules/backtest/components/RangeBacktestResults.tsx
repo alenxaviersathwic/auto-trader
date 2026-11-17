@@ -1,6 +1,14 @@
 import React from "react";
 import { AlertTriangle } from "lucide-react";
 import { RangeBacktestResult, RangeSetupStats, RangeStats } from "../types/backtest.types";
+import { TRADER_META } from "../../trade-history/components/traderMeta";
+import { TraderCode } from "../../trade-history/types/trades.types";
+
+const PA_LABEL: Record<string, string> = {
+  PIN_BAR: "Pin bar / hammer",
+  ENGULFING: "Engulfing",
+  INSIDE_BAR_BREAK: "Inside-bar break",
+};
 
 type Tab = "summary" | "strategies" | "rules" | "daily" | "trades" | "portfolio";
 
@@ -86,38 +94,12 @@ const SetupTable: React.FC<{ rows: RangeSetupStats[]; empty: string }> = ({ rows
     </table>
   );
 
-function matchesTrader(setup: string, traderFilter?: string): boolean {
-  if (!traderFilter || traderFilter === "ALL") return true;
-  const s = (setup || "").toLowerCase();
-  if (traderFilter === "FIB_GOLDEN_TRADER") {
-    return /fib|pullback|ema|supertrend|golden|swing|trend/.test(s);
-  }
-  if (traderFilter === "ORB_WAVE_TRADER") {
-    return /orb|open|fii|breakout|momentum|gamma|squeeze|impulse/.test(s);
-  }
-  if (traderFilter === "FLOW_VWAP_TRADER") {
-    return /vwap|cpr|pivot|rsi|reversal|oi|flow|iron|bollinger/.test(s);
-  }
-  return true;
-}
-
-export const RangeBacktestResults: React.FC<{
-  result: RangeBacktestResult;
-  traderFilter?: string;
-  sideFilter?: "ALL" | "CE" | "PE";
-}> = ({ result, traderFilter = "ALL", sideFilter = "ALL" }) => {
+/** The trades the backend replayed are already the session's: its manager, risk level and side (no filtering here). */
+export const RangeBacktestResults: React.FC<{ result: RangeBacktestResult }> = ({ result }) => {
   const [tab, setTab] = React.useState<Tab>("summary");
   const [selectedIdx, setSelectedIdx] = React.useState<Set<number>>(new Set());
 
-  const filteredTrades = React.useMemo(
-    () =>
-      result.trades.filter(
-        (x) =>
-          matchesTrader(x.setup, traderFilter) &&
-          (sideFilter === "ALL" || x.side === sideFilter),
-      ),
-    [result.trades, traderFilter, sideFilter],
-  );
+  const filteredTrades = result.trades;
 
   React.useEffect(() => {
     setSelectedIdx(new Set(filteredTrades.map((_, i) => i)));
@@ -149,6 +131,22 @@ export const RangeBacktestResults: React.FC<{
         {result.range.from} to {result.range.to} · {result.range.tradingDays} trading days · {result.range.codes.join(", ")} ·{" "}
         {result.range.pricing}
       </p>
+      <p className="text-secondary micro">
+        Session manager:{" "}
+        <span className="ticker">
+          {result.range.sessionManager === "ALL"
+            ? "both traders (comparison)"
+            : TRADER_META[result.range.sessionManager as TraderCode]?.name ?? result.range.sessionManager}
+        </span>{" "}
+        · risk <span className="ticker">{result.range.riskLevel}</span> · side {result.range.sideFilter} · max{" "}
+        {result.range.maxParallel} open
+      </p>
+      {result.range.fibNote && (
+        <p className="text-amber micro">
+          <AlertTriangle size={13} style={{ marginRight: 6, verticalAlign: "-2px" }} />
+          {result.range.fibNote}
+        </p>
+      )}
       {(worstSetup || costliestRule) && (
         <p className="text-secondary micro">
           {worstSetup && (
@@ -182,6 +180,7 @@ export const RangeBacktestResults: React.FC<{
 
       <div style={{ marginTop: "var(--space-4)" }}>
         {tab === "summary" && (
+          <>
           <table className="data-table">
             <thead>
               <tr>
@@ -198,6 +197,53 @@ export const RangeBacktestResults: React.FC<{
               ))}
             </tbody>
           </table>
+          {result.perTrader.length > 0 && (
+            <>
+              <span className="section-title backtest-section-title" style={{ display: "block" }}>
+                By trader (how each one manages its trades)
+              </span>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Trader</th>
+                    {STATS_HEAD}
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.perTrader.map((r) => (
+                    <tr key={r.trader}>
+                      <td className="ticker">{TRADER_META[r.trader as TraderCode]?.name ?? r.trader}</td>
+                      <StatsCells s={r} />
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+          {result.perPriceAction.length > 0 && (
+            <>
+              <span className="section-title backtest-section-title" style={{ display: "block" }}>
+                Fib pocket by price-action signal
+              </span>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Signal</th>
+                    {STATS_HEAD}
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.perPriceAction.map((r) => (
+                    <tr key={r.pattern}>
+                      <td className="ticker">{PA_LABEL[r.pattern] ?? r.pattern}</td>
+                      <StatsCells s={r} />
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+          </>
         )}
 
         {tab === "strategies" && (

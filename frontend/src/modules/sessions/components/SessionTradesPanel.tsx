@@ -1,8 +1,8 @@
 import React from "react";
-import { ActiveTrade } from "../../trades/types/trades.types";
-import { TradeAutopsy } from "../../learning/types/learning.types";
-import { VERDICT_META } from "../../learning/types/learningMeta";
-import { formatSignedRupee } from "../../opportunities/components/formatters";
+import { ActiveTrade } from "../../trade-history/types/trades.types";
+import { TradeAutopsy } from "../../autopsy/types/learning.types";
+import { VERDICT_META } from "../../autopsy/types/learningMeta";
+import { formatSignedRupee } from "../../opportunity-finder/components/formatters";
 
 interface Props {
   trades: ActiveTrade[];

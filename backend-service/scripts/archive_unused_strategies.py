@@ -2,7 +2,7 @@
 """
 Archive strategy records that never drive a trade (11 Nov 2026 research review, gap 3: one source of truth).
 
-Entries come from the CODED setups (app/modules/opportunities/service/setups.py); DB strategies only reach the
+Entries come from the CODED setups (app/modules/opportunity_finder/service/setups.py); DB strategies only reach the
 (now shadow) LLM as summaries and the against-trend name check. DRAFT and SUSPENDED rows are dead weight that make the
 registry look like ~50 strategies are being tested when none has a real trade record. ACTIVE rows are kept (the
 against-trend check reads their names); demotion of those is handled by the statistical kill rule in guardrails.

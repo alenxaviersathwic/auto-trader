@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { History, Loader2, ScanSearch } from "lucide-react";
 import { useAnalyseSessionBatch, useSessionBatches } from "../hooks/useSessions";
 import { BatchVerdict, ManagerVerdict, SessionBatch, SessionPick } from "../types/sessions.types";
-import { formatSignedRupee } from "../../opportunities/components/formatters";
+import { formatSignedRupee } from "../../opportunity-finder/components/formatters";
 
 const PAGE_SIZE = 10;
 const hms = (iso: string): string =>

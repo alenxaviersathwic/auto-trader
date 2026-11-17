@@ -47,6 +47,7 @@ from app.modules.research.fetch.polite_fetcher import polite_fetcher
 from app.modules.research.fetch.rss_reader import RssReader
 from app.modules.research.graph.state import ResearchState
 from app.modules.research.llm.embedding_client import embedding_client
+from app.modules.research.service.text_clean import mentions
 from app.modules.research.scoring.claim_weight import aggregate_weights
 from app.modules.research.scoring.classify_status import classify_underlying
 from app.modules.research.scoring.score_rank import rank_candidates_by_type
@@ -247,73 +248,10 @@ class ResearchNodes:
                     elif status == "BLOCKED":
                         state.stats["docsBlocked"] += 1
 
-        # 3. Targeted Market Intelligence for In-Scope Underlyings
-        now_dt = datetime.now(timezone.utc)
-        sample_intel = [
-            {
-                "url": "https://economictimes.indiatimes.com/markets/nifty-rally-inflows-update",
-                "domain": "economictimes.indiatimes.com",
-                "title": "Nifty 50 Surges on Strong FII Inflows and Banking Sector Strength",
-                "rawHtml": "Benchmark Indian indices extended gains today as the Nifty 50 surged past key resistance levels led by heavy buying in private banking heavyweights. Domestic institutional investors continued strong support, offsetting global macro volatility. Market breadth remained firmly positive with record retail participation.",
-                "underlyingCode": "NIFTY",
-                "publishedAt": now_dt,
-            },
-            {
-                "url": "https://www.moneycontrol.com/news/business/markets/bank-nifty-outlook-credit-growth",
-                "domain": "moneycontrol.com",
-                "title": "Bank Nifty Outperforms on Robust Credit Growth and Pristine Asset Quality",
-                "rawHtml": "The Nifty Bank index surged higher today as Indian lenders reported strong quarterly loan disbursements and pristine asset quality. Analysts maintain a bullish outlook on Bank Nifty citing solid net interest margins, benign NPA trends, and steady systemic credit growth.",
-                "underlyingCode": "BANKNIFTY",
-                "publishedAt": now_dt,
-            },
-            {
-                "url": "https://www.livemint.com/market/commodities/gold-prices-rally-safe-haven-demand",
-                "domain": "livemint.com",
-                "title": "Gold Prices Rally on Central Bank Purchases and Global Safe Haven Demand",
-                "rawHtml": "Spot Gold and MCX Gold futures advanced higher today as global central banks continued aggressive gold accumulation and bullion demand surged amid lower US Treasury yields.",
-                "underlyingCode": "GOLD",
-                "publishedAt": now_dt,
-            },
-            {
-                "url": "https://www.business-standard.com/markets/commodities/crude-oil-prices-gain-on-opec-supply-restraint",
-                "domain": "business-standard.com",
-                "title": "Crude Oil Prices Gain as OPEC+ Reaffirms Supply Discipline and Lower Inventories",
-                "rawHtml": "Crude oil futures traded higher on MCX and international exchanges following reports that OPEC+ members plan to extend voluntary output reductions through the next quarter. US commercial crude inventories fell unexpectedly, bolstering the near-term supply-demand balance and providing upward price momentum for energy markets.",
-                "underlyingCode": "CRUDEOIL",
-                "publishedAt": now_dt,
-            },
-            {
-                "url": "https://www.reuters.com/markets/asia/sensex-hit-fresh-highs-strong-macro",
-                "domain": "reuters.com",
-                "title": "BSE Sensex Jumps 500 Points on Favorable Inflation Data and Sustained Capital Inflows",
-                "rawHtml": "The BSE Sensex 30 surged over 500 points today driven by broad-based corporate earnings beats and declining headline inflation expectations. Foreign institutional investors turned net buyers across large-cap Indian equities, supporting bullish momentum across Indian benchmark indices.",
-                "underlyingCode": "SENSEX",
-                "publishedAt": now_dt,
-            },
-            {
-                "url": "https://www.moneycontrol.com/news/commodities/silver-prices-gain-industrial-demand",
-                "domain": "moneycontrol.com",
-                "title": "Silver Prices Surge on Industrial Solar Photovoltaic and Electronics Demand",
-                "rawHtml": "MCX Silver futures rallied higher today backed by resilient industrial demand across solar photovoltaic manufacturing and green energy infrastructure expansion.",
-                "underlyingCode": "SILVER",
-                "publishedAt": now_dt,
-            },
-            {
-                "url": "https://www.livemint.com/market/commodities/natural-gas-slumps-on-mild-weather-forecasts",
-                "domain": "livemint.com",
-                "title": "Natural Gas Prices Fall on High Storage Levels and Weak Heating Demand",
-                "rawHtml": "MCX Natural Gas futures tumbled lower as unseasonably warm weather forecasts dampened domestic and international heating fuel demand. Underground storage inventories remain near historic highs, creating significant downward pressure on natgas contract prices.",
-                "underlyingCode": "NATURALGAS",
-                "publishedAt": now_dt,
-            },
-        ]
-        in_scope_set = {u["code"] for u in state.underlyings}
-        for intel in sample_intel:
-            if intel.get("underlyingCode") in in_scope_set:
-                if intel["url"] not in urls_seen:
-                    urls_seen.add(intel["url"])
-                    fetched_articles.append(intel)
-                    state.stats["docsFetched"] += 1
+        # 17 Nov 2026: a "Targeted Market Intelligence" block used to append seven hard-coded articles here on every
+        # run ("Gold Prices Rally...", "Crude Oil Prices Gain...", "Sensex Jumps 500 Points...", "Natural Gas Prices
+        # Fall...") stamped with the current time. They were test fixtures, not news, and they tilted every run
+        # bullish for gold/crude/silver/the indices and bearish for natural gas. Only fetched articles count now.
 
         state.fetchedArticles = fetched_articles
         await self._log_event(
@@ -597,16 +535,21 @@ class ResearchNodes:
                 d for d in state.fetchedArticles
                 if d.get("underlyingCode") == code
                 or any(c.get("documentId") == d["id"] for c in u_claims)
-                or any(p in (d.get("title", "") + " " + d.get("text", "")).lower() for p in patterns)
+                # the title or the article itself must name it -- page furniture (the ET market ticker) does not count
+                or mentions(d.get("title", "") + " " + d.get("text", ""), patterns)
             ]
             domains = {d["domain"] for d in u_articles if d.get("domain")}
             independent_sources = len(domains)
 
-            # Ensure assertion exists if matching articles exist
-            if len(u_claims) == 0 and len(u_articles) > 0:
-                art = u_articles[0]
-                art_txt = (art.get("title", "") + " " + art.get("text", "")).lower()
-                is_bear = any(w in art_txt for w in ["fall", "drop", "plunge", "slump", "weakness"])
+            # No claim from the extractor: infer one only from an article whose HEADLINE names this underlying, and
+            # only when the headline itself says which way (it used to take any matched article's body and call it
+            # BULLISH unless a "fall"-type word appeared anywhere -- e.g. "Nokia shares falling" -> SENSEX BEARISH)
+            headline_art = next((a for a in u_articles if mentions(a.get("title", ""), patterns)), None)
+            head = (headline_art or {}).get("title", "").lower()
+            is_bear = any(w in head for w in ["fall", "drop", "plunge", "slump", "weak", "slide", "tumble", "crash"])
+            is_bull = any(w in head for w in ["rise", "gain", "rally", "surge", "jump", "record", "high", "climb"])
+            if len(u_claims) == 0 and headline_art is not None and is_bear != is_bull:
+                art = headline_art
                 stance = "BEARISH" if is_bear else "BULLISH"
                 stmt = art.get("title") or f"Market movement in {code}"
                 synth_claim = {
@@ -699,10 +642,11 @@ class ResearchNodes:
             keywords = [kw.lower() for kw in u_info.get("keywords", [])]
 
             def matches_item(a: Dict[str, Any]) -> bool:
+                # 17 Nov 2026: was a raw substring test on aliases AND loose keywords ("gold" in "Goldman", GOLD's
+                # "yields" / "US dollar" in any macro story): whole-word match on cleaned text, the item's own names
                 if a.get("underlyingCode") == code:
                     return True
-                text_to_search = f"{a.get('title', '')} {a.get('text', '')}".lower()
-                return any(al in text_to_search for al in aliases) or any(kw in text_to_search for kw in keywords)
+                return mentions(f"{a.get('title', '')} {a.get('text', '')}", aliases)
 
             matched_articles = [a for a in state.fetchedArticles if matches_item(a)]
 

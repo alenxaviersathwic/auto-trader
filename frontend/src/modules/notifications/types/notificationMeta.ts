@@ -9,6 +9,7 @@ export const KIND_META: Record<NotificationKind, { label: string; description: s
   SESSION_HALTED: { label: "Session halted", description: "A session hit its daily or weekly loss limit." },
   LEARNING: { label: "Learning", description: "The autopsy agent paused a losing setup or proposed a rule." },
   RESEARCH: { label: "Research", description: "A scheduled Research Engine run finished." },
+  MARKET_MOVE: { label: "Sudden move", description: "A scanned index or commodity moved sharply; the news found for it." },
 };
 
 export const KIND_ORDER = Object.keys(KIND_META) as NotificationKind[];

@@ -30,6 +30,9 @@ def compute_candidate_score(
     return score, label
 
 
+MIN_DIRECTION_SCORE = 25.0  # opportunity score below this: no direction
+
+
 def compute_opportunity_score(
     positive_weight: float,
     negative_weight: float,
@@ -58,7 +61,9 @@ def compute_opportunity_score(
         label = "MEDIUM"
     else:
         label = "LOW"
-    direction = None if score <= 0 else ("BULLISH" if pos >= neg else "BEARISH")
+    # a direction only when the news is strong enough to mean one: a single weak claim (SENSEX 17 Nov 2026: score
+    # 8.9) is "no clear edge", not BEARISH -- the engine weights this direction x2 in its market context
+    direction = None if score < MIN_DIRECTION_SCORE else ("BULLISH" if pos >= neg else "BEARISH")
     return score, label, direction
 
 

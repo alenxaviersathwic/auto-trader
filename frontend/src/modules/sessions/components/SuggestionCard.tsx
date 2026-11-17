@@ -16,12 +16,41 @@ import {
 } from "lucide-react";
 import { SessionPick } from "../types/sessions.types";
 import { useCountdown } from "../hooks/useSessionLoop";
-import { formatExpiry } from "../../opportunities/components/formatters";
+import { formatExpiry } from "../../opportunity-finder/components/formatters";
 
 const px = (n: number): string => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const inr = (n: number): string => `₹${Math.round(n).toLocaleString("en-IN")}`;
 const hm = (iso: string): string =>
   new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+
+/** 15-minute trend and 1-minute trigger the setup was confirmed on (missing on picks saved before 17 Nov 2026). */
+const TimeframeChips: React.FC<{ pick: SessionPick }> = ({ pick }) => {
+  const tf = pick.timeframes;
+  if (!tf) return null;
+  const want = pick.optionType === "CE" ? "UP" : "DOWN";
+  const t15 = tf["15m"];
+  const m1 = tf["1m"];
+  return (
+    <>
+      {t15 && (
+        <span
+          className={`te-pill ${t15.trend === want ? "te-pill--green" : t15.trend === "FLAT" ? "te-pill--amber" : "te-pill--red"}`}
+          title={`15-minute trend ${t15.trend}${t15.source === "15m+prev" ? " (EMAs include the previous session's 15-minute bars)" : ""}`}
+        >
+          15m {t15.trend}
+        </span>
+      )}
+      {m1 && m1.close != null && (
+        <span
+          className="te-pill te-pill--green"
+          title={`1-minute close ${px(m1.close)} ${pick.optionType === "CE" ? "above" : "below"} EMA9 ${px(m1.ema9 ?? 0)}; trigger ${px(m1.trigger ?? 0)}`}
+        >
+          1m ✓ {m1.trigger != null ? `${pick.optionType === "CE" ? ">" : "<"} ${Math.round(m1.trigger).toLocaleString("en-IN")}` : ""}
+        </span>
+      )}
+    </>
+  );
+};
 
 interface Props {
   pick: SessionPick;
@@ -72,6 +101,7 @@ export const SuggestionCard: React.FC<Props> = ({ pick: p, clockOffsetMs, lockin
             <CalendarDays size={10} /> EXP {formatExpiry(p.expiry)}
           </span>
           {p.strategy && <span className="te-pill">{p.strategy.replace(/_/g, " ")}</span>}
+          <TimeframeChips pick={p} />
           {best && (
             <span className="te-pill te-pill--cyan">
               <Sparkles size={10} /> MANAGER PICK

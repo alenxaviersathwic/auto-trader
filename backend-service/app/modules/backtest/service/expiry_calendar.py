@@ -13,7 +13,7 @@ to the previous trading day) using the SAME holiday table the live day-context t
 """
 from datetime import date, timedelta
 
-from app.modules.opportunities.service.day_context import is_trading_holiday, previous_trading_day
+from app.modules.opportunity_finder.service.day_context import is_trading_holiday, previous_trading_day
 
 WEEKLY_WEEKDAY = {"NIFTY": 1, "SENSEX": 3}  # Monday=0 ... Tuesday=1, Thursday=3
 MONTHLY_WEEKDAY = {"NIFTY": 1, "SENSEX": 3, "BANKNIFTY": 1, "FINNIFTY": 1, "MIDCPNIFTY": 1}

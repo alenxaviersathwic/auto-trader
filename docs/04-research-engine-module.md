@@ -169,3 +169,40 @@ All endpoints are registered under `/api/v1/research`:
 | `POST` | `/api/v1/research/runs/{id}/cancel` | Cancel an in-flight research run |
 | `POST` | `/api/v1/research/search` | Perform cosine vector similarity search over news claims |
 
+
+## 17 Nov 2026: why SENSEX showed BEARISH at an all-time high (fixed)
+
+Run 52 tagged SENSEX `BEARISH` (score 8.9, one claim). The "news" was a Nokia story, an Nvidia preview and an
+Australian bond sale: every Economic Times page carries a market ticker ("Benchmarks Nifty ... Sensex ...") and fund
+adverts, so a plain text match tied every article to NIFTY / SENSEX, and the fallback then called the index BEARISH
+because "falling" appeared in the article. The local LLM step that should have read the news was timing out
+(8-10 s limit, qwen3 "thinking" on), so these fallbacks ran on almost every article.
+
+- `service/text_clean.py`: page furniture is stripped before matching and before claim extraction; an article belongs
+  to an underlying only if its title or body names it as a word.
+- The fallback claim is made only from an article whose HEADLINE names the underlying and says which way.
+- `score_rank.MIN_DIRECTION_SCORE = 25`: below it the result has no direction ("no clear edge"). The opportunity
+  engine weights this direction x2 in its market context (`menu_builder.direction_bias`).
+- Claim extraction and the brief use the shared local-LLM path (queued, thinking off, warm model, 45 s budget).
+
+The research direction is a NEWS screen, never a price call; the trader "today" view labels it "News screen".
+
+## Local LLM (all modules)
+
+`ai_master/llm/ollama_client.py` is the one path to Ollama: a request queue (`LLM_MAX_CONCURRENCY`, default 1),
+`think=False` (`LLM_THINK`), `keep_alive=LLM_KEEP_ALIVE` (30m), `num_ctx=LLM_NUM_CTX` (4096), the JSON schema sent
+only as Ollama's `format`, a pooled HTTP client, an optional answer cache, and `fast=True` -> `LLM_FAST_MODEL`
+(default `qwen3:4b`, used only when installed; else `OLLAMA_MODEL` = `qwen3:8b`). Each call logs
+`[OLLAMA_TIMING] queue / load / prompt / answer`. Users: research claims + brief (fast), AI Master, trade AI
+analysis, opportunity ranker (only when `OPPORTUNITY_RANKER=LLM`).
+
+## 17 Nov 2026: fixture articles removed, brief matching fixed
+
+- `search_and_fetch` appended seven hard-coded "Targeted Market Intelligence" articles to EVERY run ("Gold Prices
+  Rally...", "Crude Oil Prices Gain...", "Sensex Jumps 500 Points...", "Natural Gas Prices Fall...") stamped with
+  the current time. They were test fixtures, not news, and tilted every run bullish for gold / crude / silver / the
+  indices and bearish for natural gas. Removed: only fetched articles count.
+- `write_briefs` picked an item's news with a raw substring test on aliases AND loose keywords ("gold" in
+  "Goldman", GOLD's "yields" / "US dollar" in any macro story). Now `text_clean.mentions()` on cleaned text, the
+  item's own names only.
+- New `service/news_service.py` (latest_view, recent_headlines) for the Commodity Desk and its news sub-agent.

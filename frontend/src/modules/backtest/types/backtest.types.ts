@@ -70,11 +70,12 @@ export interface RangeBacktestParams {
   capital: number;
   maxLossPct: number;
   sizing: "MAX_LOTS" | "RISK";
-  managerView?: "MY_VIEW" | "AI_VIEW";
-  traderFilter?: "ALL" | "FIB_GOLDEN_TRADER" | "FLOW_MOMENTUM_TRADER";
+  /** Replayed like a live session: one session manager (trader), or ALL to compare both. */
+  sessionManager?: "ALL" | "FIB_GOLDEN_TRADER" | "FLOW_MOMENTUM_TRADER";
+  /** The live session risk gate. */
+  riskLevel?: "LOW" | "MEDIUM" | "HIGH";
   sideFilter?: "ALL" | "CE" | "PE";
   maxParallel?: number;
-  guardEnabled?: boolean;
 }
 
 export interface RangeStats {
@@ -102,12 +103,16 @@ export interface RangeTrade {
   entryPremium: number;
   exitPremium: number;
   pctMove: number;
-  outcome: "STOP" | "TRAIL" | "TIME_EXIT" | "EOD";
+  outcome: "STOP" | "TRAIL" | "TIME_EXIT" | "EOD" | "LOCKED" | "TARGET";
   holdMinutes: number;
   riskPerLot: number;
   premiumPerLot: number;
   lotSize: number;
   netPnl: number;
+  trader?: string;
+  rr?: number | null;
+  /** Fib pocket only: PIN_BAR | ENGULFING | INSIDE_BAR_BREAK */
+  priceAction?: string | null;
   reason: string;
 }
 
@@ -154,7 +159,20 @@ export interface RangePortfolio extends RangeStats {
 }
 
 export interface RangeBacktestResult {
-  range: { from: string | null; to: string | null; tradingDays: number; codes: string[]; filters: string; fiiOpenCodes: string; pricing: string };
+  range: {
+    from: string | null;
+    to: string | null;
+    tradingDays: number;
+    codes: string[];
+    filters: string;
+    fiiOpenCodes: string;
+    pricing: string;
+    sessionManager: "ALL" | "FIB_GOLDEN_TRADER" | "FLOW_MOMENTUM_TRADER";
+    riskLevel: "LOW" | "MEDIUM" | "HIGH";
+    sideFilter: "ALL" | "CE" | "PE";
+    maxParallel: number;
+    fibNote: string | null;
+  };
   totals: RangeStats & {
     maxDrawdown: number;
     firstHalfPnl: number;
@@ -164,6 +182,8 @@ export interface RangeBacktestResult {
   };
   perIndex: (RangeStats & { code: string })[];
   perSetup: RangeSetupStats[];
+  perTrader: (RangeStats & { trader: string })[];
+  perPriceAction: (RangeStats & { pattern: string })[];
   ruleImpact: RangeRuleImpact[];
   blockedSetups: RangeSetupStats[];
   daily: RangeDaily[];

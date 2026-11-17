@@ -1,8 +1,8 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from app.modules.opportunities.service import event_calendar, gamma_regime as gr, positioning as pos
-from app.modules.opportunities.service import setups as su
+from app.modules.opportunity_finder.service import event_calendar, gamma_regime as gr, positioning as pos
+from app.modules.opportunity_finder.service import setups as su
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -62,7 +62,7 @@ def test_event_calendar_tags():
 
 
 def test_v2_rules_trend_vwap_pullback_and_entry_window():
-    from app.modules.opportunities.service import institutional_filters as inst
+    from app.modules.opportunity_finder.service import institutional_filters as inst
 
     on = inst.enabled("TREND_5_20,NO_VWAP_PULLBACK,ENTRY_10_1430")
     bar = lambda hhmm: [{"t": f"2026-11-12T{hhmm}:00+05:30", "c": 100.0}]  # noqa: E731
@@ -78,7 +78,7 @@ def test_v2_rules_trend_vwap_pullback_and_entry_window():
 
 
 def test_v3_ib_gate_pe_extra_and_inside_bar_policy():
-    from app.modules.opportunities.service import institutional_filters as inst
+    from app.modules.opportunity_finder.service import institutional_filters as inst
 
     on = inst.enabled("IB_GATE,PE_EXTRA")
     bar = lambda hhmm, c=100.0: [{"t": f"2026-11-12T{hhmm}:00+05:30", "c": c}]  # noqa: E731
@@ -100,15 +100,15 @@ def test_v3_ib_gate_pe_extra_and_inside_bar_policy():
     assert "PE_EXTRA" in inst.block({**base, "er10": 0.1, "vix": {"changePct": -1.0}}, pe, "NIFTY", on)
     assert inst.block({**base, "er10": 0.3}, pe, "NIFTY", on) is None
     assert inst.block({**base, "er10": 0.1, "vix": {"changePct": 2.0}}, pe, "NIFTY", on) is None
-    # INSIDE_BAR trades as a momentum entry, behind the same gates
-    assert su.SETUP_POLICY["INSIDE_BAR"] == "CORE" and "INSIDE_BAR" in inst.MOMENTUM_SETUPS
+    # INSIDE_BAR: dropped 17 Nov 2026 (replay), still gated like a momentum entry if it is ever re-enabled
+    assert su.SETUP_POLICY["INSIDE_BAR"] == "DROPPED" and "INSIDE_BAR" in inst.MOMENTUM_SETUPS
     assert inst.block({"levels": lv, "bars1": bar("12:00", 100.0)}, {"name": "INSIDE_BAR", "side": "CE"}, "NIFTY", on)
 
 
 def test_fii_open_drive_signal_window_and_exit():
     from app.core.config.settings import settings
-    from app.modules.opportunities.service import fii_open
-    from app.modules.trades.service.trade_service import _trade_close_at
+    from app.modules.opportunity_finder.service import fii_open
+    from app.modules.trade_history.service.trade_service import _trade_close_at
 
     old = settings.FII_OPEN_CODES
     settings.FII_OPEN_CODES = "NIFTY"
@@ -131,7 +131,7 @@ def test_fii_open_drive_signal_window_and_exit():
 
 
 def test_dma50_filter_and_overtrading_cooldown():
-    from app.modules.opportunities.service import guardrails, institutional_filters as inst
+    from app.modules.opportunity_finder.service import guardrails, institutional_filters as inst
 
     on = inst.enabled("DMA50")
     bar = [{"t": "2026-11-13T12:00:00+05:30", "c": 25000.0}]

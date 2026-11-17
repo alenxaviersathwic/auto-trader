@@ -22,6 +22,7 @@ TRADE_EXITED = "TRADE_EXITED"
 SESSION_HALTED = "SESSION_HALTED"
 LEARNING = "LEARNING"
 RESEARCH = "RESEARCH"
+MARKET_MOVE = "MARKET_MOVE"  # a sudden move on a scanned underlying and the news found for it
 
 
 async def notify(kind: str, title: str, body: str, *, severity: str = "info", session_id: int | None = None,

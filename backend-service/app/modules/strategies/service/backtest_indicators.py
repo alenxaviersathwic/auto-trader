@@ -1,6 +1,6 @@
 """
 Daily-bar indicator math for the strategy backtester. The live/intraday engine already has
-EMA/ATR/ADX/VWAP in opportunities/service/market_analysis.py (reused here as-is: they operate on
+EMA/ATR/ADX/VWAP in opportunity_finder/service/market_analysis.py (reused here as-is: they operate on
 plain OHLCV bar dicts and are not actually intraday-specific); this file adds the remaining
 indicator codes the strategy rule-tree registry knows about (SMA, RSI, CCI, SUPERTREND) so a
 backtest can feed the exact same RuleEvaluator the exact same `indicators.<CODE>` shape the live
@@ -54,7 +54,7 @@ def cci(bars: list[Bar], n: int = 20) -> list[float | None]:
 
 def supertrend(bars: list[Bar], n: int = 10, mult: float = 3.0) -> list[dict[str, Any] | None]:
     """Returns, per bar, {"value": <line>, "trend": "UP"|"DOWN"} once enough bars exist, else None."""
-    from app.modules.opportunities.service.market_analysis import atr as _atr_window
+    from app.modules.opportunity_finder.service.market_analysis import atr as _atr_window
 
     out: list[dict[str, Any] | None] = [None] * len(bars)
     if len(bars) < n + 1:

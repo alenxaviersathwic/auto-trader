@@ -19,58 +19,44 @@ import { useSessionLoop } from "../hooks/useSessionLoop";
 import { sessionsQueryKeys } from "../queryKeys/sessionsQueryKeys";
 import { TradeLockModal } from "../components/TradeLockModal";
 import { SuggestionCard } from "../components/SuggestionCard";
-import { ManagerCard } from "../components/ManagerCard";
 import { BatchHistory } from "../components/BatchHistory";
 import { RunningTradeCard } from "../components/RunningTradeCard";
 import { SessionTradesPanel } from "../components/SessionTradesPanel";
-import { AutopsyAgentPanel } from "../components/AutopsyAgentPanel";
+import { ManagerAgentPanel, ScannerStatus } from "../components/agents/ManagerAgentPanel";
+import { AutopsySubAgent } from "../components/agents/AutopsySubAgent";
+import { AgentActivityFeed } from "../components/agents/AgentActivityFeed";
 import { RISK_LEVELS, RISK_META } from "../components/riskLevels";
-import { useTradeSearch } from "../../trades/hooks/useTrades";
-import { tradesQueryKeys } from "../../trades/queryKeys/tradesQueryKeys";
-import {
-  TRADER_CODES,
-  TRADER_META,
-  normalizeTraderCode,
-  normalizeTraderCodes,
-  traderForStrategy,
-} from "../../trades/components/traderMeta";
-import { TraderCode } from "../../trades/types/trades.types";
-import { useAutopsies } from "../../learning/hooks/useLearning";
-import { learningQueryKeys } from "../../learning/queryKeys/learningQueryKeys";
-import { formatRupee, formatSignedRupee } from "../../opportunities/components/formatters";
+import { useTradeSearch } from "../../trade-history/hooks/useTrades";
+import { tradesQueryKeys } from "../../trade-history/queryKeys/tradesQueryKeys";
+import { DEFAULT_TRADER_CODES, DESK_CODE, normalizeTraderCodes } from "../../trade-history/components/traderMeta";
+import { DeskPanel } from "../../commodity-desk/components/DeskPanel";
+import { NewsSubAgent } from "../../commodity-desk/components/NewsSubAgent";
+import { TraderCode } from "../../trade-history/types/trades.types";
+import { useAutopsies } from "../../autopsy/hooks/useLearning";
+import { learningQueryKeys } from "../../autopsy/queryKeys/learningQueryKeys";
+import { formatRupee, formatSignedRupee } from "../../opportunity-finder/components/formatters";
 import {
   resumeOpportunityLoop,
   useOpportunityCards,
   useOpportunityLoop,
   useStartOpportunity,
   useStopAll,
-} from "../../opportunities/hooks/useOpportunities";
-import { RiskLevel, SessionLoopStateName, SessionPick } from "../types/sessions.types";
+} from "../../opportunity-finder/hooks/useOpportunities";
+import { RiskLevel, SessionPick } from "../types/sessions.types";
 
 const LOCK_FAILURE_MS = 6000;
 const LIVE_REFRESH_MS = 2000;
 const IDLE_REFRESH_MS = 15000;
 
-const STATE_COPY: Record<SessionLoopStateName, string> = {
-  SCHEDULED: "Waiting for the session start time",
-  WAITING: "Both traders are watching; nothing passes its checks yet",
-  PICK_READY: "Setups are open",
-  HALTED: "Halted: a loss limit was reached",
-  SESSION_CLOSED: "This session is closed",
-  UNSUPPORTED_TYPE: "This session type has no loop yet",
-};
-
 const hhmm = (iso: string): string =>
   new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
-
-const pickTrader = (p: SessionPick): TraderCode => normalizeTraderCode(p.traderCode) ?? traderForStrategy(p.strategy);
 
 type Tab = "CURRENT" | "HISTORY";
 
 /**
- * The session screen, laid out like trading-engine's session desk: header with the session controls, a stat row,
- * then the session manager's best suggestion with Current / History tabs on the left and running trades, session
- * trades and the autopsy agent on the right.
+ * The session screen: a compact control bar and stat strip, then the session manager agent (its last pass traced
+ * scan -> filter -> rank -> decide, with its autopsy sub-agent under it) and the open setups on the left; locked
+ * picks, running and closed trades and the agents' activity on the right.
  */
 export const SessionDetailPage: React.FC = () => {
   const { id } = useParams({ strict: false }) as { id: string };
@@ -156,11 +142,26 @@ export const SessionDetailPage: React.FC = () => {
   }
 
   const underlyings = session.scope === "INDEX" ? session.underlyings : session.commodityItems;
-  const scannersRunning = oppCards.filter((c) => underlyings.includes(c.code) && c.master?.state === "RUNNING").length;
+  const myCards = oppCards.filter((c) => underlyings.includes(c.code) && c.master);
+  const scannersRunning = myCards.filter((c) => c.master?.state === "RUNNING").length;
+  const scanners: ScannerStatus[] = myCards.map((c) => ({
+    code: c.code,
+    note: c.master?.lastError ?? c.master?.lastNote?.toLowerCase() ?? `${c.master?.liveCount ?? 0} live`,
+    error: Boolean(c.master?.lastError),
+    on: c.master?.state === "RUNNING",
+    scans: c.master?.iterationsCompleted ?? 0,
+    lastStartedAt: c.master?.lastStartedAt ?? null,
+    lastCompletedAt: c.master?.lastCompletedAt ?? null,
+    lastDurationMs: c.master?.lastDurationMs ?? null,
+    gapSeconds: Number(c.master?.params?.loopGapSeconds ?? 20),
+  }));
   const noResearchData =
     !hasResearch ||
     (startScanner.data && !startScanner.data.started && startScanner.data.reason === "NO_RESEARCH_DATA");
   const activeTraders = normalizeTraderCodes(session.traders);
+  // the opportunity finders feeding this session (chosen by its scope); old sessions: the ones named in traders
+  const sessionFinders = normalizeTraderCodes(session.finders?.length ? session.finders : session.traders);
+  const managerCode: TraderCode | null = activeTraders.length === 1 ? activeTraders[0] : null;
   const riskLevel: RiskLevel = session.riskLevel ?? "HIGH";
   const data = loop.data;
   const picks = data?.picks ?? [];
@@ -171,7 +172,7 @@ export const SessionDetailPage: React.FC = () => {
   const wins = closed.filter((t) => t.netPnl > 0).length;
   const autopsyList = autopsies.data?.list ?? [];
   const autopsyByTrade = new Map(autopsyList.map((a) => [a.tradeId, a]));
-  const excluded = Object.entries(data?.scanned.excluded ?? {});
+  const excluded = Object.entries(data?.scanned.excluded ?? {}).sort((a, b) => b[1] - a[1]);
   const bestId = data?.manager?.pickId ?? null;
 
   const cap = data?.capital;
@@ -179,21 +180,24 @@ export const SessionDetailPage: React.FC = () => {
   const budgetLeft = cap?.remainingLossBudget ?? maxLoss;
   const budgetPct = maxLoss > 0 ? Math.min(100, (budgetLeft / maxLoss) * 100) : 0;
   const realized = cap?.realizedPnl ?? session.realizedPnl;
-  const stateTitle = !isActive ? STATE_COPY.SESSION_CLOSED : data ? STATE_COPY[data.state] : STATE_COPY.WAITING;
-  const stateMessage = data?.message ?? "Waiting for the first loop tick.";
+  const maxParallel = cap?.maxParallelTrades ?? 3;
+  const loopState = !isActive ? "SESSION_CLOSED" : (data?.state ?? null);
+  const stateMessage = !isActive
+    ? "This session is closed."
+    : (data?.message ?? (loop.connection === "connecting" ? "Connecting to the session loop…" : "Waiting for the first loop pass."));
 
   const update = (payload: Parameters<typeof updateMutation.mutate>[0]["payload"]) =>
     updateMutation.mutate({ id: session.id, payload });
-  const toggleTrader = (code: TraderCode) => {
-    const on = activeTraders.includes(code);
-    if (on && activeTraders.length <= 1) return; // one trader must stay on
-    update({ traders: on ? activeTraders.filter((c) => c !== code) : [...activeTraders, code] });
+  // One session manager per session: switching hands the session over; its finders stay the same
+  const chooseManager = (code: TraderCode) => {
+    if (managerCode === code) return;
+    update({ traders: [code] });
   };
   const openTrade = (tradeId: number) => navigate({ to: "/trades/$tradeId", params: { tradeId: String(tradeId) } });
   const loopPill = loop.error
     ? { cls: "te-pill--red", label: "RECONNECTING" }
     : loop.running && data
-      ? { cls: "te-pill--green", label: "LOOP LIVE" }
+      ? { cls: "te-pill--green", label: "LIVE" }
       : { cls: "", label: loop.connection === "connecting" ? "CONNECTING" : "LOOP OFF" };
   const alerts = [
     oppLoop.lastError && `Scanner: ${oppLoop.lastError}`,
@@ -201,199 +205,146 @@ export const SessionDetailPage: React.FC = () => {
     lockFailure && `Not locked: ${lockFailure}`,
     updateMutation.error instanceof Error && updateMutation.error.message,
   ].filter((m): m is string => Boolean(m));
+  const showPick = (pid: number) => {
+    setTab("CURRENT");
+    setFocusPickId(pid);
+  };
 
-  return (
-    <div className="te-desk">
-      {/* 1. Header: where you are + the session controls */}
-      <header className="te-head">
-        <div className="te-head__left">
-          <button type="button" className="te-btn te-btn--ghost te-btn--sm" onClick={() => navigate({ to: "/sessions" })}>
-            <ArrowLeft size={14} /> Sessions
-          </button>
-          <h1 className="te-title">{session.name}</h1>
-          <span className={`te-mode-tag ${session.routeThroughUpstox ? "te-mode-tag--live" : "te-mode-tag--sim"}`}>
-            {session.routeThroughUpstox ? "UPSTOX LIVE" : "SIMULATED"}
-          </span>
-          <span className={`te-pill ${isActive ? "te-pill--green" : ""}`}>{session.sessionStatus}</span>
-          <span className={`te-pill ${loopPill.cls}`}>
-            <Radio size={10} /> {loopPill.label}
-          </span>
-          <span className="micro text-muted mono">
-            {session.tradeDate} · {hhmm(session.startAt)}–{hhmm(session.closeAt)} IST
-          </span>
-        </div>
-        <div className="te-head__right">
-          <div className="te-control">
-            <span className="label">Mode</span>
-            <div className="sd-seg-group" role="group" aria-label="Session mode">
-              {(["MANUAL", "SEMI_AUTO", "FULL_AUTO"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={`sd-seg-btn ${session.sessionType === mode ? "active" : ""}`}
-                  aria-pressed={session.sessionType === mode}
-                  onClick={() => update({ sessionType: mode })}
-                  disabled={updateMutation.isPending || !isActive}
-                >
-                  {mode.replace("_", " ")}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="te-control">
-            <span className="label">Risk</span>
-            <div className="sd-seg-group" role="group" aria-label="Session risk level">
-              {RISK_LEVELS.map((lv) => (
-                <button
-                  key={lv}
-                  type="button"
-                  className={`sd-seg-btn ${riskLevel === lv ? "active" : ""}`}
-                  aria-pressed={riskLevel === lv}
-                  title={RISK_META[lv].takes}
-                  onClick={() => update({ riskLevel: lv })}
-                  disabled={updateMutation.isPending || !isActive}
-                >
-                  {lv}
-                </button>
-              ))}
-            </div>
-          </div>
-          <button
-            type="button"
-            className={`upstox-switch-btn ${session.routeThroughUpstox ? "upstox-switch-btn--live" : ""}`}
-            role="switch"
-            aria-checked={session.routeThroughUpstox}
-            onClick={() => update({ routeThroughUpstox: !session.routeThroughUpstox })}
-            disabled={updateMutation.isPending || !isActive}
-            title="Send this session's orders to Upstox (real money) or keep them simulated"
-          >
-            <div className={`upstox-switch-track ${session.routeThroughUpstox ? "upstox-switch-track--on" : ""}`}>
-              <div className="upstox-switch-thumb" />
-            </div>
-            <Zap size={12} />
-            <span>{session.routeThroughUpstox ? "UPSTOX LIVE" : "SIMULATED"}</span>
-          </button>
-          {isActive &&
-            (scannersRunning > 0 ? (
-              <button type="button" className="te-btn te-btn--ghost te-btn--sm" onClick={() => stopScanner.mutate()} disabled={stopScanner.isPending}>
-                <Square size={11} />
-                {oppLoop.running && oppLoop.currentCode ? `Scanning ${oppLoop.currentCode} · Stop` : "Stop scanner"}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="te-btn te-btn--primary te-btn--sm"
-                onClick={() => startScanner.mutate({ underlyings })}
-                disabled={startScanner.isPending || underlyings.length === 0}
-              >
-                {startScanner.isPending ? <Loader2 size={12} className="sp-spin" /> : <Play size={12} />}
-                {startScanner.isPending ? "Starting…" : "Start scanner"}
-              </button>
-            ))}
-          {isActive && (
+  const controls = (
+    <div className="sd3-controls" role="toolbar" aria-label="Session controls">
+      <div className="sd3-ctl">
+        <span className="sd3-ctl__label">Mode</span>
+        <div className="sd-seg-group" role="group" aria-label="Session mode">
+          {(["MANUAL", "SEMI_AUTO", "FULL_AUTO"] as const).map((mode) => (
             <button
+              key={mode}
               type="button"
-              className="te-btn te-btn--ghost te-btn--sm"
-              onClick={() => update({ sessionStatus: "CLOSED" })}
-              disabled={updateMutation.isPending || running.length > 0}
-              title={running.length > 0 ? "Exit the running trades first" : "Close this session"}
+              className={`sd-seg-btn ${session.sessionType === mode ? "active" : ""}`}
+              aria-pressed={session.sessionType === mode}
+              onClick={() => update({ sessionType: mode })}
+              disabled={updateMutation.isPending || !isActive}
             >
-              <Power size={13} /> Close session
+              {mode.replace("_", " ")}
             </button>
-          )}
-        </div>
-      </header>
-
-      {noResearchData && (
-        <div className="card desk-alert desk-alert--amber">
-          <div className="desk-alert__text micro">
-            <AlertTriangle size={15} />
-            <span>The Research Engine has no data for today, so the scanner cannot look for setups in {underlyings.join(", ")}.</span>
-          </div>
-          <button type="button" className="te-btn te-btn--primary te-btn--sm" onClick={() => navigate({ to: "/research" })}>
-            <Sparkles size={13} /> Run Research Engine
-          </button>
-        </div>
-      )}
-      {alerts.map((message) => (
-        <div key={message} className="card desk-alert desk-alert--red">
-          <div className="desk-alert__text micro">
-            <AlertTriangle size={14} />
-            <span>{message}</span>
-          </div>
-        </div>
-      ))}
-
-      {/* 2. Stat row */}
-      <div className="card te-stats">
-        <div className="te-stat">
-          <div className="te-stat__label">Current capital</div>
-          <div className="te-stat__value">{formatRupee(cap?.currentCapital ?? session.currentCapital)}</div>
-          <div className={`te-stat__sub ${realized >= 0 ? "text-green" : "text-red"}`}>
-            {formatSignedRupee(realized, true)} ({((realized / session.capital) * 100).toFixed(2)}%)
-          </div>
-        </div>
-        <div className="te-stat">
-          <div className="te-stat__label">Starting capital</div>
-          <div className="te-stat__value">{formatRupee(session.capital)}</div>
-          <div className="te-stat__sub">Max loss {session.maxLossPercentage}% = {formatRupee(maxLoss)}</div>
-        </div>
-        <div className="te-stat">
-          <div className="te-stat__label">Free to trade</div>
-          <div className="te-stat__value text-green">{formatRupee(cap?.availableCapital ?? session.currentCapital)}</div>
-          <div className="te-stat__sub">{formatRupee(cap?.committedPremium ?? 0)} in open positions</div>
-        </div>
-        <div className="te-stat">
-          <div className="te-stat__label">Loss budget left</div>
-          <div className="te-stat__value">{formatRupee(budgetLeft)}</div>
-          <div className="te-budget">
-            <div
-              className={`te-budget__fill ${budgetPct > 50 ? "" : budgetPct > 20 ? "te-budget__fill--warn" : "te-budget__fill--crit"}`}
-              style={{ width: `${budgetPct}%` }}
-            />
-          </div>
-        </div>
-        <div className="te-stat">
-          <div className="te-stat__label">Trades</div>
-          <div className="te-stat__value">
-            {running.length} live · {closed.length} closed
-          </div>
-          <div className="te-stat__sub">
-            {closed.length > 0 ? `${wins}W / ${closed.length - wins}L` : "No closed trades yet"} · max{" "}
-            {cap?.maxParallelTrades ?? 3} at once
-          </div>
-        </div>
-        <div className="te-stat">
-          <div className="te-stat__label">Profile</div>
-          <div className="te-chips" style={{ marginTop: 4 }}>
-            <span className="te-pill te-pill--blue">{session.sessionType.replace("_", " ")}</span>
-            <span className={`te-pill ${riskLevel === "LOW" ? "te-pill--green" : riskLevel === "MEDIUM" ? "te-pill--amber" : "te-pill--red"}`}>
-              {riskLevel} RISK
-            </span>
-          </div>
-          <div className="te-stat__sub">{underlyings.join(", ")}</div>
+          ))}
         </div>
       </div>
+      <div className="sd3-ctl">
+        <span className="sd3-ctl__label">Risk</span>
+        <div className="sd-seg-group" role="group" aria-label="Session risk level">
+          {RISK_LEVELS.map((lv) => (
+            <button
+              key={lv}
+              type="button"
+              className={`sd-seg-btn ${riskLevel === lv ? "active" : ""}`}
+              aria-pressed={riskLevel === lv}
+              title={RISK_META[lv].takes}
+              onClick={() => update({ riskLevel: lv })}
+              disabled={updateMutation.isPending || !isActive}
+            >
+              {lv}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="sd3-ctl sd3-ctl--actions">
+        <button
+          type="button"
+          className={`sd2-live ${session.routeThroughUpstox ? "sd2-live--on" : ""}`}
+          role="switch"
+          aria-checked={session.routeThroughUpstox}
+          onClick={() => update({ routeThroughUpstox: !session.routeThroughUpstox })}
+          disabled={updateMutation.isPending || !isActive}
+          title="Send this session's orders to Upstox (real money) or keep them simulated"
+        >
+          <Zap size={12} /> {session.routeThroughUpstox ? "Upstox live" : "Simulated"}
+        </button>
+        {isActive &&
+          (scannersRunning > 0 ? (
+            <button type="button" className="te-btn te-btn--ghost te-btn--sm" onClick={() => stopScanner.mutate()} disabled={stopScanner.isPending}>
+              <Square size={11} /> Stop scanner
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="te-btn te-btn--primary te-btn--sm"
+              onClick={() => startScanner.mutate({ underlyings })}
+              disabled={startScanner.isPending || underlyings.length === 0}
+            >
+              {startScanner.isPending ? <Loader2 size={12} className="sp-spin" /> : <Play size={12} />}
+              {startScanner.isPending ? "Starting…" : "Start scanner"}
+            </button>
+          ))}
+        {isActive && (
+          <button
+            type="button"
+            className="te-btn te-btn--ghost te-btn--sm"
+            onClick={() => update({ sessionStatus: "CLOSED" })}
+            disabled={updateMutation.isPending || running.length > 0}
+            title={running.length > 0 ? "Exit the running trades first" : "Close this session"}
+          >
+            <Power size={12} /> Close
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
-      {/* 3. Desk */}
-      <div className="te-grid">
-        <div className="te-desk">
-          <ManagerCard
-            advice={data?.manager}
-            stateTitle={stateTitle}
-            stateMessage={stateMessage}
-            openCount={picks.length}
-            candidates={data?.scanned.candidates ?? 0}
-            riskLevel={riskLevel}
-            locking={lockMutation.isPending}
-            canLock={isActive}
-            onLock={handleLock}
-            onShow={(pid) => {
-              setTab("CURRENT");
-              setFocusPickId(pid);
-            }}
-          />
+  return (
+    <div className="te-desk sd3">
+      {/* LEFT 60%: the session manager agent and the opportunities it works on */}
+      <div className="sd3-main">
+        {noResearchData && (
+          <div className="card desk-alert desk-alert--amber">
+            <div className="desk-alert__text micro">
+              <AlertTriangle size={15} />
+              <span>The Research Engine has no data for today, so the scanner cannot look for setups in {underlyings.join(", ")}.</span>
+            </div>
+            <button type="button" className="te-btn te-btn--primary te-btn--sm" onClick={() => navigate({ to: "/research" })}>
+              <Sparkles size={13} /> Run Research Engine
+            </button>
+          </div>
+        )}
+        {alerts.map((message) => (
+          <div key={message} className="card desk-alert desk-alert--red">
+            <div className="desk-alert__text micro">
+              <AlertTriangle size={14} />
+              <span>{message}</span>
+            </div>
+          </div>
+        ))}
 
+        <ManagerAgentPanel
+          managerCode={managerCode}
+          scope={session.scope}
+          finderCodes={sessionFinders}
+          state={loopState}
+          message={stateMessage}
+          isActive={isActive}
+          scanners={scanners}
+          scannersRunning={scannersRunning}
+          scanningCode={oppLoop.running ? oppLoop.currentCode : null}
+          candidates={data?.scanned.candidates ?? 0}
+          excluded={excluded}
+          openCount={picks.length}
+          advice={data?.manager}
+          locking={lockMutation.isPending}
+          switching={updateMutation.isPending}
+          onLock={handleLock}
+          onShow={showPick}
+          onSwitch={chooseManager}
+        >
+          {sessionFinders.includes(DESK_CODE) ? (
+            <DeskPanel codes={underlyings} />
+          ) : (
+            <NewsSubAgent codes={underlyings} />
+          )}
+          {(managerCode ? [managerCode] : DEFAULT_TRADER_CODES).map((code) => (
+            <AutopsySubAgent key={code} managerCode={code} nested collapsible />
+          ))}
+        </ManagerAgentPanel>
+
+        <section className="sd3-opps" aria-label="Opportunities">
           <div className="te-tabs">
             <div className="te-tabs__list" role="tablist">
               <button
@@ -403,7 +354,7 @@ export const SessionDetailPage: React.FC = () => {
                 className={`te-tab ${tab === "CURRENT" ? "active" : ""}`}
                 onClick={() => setTab("CURRENT")}
               >
-                <Radio size={14} /> Current ({picks.length})
+                <Radio size={14} /> Opportunities ({picks.length})
               </button>
               <button
                 type="button"
@@ -422,117 +373,33 @@ export const SessionDetailPage: React.FC = () => {
                   {oppLoop.currentCode ? `scanning ${oppLoop.currentCode}` : `round ${oppLoop.round}`}
                 </span>
               )}
-              {tab === "CURRENT" && (
-                <span>
-                  Sorted by <strong>expected net</strong>
-                </span>
-              )}
+              <span title="Every setup is confirmed on the 15-minute trend and a 1-minute trigger">15m trend · 1m trigger</span>
             </span>
           </div>
 
           {tab === "CURRENT" ? (
-            <div className="te-desk" role="tabpanel">
-              {excluded.length > 0 && (
-                <div className="te-chips" aria-label="Why candidates were skipped">
-                  {excluded.map(([reason, n]) => (
-                    <span key={reason} className="te-pill" title="Candidates skipped for this reason">
-                      {n} · {reason}
-                    </span>
-                  ))}
+            <div className="sd2-picks" role="tabpanel">
+              {picks.length === 0 ? (
+                <div className="te-empty">
+                  {!isActive
+                    ? "The session is closed."
+                    : scannersRunning === 0
+                      ? "The scanner is stopped. Start it to look for setups."
+                      : "No open opportunity. The session manager offers one here as soon as a setup passes the 15-minute, 5-minute and 1-minute checks."}
                 </div>
-              )}
-
-              {lockedPicks.length > 0 && (
-                <section className="te-panel" aria-label="Locked picks">
-                  <span className="te-panel__title">
-                    <Lock size={14} /> Locked, ready to enter ({lockedPicks.length})
-                  </span>
-                  {lockedPicks.map((lp) => (
-                    <div key={lp.id} className="te-row">
-                      <span className="te-row__main">
-                        <span className="te-row__title mono">
-                          {lp.underlyingCode} {lp.strike} {lp.optionType} · {lp.lots} lot{lp.lots === 1 ? "" : "s"}
-                        </span>
-                        <span className="te-row__sub">
-                          Locked at {formatRupee(lp.lockedPrice ?? lp.entry)} · stop {formatRupee(lp.stop)} · target{" "}
-                          {formatRupee(lp.target)}
-                        </span>
-                      </span>
-                      <button type="button" className="te-btn te-btn--primary te-btn--sm" onClick={() => setLockedPick(lp)}>
-                        <Play size={12} /> Enter trade
-                      </button>
-                    </div>
-                  ))}
-                </section>
-              )}
-
-              {TRADER_CODES.map((code) => {
-                const meta = TRADER_META[code];
-                const on = activeTraders.includes(code);
-                const mine = picks.filter((p) => pickTrader(p) === code);
-                return (
-                  <section key={code} className={`te-trader ${on ? "" : "te-trader--off"}`} aria-label={meta.name}>
-                    <div className="te-trader__head">
-                      <div className="te-trader__name">
-                        <span className={`badge ${on ? meta.badgeClass : "badge--slate"} mono`}>{meta.tag}</span>
-                        <h3>{meta.name}</h3>
-                        <span className="micro text-muted">{mine.length} open</span>
-                      </div>
-                      <button
-                        type="button"
-                        className={`desk-switch ${on ? "desk-switch--on" : ""}`}
-                        role="switch"
-                        aria-checked={on}
-                        aria-label={`${meta.name} ${on ? "on" : "off"}`}
-                        disabled={updateMutation.isPending || (on && activeTraders.length <= 1) || !isActive}
-                        title={on && activeTraders.length <= 1 ? "At least one trader must stay on" : undefined}
-                        onClick={() => toggleTrader(code)}
-                      >
-                        <span className="desk-switch__track">
-                          <span className="desk-switch__thumb" />
-                        </span>
-                        <span className="micro">{on ? "ON" : "OFF"}</span>
-                      </button>
-                    </div>
-                    {mine.length === 0 ? (
-                      <div className="te-empty">
-                        {!on
-                          ? "Switched off for this session."
-                          : !isActive
-                            ? "The session is closed."
-                            : scannersRunning === 0
-                              ? "The scanner is stopped. Start it to look for setups."
-                              : `Watching: ${meta.checks[0].toLowerCase()}.`}
-                      </div>
-                    ) : (
-                      mine.map((p) => (
-                        <div key={`${p.id}-${focusPickId === p.id}`} id={`pick-${p.id}`}>
-                          <SuggestionCard
-                            pick={p}
-                            clockOffsetMs={loop.clockOffsetMs}
-                            locking={lockMutation.isPending && lockMutation.variables === p.id}
-                            best={bestId === p.id}
-                            defaultExpanded={focusPickId === p.id || (bestId === p.id && focusPickId === null)}
-                            onLock={handleLock}
-                          />
-                        </div>
-                      ))
-                    )}
-                  </section>
-                );
-              })}
-
-              {oppCards.some((c) => underlyings.includes(c.code) && c.master) && (
-                <div className="te-chips" aria-label="Scanner status per underlying">
-                  {oppCards
-                    .filter((c) => underlyings.includes(c.code) && c.master)
-                    .map((c) => (
-                      <span key={c.code} className={`te-pill ${c.master?.lastError ? "te-pill--red" : ""}`}>
-                        {c.code} · scan {c.master?.iterationsCompleted ?? 0} ·{" "}
-                        {c.master?.lastError ?? c.master?.lastNote ?? `${c.master?.liveCount ?? 0} live`}
-                      </span>
-                    ))}
-                </div>
+              ) : (
+                picks.map((p) => (
+                  <div key={`${p.id}-${focusPickId === p.id}`} id={`pick-${p.id}`}>
+                    <SuggestionCard
+                      pick={p}
+                      clockOffsetMs={loop.clockOffsetMs}
+                      locking={lockMutation.isPending && lockMutation.variables === p.id}
+                      best={bestId === p.id}
+                      defaultExpanded={focusPickId === p.id}
+                      onLock={handleLock}
+                    />
+                  </div>
+                ))
               )}
             </div>
           ) : (
@@ -540,16 +407,96 @@ export const SessionDetailPage: React.FC = () => {
               <BatchHistory sessionId={sessionId} />
             </div>
           )}
-        </div>
-
-        <aside className="te-side" aria-label="Trades and learning">
-          {running.map((t) => (
-            <RunningTradeCard key={t.id} trade={t} onOpen={openTrade} />
-          ))}
-          <SessionTradesPanel trades={allTrades} autopsies={autopsyByTrade} onOpen={openTrade} />
-          <AutopsyAgentPanel latest={autopsyList[0]} />
-        </aside>
+        </section>
       </div>
+
+      {/* RIGHT 40%: the session itself -- identity, controls, money, positions, trades, activity */}
+      <aside className="sd3-side" aria-label="Session details">
+        <section className="sd3-card" aria-label="Session">
+          <div className="sd3-card__top">
+            <button type="button" className="sd2-back" onClick={() => navigate({ to: "/sessions" })} aria-label="Back to sessions">
+              <ArrowLeft size={15} />
+            </button>
+            <div className="sd3-card__id">
+              <h1 className="sd2-title">{session.tradeDate}</h1>
+              <span className="micro text-muted mono">
+                #{session.id} · {hhmm(session.startAt)}–{hhmm(session.closeAt)} IST
+              </span>
+            </div>
+            <span className="sd3-card__pills">
+              <span className={`te-pill ${isActive ? "te-pill--green" : ""}`}>{session.sessionStatus}</span>
+              <span className={`te-pill ${loopPill.cls}`}>
+                <Radio size={10} /> {loopPill.label}
+              </span>
+            </span>
+          </div>
+          <span className="sd2-underlyings">
+            {underlyings.map((c) => (
+              <span key={c} className="sd2-ul">{c}</span>
+            ))}
+          </span>
+          {controls}
+          <div className="sd3-kpis" aria-label="Session capital">
+            <div className="sd2-kpi">
+              <span className="sd2-kpi__label">Capital</span>
+              <span className="sd2-kpi__value">{formatRupee(cap?.currentCapital ?? session.currentCapital)}</span>
+              <span className={`sd2-kpi__sub ${realized > 0 ? "text-green" : realized < 0 ? "text-red" : ""}`}>
+                {formatSignedRupee(realized, true)} ({((realized / session.capital) * 100).toFixed(2)}%)
+              </span>
+            </div>
+            <div className="sd2-kpi">
+              <span className="sd2-kpi__label">Free to trade</span>
+              <span className="sd2-kpi__value text-green">{formatRupee(cap?.availableCapital ?? session.currentCapital)}</span>
+              <span className="sd2-kpi__sub">{formatRupee(cap?.committedPremium ?? 0)} in positions</span>
+            </div>
+            <div className="sd2-kpi">
+              <span className="sd2-kpi__label">Loss budget left</span>
+              <span className="sd2-kpi__value">{formatRupee(budgetLeft)}</span>
+              <div className="te-budget" title={`${session.maxLossPercentage}% of capital = ${formatRupee(maxLoss)}`}>
+                <div
+                  className={`te-budget__fill ${budgetPct > 50 ? "" : budgetPct > 20 ? "te-budget__fill--warn" : "te-budget__fill--crit"}`}
+                  style={{ width: `${budgetPct}%` }}
+                />
+              </div>
+            </div>
+            <div className="sd2-kpi">
+              <span className="sd2-kpi__label">Trades</span>
+              <span className="sd2-kpi__value">{closed.length > 0 ? `${wins}W · ${closed.length - wins}L` : "0 closed"}</span>
+              <span className="sd2-kpi__sub">
+                {running.length}/{maxParallel} open · {lockedPicks.length} locked
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {lockedPicks.length > 0 && (
+          <section className="te-panel" aria-label="Locked picks">
+            <span className="te-panel__title">
+              <Lock size={14} /> Locked, ready to enter ({lockedPicks.length})
+            </span>
+            {lockedPicks.map((lp: SessionPick) => (
+              <div key={lp.id} className="te-row">
+                <span className="te-row__main">
+                  <span className="te-row__title mono">
+                    {lp.underlyingCode} {lp.strike} {lp.optionType} · {lp.lots} lot{lp.lots === 1 ? "" : "s"}
+                  </span>
+                  <span className="te-row__sub">
+                    at {formatRupee(lp.lockedPrice ?? lp.entry)} · SL {formatRupee(lp.stop)} · T {formatRupee(lp.target)}
+                  </span>
+                </span>
+                <button type="button" className="te-btn te-btn--primary te-btn--sm" onClick={() => setLockedPick(lp)}>
+                  <Play size={12} /> Enter
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
+        {running.map((t) => (
+          <RunningTradeCard key={t.id} trade={t} onOpen={openTrade} />
+        ))}
+        <SessionTradesPanel trades={allTrades} autopsies={autopsyByTrade} onOpen={openTrade} />
+        <AgentActivityFeed sessionId={sessionId} autopsies={autopsyList} />
+      </aside>
 
       {lockedPick && <TradeLockModal pick={lockedPick} onClose={() => setLockedPick(null)} />}
     </div>

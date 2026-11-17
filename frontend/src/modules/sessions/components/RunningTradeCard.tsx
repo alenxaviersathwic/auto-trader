@@ -1,9 +1,9 @@
 import React from "react";
 import { AlertTriangle, Eye, LogOut } from "lucide-react";
-import { ActiveTrade } from "../../trades/types/trades.types";
-import { formatSignedRupee } from "../../opportunities/components/formatters";
-import { useExitTrade } from "../../trades/hooks/useTrades";
-import { TRADER_META, normalizeTraderCode, traderForStrategy } from "../../trades/components/traderMeta";
+import { ActiveTrade } from "../../trade-history/types/trades.types";
+import { formatSignedRupee } from "../../opportunity-finder/components/formatters";
+import { useExitTrade } from "../../trade-history/hooks/useTrades";
+import { TRADER_META, normalizeTraderCode, traderForStrategy } from "../../trade-history/components/traderMeta";
 
 const px = (n: number): string => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 

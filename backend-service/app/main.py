@@ -118,7 +118,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Session loop resume failed on startup: {e}")
 
     try:
-        from app.modules.trades.engine import trade_pilot_runner
+        from app.modules.trade_history.engine import trade_pilot_runner
 
         resumed_trades = await trade_pilot_runner.resume_today()
         logger.info(f"{BRIGHT_GREEN}Trade pilot loops resumed: {resumed_trades}{RESET}")
@@ -147,7 +147,7 @@ async def lifespan(app: FastAPI):
 
     # 3d. NSE participant-wise OI (FII positioning -> FII_OPEN_DRIVE opportunity, positioning overlay)
     try:
-        from app.modules.opportunities.job import register_positioning_job
+        from app.modules.opportunity_finder.job import register_positioning_job
 
         register_positioning_job()
     except Exception as e:
@@ -177,7 +177,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Session loop shutdown failed: {e}")
     try:
-        from app.modules.trades.engine import trade_pilot_runner
+        from app.modules.trade_history.engine import trade_pilot_runner
 
         await trade_pilot_runner.stop_all()
     except Exception as e:
@@ -263,18 +263,19 @@ def create_application() -> FastAPI:
         rule_router,
     )
     from app.modules.strategies.mcp import strategy_mcp_router
-    from app.modules.master.controller import master_router
+    from app.modules.ai_master.controller import master_router
     from app.modules.research.controller import research_router
     from app.modules.research.mcp import research_mcp_router
     from app.modules.research.engine import research_engine  # auto-registers research engine
-    from app.modules.opportunities.controller import opportunity_router
-    from app.modules.opportunities.engine import opportunity_engine  # auto-registers opportunities engine
+    from app.modules.opportunity_finder.controller import opportunity_finder_router, opportunity_router
+    from app.modules.opportunity_finder.engine import opportunity_engine  # auto-registers opportunities engine
     from app.modules.sessions.controller import session_pick_router, session_router
-    from app.modules.trades.controller import trade_router
+    from app.modules.trade_history.controller import trade_router
     from app.modules.backtest.controller import backtest_router
     from app.modules.system.controller import system_router
-    from app.modules.learning.controller import learning_router
+    from app.modules.autopsy.controller import learning_router
     from app.modules.notifications.controller import notification_router
+    from app.modules.commodity_desk.controller import commodity_desk_router
 
     app.include_router(user_router, prefix=settings.API_V1_PREFIX)
     app.include_router(oauth_router, prefix=settings.API_V1_PREFIX)
@@ -284,12 +285,14 @@ def create_application() -> FastAPI:
     app.include_router(master_router, prefix=settings.API_V1_PREFIX)
     app.include_router(research_router, prefix=settings.API_V1_PREFIX)
     app.include_router(opportunity_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(opportunity_finder_router, prefix=settings.API_V1_PREFIX)
     app.include_router(session_router, prefix=settings.API_V1_PREFIX)
     app.include_router(session_pick_router, prefix=settings.API_V1_PREFIX)
     app.include_router(trade_router, prefix=settings.API_V1_PREFIX)
     app.include_router(backtest_router, prefix=settings.API_V1_PREFIX)
     app.include_router(learning_router, prefix=settings.API_V1_PREFIX)
     app.include_router(notification_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(commodity_desk_router, prefix=settings.API_V1_PREFIX)
     app.include_router(system_router, prefix=settings.API_V1_PREFIX)  # System Status + engine registry (was never mounted)
 
     app.include_router(strategy_mcp_router)

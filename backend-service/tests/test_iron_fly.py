@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from app.modules.opportunities.service import iron_fly as fly
+from app.modules.opportunity_finder.service import iron_fly as fly
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -91,7 +91,7 @@ def test_rejects_thin_credit():
 def test_paper_engine_opens_then_closes_on_live_quotes(monkeypatch, tmp_path):
     import asyncio
 
-    from app.modules.opportunities.service import iron_fly_paper as paper
+    from app.modules.opportunity_finder.service import iron_fly_paper as paper
 
     monkeypatch.setattr(paper, "LEDGER", tmp_path / "paper.jsonl")
     monkeypatch.setattr(paper, "CODES", ("NIFTY",))
@@ -147,7 +147,7 @@ def test_calmer_than_priced_route_opens_the_gate_when_vrp_fails():
 
 
 def test_expiry_drift_spread_rules():
-    from app.modules.opportunities.service import expiry_drift as ed
+    from app.modules.opportunity_finder.service import expiry_drift as ed
 
     assert ed.eligible(25100, 25000, 50.0, False)[0]
     assert not ed.eligible(24900, 25000, 50.0, False)[0]

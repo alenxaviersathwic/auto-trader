@@ -1,34 +1,20 @@
 import React from "react";
-import { PlayCircle, Loader2, AlertTriangle, Cpu } from "lucide-react";
+import { PlayCircle, Loader2, AlertTriangle } from "lucide-react";
 import { IndexMultiSelect } from "../components/IndexMultiSelect";
 import { RangeBacktestResults } from "../components/RangeBacktestResults";
 import { useRangeBacktestJob, useStartRangeBacktest } from "../hooks/useBacktest";
-import { TRADER_CODES, TRADER_META } from "../../trades/components/traderMeta";
+import { TraderCode } from "../../trade-history/types/trades.types";
+import { SESSION_MANAGERS, TRADER_META } from "../../trade-history/components/traderMeta";
 
-type ManagerId = "MY_VIEW" | "AI_VIEW";
-interface BacktestManagerCfg {
-  activeManager: ManagerId;
-  llmMode: Record<ManagerId, "AUTO_LOCK" | "ASSIST_ONLY">;
-  maxParallel: Record<ManagerId, 1 | 2 | 3>;
-  guardEnabled: Record<ManagerId, boolean>;
-}
+type SessionManager = "ALL" | Exclude<TraderCode, "COMMODITY_DESK_TRADER">; // the desk is live-only
+type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
-const MANAGER_CFG_KEY = "ordergrid.sessionManagersConfig";
-const DEFAULT_MGR_CFG: BacktestManagerCfg = {
-  activeManager: "MY_VIEW",
-  llmMode: { MY_VIEW: "AUTO_LOCK", AI_VIEW: "AUTO_LOCK" },
-  maxParallel: { MY_VIEW: 2, AI_VIEW: 3 },
-  guardEnabled: { MY_VIEW: true, AI_VIEW: true },
-};
-
-function loadBacktestManagerCfg(): BacktestManagerCfg {
-  try {
-    const raw = localStorage.getItem(MANAGER_CFG_KEY);
-    return raw ? { ...DEFAULT_MGR_CFG, ...JSON.parse(raw) } : DEFAULT_MGR_CFG;
-  } catch {
-    return DEFAULT_MGR_CFG;
-  }
-}
+/** The two session managers, as in the New Session dialog; ALL replays both side by side for comparison. */
+const MANAGER_OPTIONS: { value: SessionManager; label: string }[] = [
+  // live-only managers (the Commodity Desk: live chain, news, LLM) cannot be replayed
+  ...SESSION_MANAGERS.filter((m) => !m.liveOnly).map((m) => ({ value: m.traderCode as SessionManager, label: `${m.name} · ${TRADER_META[m.traderCode].name}` })),
+  { value: "ALL", label: "Both (compare)" },
+];
 
 const MAX_RANGE_DAYS = 95;
 
@@ -46,25 +32,14 @@ export const BacktestPage: React.FC = () => {
   const [capital, setCapital] = React.useState(50000);
   const [maxLossPct, setMaxLossPct] = React.useState(4);
   const [sizing, setSizing] = React.useState<"MAX_LOTS" | "RISK">("MAX_LOTS");
-  const [traderFilter, setTraderFilter] = React.useState<string>("ALL");
+  const [sessionManager, setSessionManager] = React.useState<SessionManager>("FLOW_MOMENTUM_TRADER");
+  const [riskLevel, setRiskLevel] = React.useState<RiskLevel>("LOW");
+  const [maxParallel, setMaxParallel] = React.useState(3);
   const [sideFilter, setSideFilter] = React.useState<"ALL" | "CE" | "PE">("ALL");
-  const [mgrCfg, setMgrCfg] = React.useState<BacktestManagerCfg>(() => loadBacktestManagerCfg());
   const [jobId, setJobId] = React.useState<string | null>(null);
   const start = useStartRangeBacktest();
   const job = useRangeBacktestJob(jobId);
 
-  const updateMgrCfg = (updater: (prev: BacktestManagerCfg) => BacktestManagerCfg) => {
-    setMgrCfg((prev) => {
-      const next = updater(prev);
-      try {
-        localStorage.setItem(MANAGER_CFG_KEY, JSON.stringify(next));
-      } catch {
-        // ignore storage errors
-      }
-      return next;
-    });
-  };
-  const activeMgr = mgrCfg.activeManager;
 
   const toggleCode = (c: string) =>
     setCodes((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
@@ -91,11 +66,10 @@ export const BacktestPage: React.FC = () => {
         capital,
         maxLossPct,
         sizing,
-        managerView: activeMgr,
-        traderFilter: traderFilter as "ALL" | "FIB_GOLDEN_TRADER" | "FLOW_MOMENTUM_TRADER",
+        sessionManager,
+        riskLevel,
         sideFilter,
-        maxParallel: mgrCfg.maxParallel[activeMgr],
-        guardEnabled: mgrCfg.guardEnabled[activeMgr],
+        maxParallel,
       },
       { onSuccess: (j) => setJobId(j.jobId) },
     );
@@ -152,18 +126,35 @@ export const BacktestPage: React.FC = () => {
             />
           </div>
           <div className="form-group">
-            <label className="form-label" htmlFor="bt-trader">Opportunities Trader</label>
+            <label className="form-label" htmlFor="bt-manager">Session manager</label>
             <select
-              id="bt-trader"
+              id="bt-manager"
               className="select"
-              value={traderFilter}
-              onChange={(e) => setTraderFilter(e.target.value)}
+              value={sessionManager}
+              onChange={(e) => setSessionManager(e.target.value as SessionManager)}
             >
-              <option value="ALL">All Opportunities Traders (Select All)</option>
-              {TRADER_CODES.map((code) => (
-                <option key={code} value={code}>
-                  {TRADER_META[code].name} ({TRADER_META[code].tag})
+              {MANAGER_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
                 </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="bt-risk">Risk level</label>
+            <select id="bt-risk" className="select" value={riskLevel}
+              onChange={(e) => setRiskLevel(e.target.value as RiskLevel)}>
+              <option value="LOW">LOW · proven setups, with trend, R:R 1.5</option>
+              <option value="MEDIUM">MEDIUM · coded setups, with trend, R:R 1.3</option>
+              <option value="HIGH">HIGH · everything</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="bt-parallel">Max open at once</label>
+            <select id="bt-parallel" className="select" value={maxParallel}
+              onChange={(e) => setMaxParallel(Number(e.target.value))}>
+              {[1, 2, 3].map((n) => (
+                <option key={n} value={n}>{n}</option>
               ))}
             </select>
           </div>
@@ -195,89 +186,12 @@ export const BacktestPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Compact Session Manager Config Strip (Synced with /trades?tab=sessions) */}
-        <div
-          className="card"
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            padding: "10px 14px",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span className="form-label" style={{ margin: 0, display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <Cpu size={13} className="text-blue" /> Session Manager:
-            </span>
-            <button
-              type="button"
-              className={`toggle-chip ${activeMgr === "MY_VIEW" ? "toggle-chip--active" : ""}`}
-              onClick={() => updateMgrCfg((p) => ({ ...p, activeManager: "MY_VIEW" }))}
-            >
-              Session Manager 1 · My Experience
-            </button>
-            <button
-              type="button"
-              className={`toggle-chip ${activeMgr === "AI_VIEW" ? "toggle-chip--active" : ""}`}
-              onClick={() => updateMgrCfg((p) => ({ ...p, activeManager: "AI_VIEW" }))}
-            >
-              Session Manager 2 · Indian Quant Desk
-            </button>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <span className="micro text-muted">LLM:</span>
-              {(["AUTO_LOCK", "ASSIST_ONLY"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={`toggle-chip ${mgrCfg.llmMode[activeMgr] === mode ? "toggle-chip--active" : ""}`}
-                  style={{ padding: "2px 7px", fontSize: "0.7rem" }}
-                  onClick={() =>
-                    updateMgrCfg((p) => ({ ...p, llmMode: { ...p.llmMode, [activeMgr]: mode } }))
-                  }
-                >
-                  {mode === "AUTO_LOCK" ? "Auto Lock" : "Assist"}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <span className="micro text-muted">Max Parallel:</span>
-              {([1, 2, 3] as const).map((cnt) => (
-                <button
-                  key={cnt}
-                  type="button"
-                  className={`toggle-chip ${mgrCfg.maxParallel[activeMgr] === cnt ? "toggle-chip--active" : ""}`}
-                  style={{ padding: "2px 7px", fontSize: "0.7rem" }}
-                  onClick={() =>
-                    updateMgrCfg((p) => ({ ...p, maxParallel: { ...p.maxParallel, [activeMgr]: cnt } }))
-                  }
-                >
-                  {cnt}
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              className={`toggle-chip ${mgrCfg.guardEnabled[activeMgr] ? "toggle-chip--active" : ""}`}
-              style={{ padding: "2px 8px", fontSize: "0.7rem" }}
-              onClick={() =>
-                updateMgrCfg((p) => ({
-                  ...p,
-                  guardEnabled: { ...p.guardEnabled, [activeMgr]: !p.guardEnabled[activeMgr] },
-                }))
-              }
-            >
-              {activeMgr === "MY_VIEW" ? "0.786 + No-FOMO" : "15m Time-Stop"}:{" "}
-              {mgrCfg.guardEnabled[activeMgr] ? "ON" : "OFF"}
-            </button>
-          </div>
-        </div>
+        {sessionManager !== "FLOW_MOMENTUM_TRADER" && (
+          <p className="text-amber micro">
+            The Fib pocket is replayed on swing, pocket and price action only: there is no option-chain or
+            futures-volume history, so a live session takes fewer of these trades than the backtest shows.
+          </p>
+        )}
 
         {running && (
           <div className="card">
@@ -298,11 +212,7 @@ export const BacktestPage: React.FC = () => {
         )}
 
         {job.data?.state === "DONE" && job.data.result && (
-          <RangeBacktestResults
-            result={job.data.result}
-            traderFilter={traderFilter}
-            sideFilter={sideFilter}
-          />
+          <RangeBacktestResults result={job.data.result} />
         )}
 
         {!jobId && !start.isPending && !start.isError && (

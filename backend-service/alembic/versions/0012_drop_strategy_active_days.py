@@ -15,7 +15,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # The weekly MON..SUN schedule + per-date override concept is retired: a strategy's own `tags`
     # field (AFTER_HOLIDAY, DAY_MONDAY, EXPIRY_DAY, ...) matched against the day's computed context
-    # tags (app.modules.opportunities.service.day_context) is now how "is this strategy suited to
+    # tags (app.modules.opportunity_finder.service.day_context) is now how "is this strategy suited to
     # today" is expressed -- it nudges opportunity confidence instead of hard-gating eligibility.
     op.execute("ALTER TABLE strategies DROP COLUMN IF EXISTS active_days;")
     op.execute("ALTER TABLE strategies DROP COLUMN IF EXISTS day_overrides;")

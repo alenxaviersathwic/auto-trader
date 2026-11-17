@@ -2,7 +2,9 @@ import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
-import httpx
+import re
+
+from app.modules.ai_master.llm.ollama_client import chat as ollama_chat, pick_model
 from pydantic import BaseModel, Field
 from app.core.config.settings import settings
 from app.core.logging.logger import logger
@@ -236,12 +238,13 @@ class BriefWriter:
                 "stream": False,
                 "options": {"temperature": 0.0},
             }
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                resp = await client.post(f"{self.base_url}/api/chat", json=payload)
-                if resp.status_code == 200:
-                    raw_content = resp.json().get("message", {}).get("content", "{}")
-                    parsed = json.loads(raw_content)
-                    return self.verify_citations(parsed, valid_claim_ids)
+            # shared local-LLM path: queued, thinking off, model kept warm (ai_master/llm/ollama_client.py); the old
+            # direct call left qwen3 thinking and timed out at 8-10 s, so this step silently fell back every time
+            payload["model"] = await pick_model(fast=True)
+            data = await ollama_chat(payload, timeout=settings.LLM_RESEARCH_TIMEOUT_S, cache_ttl=600)
+            raw_content = _strip_think(data.get("message", {}).get("content", "{}"))
+            parsed = json.loads(raw_content)
+            return self.verify_citations(parsed, valid_claim_ids)
         except Exception as e:
             logger.debug(f"LLM brief generation failed: {e}; falling back to deterministic synthesis")
 
@@ -319,3 +322,7 @@ class BriefWriter:
 
 
 brief_writer = BriefWriter()
+
+
+def _strip_think(content: str) -> str:
+    return re.sub(r"<think>[\s\S]*?</think>", "", content or "").strip() or "{}"

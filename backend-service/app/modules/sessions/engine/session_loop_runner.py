@@ -198,8 +198,8 @@ class SessionLoopRunner:
 
     async def _run_session_scan(self, session_id: int) -> None:
         try:
-            from app.modules.opportunities.schema.opportunity_schema import StartOpportunityRequest
-            from app.modules.opportunities.service.run_service import opportunity_run_service
+            from app.modules.opportunity_finder.schema.opportunity_schema import StartOpportunityRequest
+            from app.modules.opportunity_finder.service.run_service import opportunity_run_service
 
             async with self._factory() as db:
                 s = await db.get(TradingSession, session_id)
@@ -208,7 +208,7 @@ class SessionLoopRunner:
                 codes = list(s.underlyings if s.scope == "INDEX" else s.commodityItems) or []
                 if not codes:
                     return
-                today_masters = await opportunity_run_service.today_masters(db)
+                today_masters = await opportunity_run_service.today(db)
                 running_by_code = {
                     m["underlyingCode"]: m["id"]
                     for m in today_masters.get("list", [])

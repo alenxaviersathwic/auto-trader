@@ -25,6 +25,18 @@ class Settings(BaseSettings):
     # Research Engine, LLM & Embeddings
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     EMBEDDING_MODEL: str = "nomic-embed-text"
+    # Local LLM (Ollama). One model is loaded on this machine, so calls are queued (LLM_MAX_CONCURRENCY) instead of
+    # fighting for it; "thinking" is off (qwen3 otherwise writes a long hidden reasoning pass on every call); the model
+    # stays loaded for LLM_KEEP_ALIVE between calls; LLM_NUM_CTX caps the context (smaller = faster prompt reading).
+    OLLAMA_MODEL: str = "qwen3:8b"
+    # Short tasks (index notes, research claims) use this model when it is installed, else OLLAMA_MODEL.
+    # Faster option: `ollama pull qwen3:4b` and set LLM_FAST_MODEL=qwen3:4b.
+    LLM_FAST_MODEL: str = "qwen3:4b"
+    LLM_THINK: bool = False
+    LLM_KEEP_ALIVE: str = "30m"
+    LLM_NUM_CTX: int = 4096
+    LLM_MAX_CONCURRENCY: int = 1
+    LLM_RESEARCH_TIMEOUT_S: float = 45.0  # includes waiting in the queue behind another call
     EMBEDDING_DIMENSION: int = 768
     SEARXNG_BASE_URL: str = "http://localhost:8080"
     MCP_RESEARCH_TOKEN: str = "mcp_research_secret_token_123"
@@ -52,15 +64,23 @@ class Settings(BaseSettings):
     # enabled, after their validation scripts pass (gamma: scripts/validate_gamma_regime.py t > 2; positioning: A/B).
     GAMMA_ROUTER_ENABLED: bool = False
     POSITIONING_OVERLAY_ENABLED: bool = False
-    # 12 Nov 2026 institutional research filters (opportunities/service/institutional_filters.py): comma list of the
+    # 12 Nov 2026 institutional research filters (opportunity_finder/service/institutional_filters.py): comma list of the
     # ones validated on the real-data replay (both halves positive). They only ADD entry requirements.
-    # Momentum engine v2 (12 Nov 2026, 6-month replay 4 May-12 Nov, real index data, model option prices):
-    #   NIFTY_NOISE_STRICT  real-price month: +80.0k vs +71.9k, both halves better
-    #   TREND_5_20 + NO_VWAP_PULLBACK + ENTRY_10_1430: 430 -> 73 trades, -Rs 89.3k -> +Rs 30.2k, PF 0.78 -> 1.38,
-    #   max drawdown 1.08L -> 15.6k, total losses 4.1L -> 0.79L; better in BOTH halves (May-Aug16 -108k -> -14.6k,
-    #   Aug17-Nov +18.9k -> +44.7k). ENTRY_10_1430 also keeps LATE_DAY_MOMENTUM (net negative over 6 months) out.
-    INSTITUTIONAL_FILTERS: str = "NIFTY_NOISE_STRICT,TREND_5_20,NO_VWAP_PULLBACK,ENTRY_10_1430,IB_GATE,PE_EXTRA,DMA50"
-    FII_OPEN_CODES: str = "NIFTY"  # FII_OPEN_DRIVE opening trade (fii_open.py); "" = off
+    # Balanced live configuration: protect against false noise breakouts, restrict to active intraday market hours,
+    # and require trend efficiency on short-side trades, without choking the system out of normal market trading.
+    INSTITUTIONAL_FILTERS: str = "NIFTY_NOISE_STRICT,ENTRY_10_1430,PE_EXTRA"
+    # 17 Nov 2026: which candle fires a setup -- "5m" (completed 5-min bar), "1m_trigger" (the 1-min close that
+    # completes the 5-min pattern), "1m" (patterns on 1-min candles); 5m / 15m confirm (setups.tf_agreement)
+    SIGNAL_TIMEFRAME: str = "5m"
+    COMMODITY_DESK_ENABLED: bool = True  # sub-agents + LLM head trader on MCX scans (modules/commodity_desk)
+    MOVE_WATCH_ENABLED: bool = True  # sudden-move news sub-agent on every scanned underlying
+    # FII_OPEN_DRIVE opening trade (fii_open.py); "" = off. 17 Nov 2026: all three indices (replay, live pipeline,
+    # May-Nov: NIFTY +17.9k / +23.8k, SENSEX +16.2k / +23.1k, BANKNIFTY -1.8k / +27.3k per half)
+    FII_OPEN_CODES: str = "NIFTY,BANKNIFTY,SENSEX"
+    # 17 Nov 2026: no NEW index entries from this IST time (setups.last_entry_block); open trades keep running and
+    # commodities are not affected. "" = off. Replay: 14:00-15:00 entries were 47 trades, 26% wins, -9.4k / -15.0k
+    # per half -- "14:00" tested better (+158k vs +134k); the user chose 15:00.
+    INDEX_LAST_ENTRY_TIME: str = "15:00"
     # Research Engine on its own: at start-up, then every N minutes while system usage is below the limit
     RESEARCH_AUTO_ENABLED: bool = True
     RESEARCH_AUTO_INTERVAL_MIN: int = 30
@@ -70,7 +90,7 @@ class Settings(BaseSettings):
     # app load capacity (system/service/system_load.py): session loops + session scanners + trade pilots
     SYSTEM_APP_CAPACITY: int = 12
 
-    # Autopsy guards (modules/learning): False = proposed, you apply them; True = applied as soon as proposed
+    # Autopsy guards (modules/autopsy): False = proposed, you apply them; True = applied as soon as proposed
     AUTOPSY_AUTO_APPLY_GUARDS: bool = False
     MAX_ONE_LOT_RISK_PCT: float = 4.0  # one lot may risk up to this % of session capital when 0.5% buys < 1 lot (4% = Rs 2,000 at Rs 50k, set 13 Nov 2026)
 

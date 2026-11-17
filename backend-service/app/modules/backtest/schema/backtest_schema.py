@@ -16,11 +16,10 @@ class RangeBacktestRequest(BaseModel):
     maxLossPct: float = Field(default=4.0, gt=0, le=100, description="Session daily max loss, % of capital")
     sizing: Literal["MAX_LOTS", "RISK"] = Field(
         default="MAX_LOTS", description="MAX_LOTS = as many lots as current equity buys; RISK = live 1-lot risk sizer")
-    managerView: Literal["MY_VIEW", "AI_VIEW"] = Field(
-        default="MY_VIEW", description="Session Manager: MY_VIEW (Session Manager 1 · My Experience) or AI_VIEW (Session Manager 2 · Indian Quant Desk)")
-    traderFilter: Literal["ALL", "FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER"] = Field(
-        default="ALL", description="Opportunities Trader filter")
-    sideFilter: Literal["ALL", "CE", "PE"] = Field(
-        default="ALL", description="Option side filter")
+    sessionManager: Literal["ALL", "FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER"] = Field(
+        default="FLOW_MOMENTUM_TRADER",
+        description="The session manager to replay, as in a live session (one trader); ALL = both, for comparison")
+    riskLevel: Literal["LOW", "MEDIUM", "HIGH"] = Field(
+        default="LOW", description="Session risk level: the same entry gate as live (session_risk.risk_gate)")
+    sideFilter: Literal["ALL", "CE", "PE"] = Field(default="ALL", description="Option side filter")
     maxParallel: int = Field(default=3, ge=1, le=3, description="Max concurrent open positions")
-    guardEnabled: bool = Field(default=True, description="Manager guardrail enabled (0.786+No-FOMO or 15m Time-Stop)")

@@ -21,9 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import backtest_setups as bt  # noqa: E402
 import day_data as dd  # noqa: E402
-from app.modules.opportunities.provider.underlying_config import get_config  # noqa: E402
-from app.modules.opportunities.service import guardrails, menu_builder as mb, setups as su  # noqa: E402
-from app.modules.opportunities.service.costs import round_trip_cost_pct, slippage_pct  # noqa: E402
+from app.modules.opportunity_finder.provider.underlying_config import get_config  # noqa: E402
+from app.modules.opportunity_finder.service import guardrails, menu_builder as mb, setups as su  # noqa: E402
+from app.modules.opportunity_finder.service.costs import round_trip_cost_pct, slippage_pct  # noqa: E402
 
 IST = ZoneInfo("Asia/Kolkata")
 DAY = "2026-11-09"

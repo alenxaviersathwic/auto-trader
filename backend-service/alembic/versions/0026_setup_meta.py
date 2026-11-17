@@ -2,7 +2,7 @@
 
 Nullable JSONB on trade_opportunities, session_picks and session_picks_archive (the archive job copies every
 session_picks column by name, so both pick tables need it). Today only the Fib golden pocket fills it
-(opportunities/service/fib_pocket.py setup_meta()): the real swing and its Fibonacci levels.
+(opportunity_finder/service/fib_pocket.py setup_meta()): the real swing and its Fibonacci levels.
 
 Revision ID: 0026_setup_meta
 Revises: 0025_two_traders_risk_level

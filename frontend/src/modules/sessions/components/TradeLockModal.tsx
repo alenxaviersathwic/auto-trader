@@ -3,8 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, CheckCircle2, Lock, Play, X } from "lucide-react";
 import { SessionPick } from "../types/sessions.types";
 import { PriceLadder } from "./PriceLadder";
-import { formatRupee } from "../../opportunities/components/formatters";
-import { useCreateTrade, usePreviewTradeSizing } from "../../trades/hooks/useTrades";
+import { formatRupee } from "../../opportunity-finder/components/formatters";
+import { useCreateTrade, usePreviewTradeSizing } from "../../trade-history/hooks/useTrades";
 
 type Verdict = { tone: "ok" | "warn" | "none"; text: string };
 

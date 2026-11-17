@@ -15,9 +15,9 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-from app.modules.opportunities.provider.underlying_config import UnderlyingConfig
-from app.modules.opportunities.service import menu_builder as mb
-from app.modules.opportunities.service.costs import round_trip_cost_pct, slippage_pct
+from app.modules.opportunity_finder.provider.underlying_config import UnderlyingConfig
+from app.modules.opportunity_finder.service import menu_builder as mb
+from app.modules.opportunity_finder.service.costs import round_trip_cost_pct, slippage_pct
 
 IV: dict[str, float] = {"NIFTY": 0.15, "SENSEX": 0.15, "BANKNIFTY": 0.17, "FINNIFTY": 0.16, "MIDCPNIFTY": 0.18}
 DEFAULT_IV = 0.18
@@ -226,6 +226,79 @@ def simulate_momo(cfg: UnderlyingConfig, bars: list[dict[str, Any]], entry_idx: 
         if exit_by_min is not None and m >= exit_by_min:
             out = "TIME_EXIT"
             break
+        if m >= close_m - 10:
+            out = "EOD"
+            break
+    lot = cfg.lotSize
+    pct = (px - p0) / p0 * 100
+    cost_pct = round_trip_cost_pct(p0, lot, cfg.exchange, max(pct, 0)) + slippage_pct(p0)
+    exit_minute = bar_minute(bars[j])
+    return MomoResult(strike=int(strike), delta=round(delta, 2), entryPremium=round(p0, 2), exitPremium=round(px, 2),
+                      pctMove=round(pct, 1), outcome=out, entryMinute=m0, exitMinute=exit_minute, exitIdx=j,
+                      holdMinutes=exit_minute - m0 + 1, riskPerLot=round(risk_lot, 2),
+                      premiumPerLot=round(p0 * lot, 2),
+                      netPnl=round((px - p0) * lot - cost_pct / 100 * p0 * lot, 2))
+
+
+FIB_LOCK_80, FIB_LOCK_95 = 0.50, 0.70  # trader_brain: at 80% / 95% of the planned move, lock 50% / 70% of it
+
+
+def simulate_fib(cfg: UnderlyingConfig, bars: list[dict[str, Any]], entry_idx: int, side: str, stop: float,
+                 target: float, ext1272: float, ext1618: float, days_to_expiry: int, bar_minute,
+                 close_min: int | None = None) -> MomoResult | None:
+    """The Fib Golden-Pocket Trader's management (trader_brain FIB_GOLDEN_TRADER) over the real underlying path:
+    stop just beyond the 0.786 retracement, nothing locked until 80% of the way to the swing (Fib 1.0), then 50% of
+    the planned move locked, 70% at 95%; at the swing the stop moves up to it and the target steps to the 1.272
+    extension, then to 1.618, where the trade is booked. Square-off 10 min before close. Within a bar the stop is
+    checked before the high (worst case). Same ITM strike and Black-Scholes pricing as simulate_momo.
+    Live, the trader books at a target when momentum is fading instead of stepping on; this replay always steps on
+    with the stop locked at the level reached, so it gives up at most the bar's pullback below that level."""
+    if entry_idx >= len(bars):
+        return None
+    ce = side == "CE"
+    sg = 1 if ce else -1
+    fill = bars[entry_idx]["o"]
+    m0 = bar_minute(bars[entry_idx])
+    planned = (target - fill) * sg
+    line = (stop - fill) * sg
+    if planned <= 0 or line >= 0:
+        return None
+    iv = IV.get(cfg.code, DEFAULT_IV)
+    got = pick_strike(cfg, fill, days_to_expiry, m0, ce, "MOMO", iv)
+    if not got:
+        return None
+    strike, p0, delta = got
+    risk_lot = max(0.0, p0 - bs(fill + sg * line, strike, years_left(days_to_expiry, m0), iv, ce)[0]) * cfg.lotSize
+    steps = [planned, max((ext1272 - fill) * sg, planned), max((ext1618 - fill) * sg, planned)]
+    stage, best, out, px, j = 0, 0.0, "EOD", p0, entry_idx
+    close_m = close_min if close_min is not None else bar_minute(bars[-1])
+    for j in range(entry_idx, len(bars)):
+        b = bars[j]
+        m = bar_minute(b)
+        fav, adv = (b["h"], b["l"]) if ce else (b["l"], b["h"])
+        if (adv - fill) * sg <= line:
+            # STOP below entry; TARGET when the locked line is a target level (1.0 / 1.272) already reached;
+            # LOCKED when it is the 50% / 70% profit lock
+            out = "STOP" if line < 0 else "TARGET" if line >= planned else "LOCKED"
+            px = bs(fill + sg * line, strike, years_left(days_to_expiry, m), iv, ce)[0]
+            break
+        best = max(best, (fav - fill) * sg)
+        if best >= 0.95 * planned:
+            line = max(line, FIB_LOCK_95 * planned)
+        elif best >= 0.80 * planned:
+            line = max(line, FIB_LOCK_80 * planned)
+        booked = False
+        while stage < len(steps) and best >= steps[stage]:
+            if stage == len(steps) - 1:
+                out = "TARGET"
+                px = bs(fill + sg * steps[stage], strike, years_left(days_to_expiry, m), iv, ce)[0]
+                booked = True
+                break
+            line = max(line, steps[stage])
+            stage += 1
+        if booked:
+            break
+        px = bs(b["c"], strike, years_left(days_to_expiry, m + 1), iv, ce)[0]
         if m >= close_m - 10:
             out = "EOD"
             break

@@ -30,8 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import backtest_day as bd  # noqa: E402
 import backtest_setups as bt  # noqa: E402
 from app.modules.backtest.service import edge_stats as es  # noqa: E402
-from app.modules.opportunities.provider.underlying_config import get_config  # noqa: E402
-from app.modules.opportunities.service import event_calendar, iron_fly as fly  # noqa: E402
+from app.modules.opportunity_finder.provider.underlying_config import get_config  # noqa: E402
+from app.modules.opportunity_finder.service import event_calendar, iron_fly as fly  # noqa: E402
 
 IST = ZoneInfo("Asia/Kolkata")
 ROOT = Path(__file__).resolve().parents[1]

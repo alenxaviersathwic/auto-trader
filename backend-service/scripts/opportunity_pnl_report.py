@@ -33,8 +33,8 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.modules.opportunities.provider.underlying_config import get_config  # noqa: E402
-from app.modules.opportunities.service.costs import round_trip_cost_pct  # noqa: E402
+from app.modules.opportunity_finder.provider.underlying_config import get_config  # noqa: E402
+from app.modules.opportunity_finder.service.costs import round_trip_cost_pct  # noqa: E402
 
 IST = ZoneInfo("Asia/Kolkata")
 DEDUP_MINUTES = 30
@@ -81,8 +81,8 @@ async def load_db(day: str, check: bool) -> list[dict]:
     from sqlalchemy import select
 
     from app.core.db.session import async_session_factory
-    from app.modules.opportunities.entity.opportunity_entity import TradeOpportunity
-    from app.modules.opportunities.service.run_service import opportunity_run_service as svc
+    from app.modules.opportunity_finder.entity.opportunity_entity import TradeOpportunity
+    from app.modules.opportunity_finder.service.run_service import opportunity_run_service as svc
 
     start = datetime.fromisoformat(day).replace(tzinfo=IST).astimezone(UTC)
     end = start + timedelta(days=1)

@@ -26,9 +26,9 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.core.db.session import async_session_factory
-from app.modules.opportunities.provider.underlying_config import get_config
-from app.modules.opportunities.provider.upstox_market_data import MarketDataUnavailable, market_data
-from app.modules.opportunities.service.market_analysis import adx as _adx, atr as _atr, ema as _ema, vwap as _vwap
+from app.modules.opportunity_finder.provider.underlying_config import get_config
+from app.modules.opportunity_finder.provider.upstox_market_data import MarketDataUnavailable, market_data
+from app.modules.opportunity_finder.service.market_analysis import adx as _adx, atr as _atr, ema as _ema, vwap as _vwap
 from app.modules.strategies.repository.strategy_repository import StrategyRepository
 from app.modules.strategies.schema.performance_schema import PerformanceSnapshotCreate
 from app.modules.strategies.schema.strategy_schema import StrategyFilter

@@ -388,9 +388,12 @@ def test_picks_belong_to_one_of_two_traders_and_a_switched_off_trader_gets_nothi
     assert {p.opportunityId: p.traderCode for p in r.picks} == {1: "FLOW_MOMENTUM_TRADER", 2: "FIB_GOLDEN_TRADER"}
     svc, s, _ = make(items, riskLevel="LOW", traders=["FIB_GOLDEN_TRADER"])
     r = run(svc.tick(FakeDb(), 7))
-    assert [p.opportunityId for p in r.picks] == [2] and r.scanned["excluded"] == {"trader not active in session": 1}
+    assert [p.opportunityId for p in r.picks] == [2] and r.scanned["excluded"] == {"finder not in session": 1}
     svc, s, _ = make(items, riskLevel="LOW", traders=["ORB_WAVE_TRADER"])  # old code stored on an old session
     assert [p.traderCode for p in run(svc.tick(FakeDb(), 7)).picks] == ["FLOW_MOMENTUM_TRADER"]
+    # 17 Nov 2026: `finders` decides, the manager in `traders` does not filter
+    svc, s, _ = make(items, riskLevel="LOW", traders=["FLOW_MOMENTUM_TRADER"], finders=["FIB_GOLDEN_TRADER"])
+    assert [p.opportunityId for p in run(svc.tick(FakeDb(), 7)).picks] == [2]
 
 
 def test_tightening_the_risk_level_mid_session_withdraws_open_offers_that_no_longer_qualify():
@@ -413,11 +416,11 @@ def test_the_fib_swing_is_copied_from_the_opportunity_to_the_pick():
 
 # ───────────────────────── session manager, learning gate, batches (17 Nov 2026) ─────────────────────────
 def test_loop_names_the_best_suggestion_and_skips_setups_the_learning_loop_blocked(monkeypatch):
-    from app.modules.learning.service.learning_service import learning_service
+    from app.modules.autopsy.service.learning_service import learning_service
 
     monkeypatch.setattr(learning_service, "_loaded", True)
-    monkeypatch.setattr(learning_service, "_view", {"paused": {"INSIDE_BAR": "lost"}, "guards": {}, "scorecards": {}})
-    svc, _, _ = make([opp(1, strategy="NOISE_BREAKOUT", confidence=85), opp(2, strategy="INSIDE_BAR")],
+    monkeypatch.setattr(learning_service, "_view", {"paused": {"WEDGE_BREAKOUT": "lost"}, "guards": {}, "scorecards": {}})
+    svc, _, _ = make([opp(1, strategy="NOISE_BREAKOUT", confidence=85), opp(2, strategy="WEDGE_BREAKOUT")],
                      riskLevel="LOW")
     r = run(svc.tick(FakeDb(), 7))
     assert [p.opportunityId for p in r.picks] == [1]

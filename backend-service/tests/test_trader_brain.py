@@ -16,7 +16,7 @@ Unit tests for `trader_brain.py`:
 """
 from datetime import UTC, datetime, timedelta
 
-from app.modules.trades.service import trader_brain as brain
+from app.modules.trade_history.service import trader_brain as brain
 
 
 def test_profile_selection():
@@ -196,8 +196,8 @@ def test_session_close_exits_trade():
 
 
 def test_momentum_trail_never_exits_at_target_and_trails_in_r():
-    from app.modules.opportunities.service.menu_builder import MOMO_EXIT
-    from app.modules.trades.service import trader_brain as tb
+    from app.modules.opportunity_finder.service.menu_builder import MOMO_EXIT
+    from app.modules.trade_history.service import trader_brain as tb
 
     kw = dict(entry_at=100.0, initial_stop=90.0, initial_target=140.0, current_stop=90.0, current_target=140.0,
               trader_profile="STEP_GUARD", momentum_trail=MOMO_EXIT)

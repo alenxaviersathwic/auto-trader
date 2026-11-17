@@ -6,6 +6,7 @@ import {
   Activity,
   Bot,
   CheckCircle2,
+  Circle,
   Clock,
   Cpu,
   Hand,
@@ -15,7 +16,8 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { TRADER_CODES, TRADER_META } from "../../trades/components/traderMeta";
+import { managersFor, TRADER_META } from "../../trade-history/components/traderMeta";
+import { useOpportunityFinders } from "../../traders/hooks/useOpportunityFinders";
 import { sessionCreateSchema, SessionCreateFormValues } from "../schemas/sessionForm.schema";
 import { TradingSessionCreatePayload } from "../types/sessions.types";
 import { ApiError } from "../../../core/api/apiError";
@@ -69,7 +71,7 @@ const SESSION_MODES: Array<{
     value: "MANUAL",
     label: "Manual",
     tag: "4 PICKS",
-    desc: "Offers top 4 live setups from your active Traders. You lock the pick and confirm entry price & lots.",
+    desc: "Offers top 4 live setups from your session manager. You lock the pick and confirm entry price & lots.",
     icon: <Hand size={14} className="text-blue" />,
   },
   {
@@ -89,22 +91,7 @@ const SESSION_MODES: Array<{
 ];
 
 
-const TRADER_MANAGERS = [
-  {
-    id: "MY_VIEW",
-    traderCode: "FIB_GOLDEN_TRADER",
-    name: "Session Manager 1 · My Experience",
-    tag: "MANAGER 1",
-    badgeClass: "badge--cyan",
-  },
-  {
-    id: "AI_VIEW",
-    traderCode: "FLOW_MOMENTUM_TRADER",
-    name: "Session Manager 2 · Indian Quant Desk",
-    tag: "MANAGER 2",
-    badgeClass: "badge--green",
-  },
-] as const;
+
 
 const DEFAULT_VALUES: SessionCreateFormValues = {
   name: "",
@@ -115,7 +102,8 @@ const DEFAULT_VALUES: SessionCreateFormValues = {
   scope: "INDEX",
   underlyings: ["NIFTY"],
   commodityItems: [],
-  traders: [...TRADER_CODES],
+  traders: ["FLOW_MOMENTUM_TRADER"],
+  finders: [],
   riskLevel: "LOW",
   sessionType: "MANUAL",
   routeThroughUpstox: false,
@@ -165,8 +153,27 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
   const closeTime = watch("closeTime");
   const underlyings = watch("underlyings") || [];
   const commodityItems = watch("commodityItems") || [];
-  const traders = watch("traders") || [...TRADER_CODES];
+  const selectedManager = (watch("traders") ?? [])[0];
   const routeThroughUpstox = Boolean(watch("routeThroughUpstox"));
+  const managers = managersFor(scope);
+  const selectedFinders = watch("finders") ?? [];
+  // the finders that work on this market (their optionTypes); all of them are picked by default
+  const { data: scopeFinders = [], isLoading: findersLoading } = useOpportunityFinders(scope);
+  const offeredFinders = scopeFinders.filter((f) => f.enabled);
+  useEffect(() => {
+    setValue(
+      "finders",
+      offeredFinders.map((f) => f.code) as SessionCreateFormValues["finders"],
+      { shouldValidate: false },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, scopeFinders.length, isOpen]);
+  const toggleFinder = (code: SessionCreateFormValues["finders"][number]) => {
+    const next = selectedFinders.includes(code)
+      ? selectedFinders.filter((c) => c !== code)
+      : [...selectedFinders, code];
+    setValue("finders", next, { shouldValidate: true, shouldDirty: true });
+  };
 
   const selectedUser = useMemo(
     () => users.find((u: any) => Number(u.id) === userId),
@@ -193,13 +200,14 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
 
   const rankByScore = (bucketed: typeof indexResults, take: number, fallback: string[]): string[] => {
     if (!bucketed) return fallback;
+    // a missing bucket (older backend, partial result) must not crash the dialog
     const all = [
-      ...bucketed.suggested,
-      ...bucketed.bearishWatch,
-      ...bucketed.clearNeutral,
-      ...bucketed.hasNegative,
-      ...bucketed.mixed,
-      ...bucketed.noCoverage,
+      ...(bucketed.suggested ?? []),
+      ...(bucketed.bearishWatch ?? []),
+      ...(bucketed.clearNeutral ?? []),
+      ...(bucketed.hasNegative ?? []),
+      ...(bucketed.mixed ?? []),
+      ...(bucketed.noCoverage ?? []),
     ];
     if (all.length === 0) return fallback;
     const byCode = new Map<string, number>();
@@ -222,13 +230,8 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
     [commodityResults],
   );
 
-  const toggleChip = (field: "underlyings" | "commodityItems" | "traders", code: string) => {
-    const current =
-      field === "underlyings"
-        ? underlyings
-        : field === "commodityItems"
-          ? commodityItems
-          : traders;
+  const toggleChip = (field: "underlyings" | "commodityItems", code: string) => {
+    const current = field === "underlyings" ? underlyings : commodityItems;
     const next = current.includes(code) ? current.filter((c) => c !== code) : [...current, code];
     setValue(field, next, { shouldValidate: true, shouldDirty: true });
   };
@@ -458,110 +461,63 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
               </div>
             </div>
 
-            {/* Section 3: Session Manager Psychology & Opportunities Traders */}
+            {/* Section 3: Session manager (exactly one trader runs the session) */}
             <div className="session-section-card" style={{ padding: "10px 12px", marginBottom: 10 }}>
               <div className="session-section-head" style={{ marginBottom: 8 }}>
-                <span className="session-section-title">
+                <span className="session-section-title" id="session-manager-label">
                   <Cpu size={13} className="text-blue" />
-                  <span>3. Session Manager Psychology &amp; Traders</span>
+                  <span>3. Session Manager</span>
                 </span>
-                <span className="micro text-muted">
-                  {traders.length}/{TRADER_CODES.length} active
-                </span>
+                <span className="micro text-muted">Pick one</span>
               </div>
 
               <div
                 className="session-mode-grid"
-                style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginBottom: 8 }}
+                role="radiogroup"
+                aria-labelledby="session-manager-label"
+                style={{ gridTemplateColumns: `repeat(${managers.length}, minmax(0, 1fr))`, gap: 8 }}
               >
-                {TRADER_MANAGERS.map((mgr) => {
-                  const active = traders.includes(mgr.traderCode);
+                {managers.map((mgr) => {
+                  const meta = TRADER_META[mgr.traderCode];
+                  const active = selectedManager === mgr.traderCode;
                   return (
                     <button
-                      key={mgr.id}
+                      key={mgr.traderCode}
                       type="button"
+                      role="radio"
+                      aria-checked={active}
                       className={`session-mode-card ${active ? "session-mode-card--active" : ""}`}
-                      style={{ padding: "8px 10px" }}
-                      onClick={() => toggleChip("traders", mgr.traderCode)}
+                      style={{ padding: "8px 10px", textAlign: "left" }}
+                      onClick={() =>
+                        setValue("traders", [mgr.traderCode as SessionCreateFormValues["traders"][number]], { shouldValidate: true, shouldDirty: true })
+                      }
                     >
                       <div className="session-mode-card__top">
                         <span
                           className="session-mode-card__title"
                           style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: "0.8rem" }}
                         >
-                          {active && <CheckCircle2 size={12} className="text-green" />}
+                          {active ? (
+                            <CheckCircle2 size={12} className="text-green" />
+                          ) : (
+                            <Circle size={12} className="text-muted" />
+                          )}
                           {mgr.name}
                         </span>
-                        <span className={`badge ${active ? mgr.badgeClass : "badge--slate"}`}>
-                          {mgr.tag}
-                        </span>
+                        <span className={`badge ${active ? meta.badgeClass : "badge--slate"}`}>{meta.tag}</span>
+                      </div>
+                      <div className="session-mode-card__desc" style={{ marginTop: 4 }}>
+                        {meta.name}: {mgr.trades}
                       </div>
                     </button>
                   );
                 })}
               </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 6,
-                  paddingTop: 6,
-                  borderTop: "1px solid var(--border-subtle)",
-                }}
-              >
-                <span className="label text-secondary" style={{ fontSize: "0.74rem" }}>
-                  Opportunities Trader Scanners ({traders.length} / {TRADER_CODES.length} active)
-                </span>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button
-                    type="button"
-                    className="btn btn--ghost"
-                    style={{ padding: "2px 8px", fontSize: "0.68rem" }}
-                    onClick={() =>
-                      setValue("traders", [...TRADER_CODES], {
-                        shouldValidate: true,
-                        shouldDirty: true,
-                      })
-                    }
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--ghost"
-                    style={{ padding: "2px 8px", fontSize: "0.68rem" }}
-                    onClick={() =>
-                      setValue("traders", [], { shouldValidate: true, shouldDirty: true })
-                    }
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-
-              <div className="toggle-chip-group">
-                {TRADER_CODES.map((code) => {
-                  const active = traders.includes(code);
-                  const meta = TRADER_META[code];
-                  return (
-                    <button
-                      key={code}
-                      type="button"
-                      className={`toggle-chip ${active ? "toggle-chip--active" : ""}`}
-                      onClick={() => toggleChip("traders", code)}
-                    >
-                      {active && <CheckCircle2 size={12} />}
-                      <span>{meta.name}</span>
-                      <span className={`badge ${active ? meta.badgeClass : "badge--slate"}`} style={{ fontSize: "0.62rem" }}>
-                        {meta.tag}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
+              <span className="micro text-muted" style={{ display: "block", marginTop: 6 }}>
+                The manager's duty is the same for index and commodity sessions; the opportunity finders below are
+                chosen by the market.
+              </span>
               {errors.traders && (
                 <span className="form-error" style={{ display: "block", marginTop: 6 }}>
                   {errors.traders.message as string}
@@ -722,16 +678,76 @@ export const SessionDialog: React.FC<SessionDialogProps> = ({ isOpen, onClose, o
               )}
             </div>
 
-            {/* Section 4: Upstox Direct Order Routing Toggle Switch */}
+            {/* Section 5: Opportunity finders for this market (their optionTypes include the scope) */}
+            <div className="session-section-card" style={{ padding: "10px 12px", marginBottom: 10 }}>
+              <div className="session-section-head" style={{ marginBottom: 8 }}>
+                <span className="session-section-title" id="session-finders-label">
+                  <Bot size={13} className="text-blue" />
+                  <span>5. Opportunity Finders · {scope}</span>
+                </span>
+                <span className="micro text-muted">Only finders that work on {scope.toLowerCase()}</span>
+              </div>
+              {findersLoading ? (
+                <span className="micro text-muted">Loading finders…</span>
+              ) : offeredFinders.length === 0 ? (
+                <span className="micro text-amber">
+                  No finder works on {scope.toLowerCase()} yet. Add {scope} to a finder's markets on the Traders page.
+                </span>
+              ) : (
+                <div
+                  className="session-mode-grid"
+                  role="group"
+                  aria-labelledby="session-finders-label"
+                  style={{ gridTemplateColumns: `repeat(${Math.min(offeredFinders.length, 3)}, minmax(0, 1fr))`, gap: 8 }}
+                >
+                  {offeredFinders.map((f) => {
+                    const on = selectedFinders.includes(f.code as never);
+                    const meta = TRADER_META[f.code];
+                    return (
+                      <button
+                        key={f.code}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={on}
+                        className={`session-mode-card ${on ? "session-mode-card--active" : ""}`}
+                        style={{ padding: "8px 10px", textAlign: "left" }}
+                        onClick={() => toggleFinder(f.code as SessionCreateFormValues["finders"][number])}
+                      >
+                        <div className="session-mode-card__top">
+                          <span
+                            className="session-mode-card__title"
+                            style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: "0.8rem" }}
+                          >
+                            {on ? <CheckCircle2 size={12} className="text-green" /> : <Circle size={12} className="text-muted" />}
+                            {f.name}
+                          </span>
+                          <span className={`badge ${on ? meta?.badgeClass ?? "badge--slate" : "badge--slate"}`}>
+                            {f.shortLabel}
+                          </span>
+                        </div>
+                        <div className="session-mode-card__desc" style={{ marginTop: 4 }}>
+                          {f.drivers}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {errors.finders && (
+                <span className="form-error" style={{ display: "block", marginTop: 6 }}>
+                  {errors.finders.message as string}
+                </span>
+              )}
+            </div>
+
+            {/* Section 6: Upstox Direct Order Routing Toggle Switch */}
             <div
               role="switch"
               aria-checked={routeThroughUpstox}
               tabIndex={0}
               className={`upstox-toggle-card ${routeThroughUpstox ? "upstox-toggle-card--live" : ""}`}
               style={{ padding: "10px 12px" }}
-              onClick={() =>
-                setValue("routeThroughUpstox", !routeThroughUpstox, { shouldDirty: true })
-              }
+              onClick={() => setValue("routeThroughUpstox", !routeThroughUpstox, { shouldDirty: true })}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();

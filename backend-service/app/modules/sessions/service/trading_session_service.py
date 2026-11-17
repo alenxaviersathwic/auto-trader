@@ -13,7 +13,8 @@ from app.modules.sessions.service.session_risk import (
     normalize_risk_level,
     profile_for,
 )
-from app.modules.trades.service.trader_presets import normalize_trader_codes
+from app.modules.opportunity_finder.service.opportunity_finder_service import opportunity_finder_service
+from app.modules.trade_history.service.trader_presets import normalize_manager_code, session_finder_codes
 from app.modules.sessions.schema.trading_session_schema import (
     TradingSessionCreateRequest,
     TradingSessionResponse,
@@ -62,7 +63,8 @@ class TradingSessionService:
             scope=entity.scope,
             underlyings=entity.underlyings or [],
             commodityItems=entity.commodityItems or [],
-            traders=normalize_trader_codes(getattr(entity, "traders", None)),
+            traders=[normalize_manager_code((getattr(entity, "traders", None) or [None])[0]) or "FLOW_MOMENTUM_TRADER"],
+            finders=session_finder_codes(getattr(entity, "finders", None), getattr(entity, "traders", None)),
             riskLevel=normalize_risk_level(getattr(entity, "riskLevel", None) or LEGACY_RISK_LEVEL),
             riskProfile=profile_for(getattr(entity, "riskLevel", None) or LEGACY_RISK_LEVEL).as_dict(),
             sessionType=entity.sessionType,
@@ -93,6 +95,9 @@ class TradingSessionService:
         except ValueError as e:
             raise BadRequestException(message=str(e)) from e
 
+        # the manager is the same job for every market; the finders are chosen by the scope (their optionTypes)
+        finders = await opportunity_finder_service.check_session_finders(session, request.scope, request.finders)
+
         entity = TradingSession(
             name=name,
             tradeDate=request.tradeDate,
@@ -102,7 +107,8 @@ class TradingSessionService:
             scope=request.scope.upper(),
             underlyings=request.underlyings,
             commodityItems=request.commodityItems,
-            traders=normalize_trader_codes(request.traders),
+            traders=list(request.traders),
+            finders=finders,
             riskLevel=normalize_risk_level(request.riskLevel),
             sessionType=request.sessionType.upper(),
             routeThroughUpstox=request.routeThroughUpstox,
@@ -151,9 +157,10 @@ class TradingSessionService:
                 value = data[field]
                 if field in ("sessionType", "riskLevel"):
                     value = value.upper()
-                elif field == "traders":
-                    value = normalize_trader_codes(value)
                 setattr(entity, field, value)
+        if data.get("finders") is not None:
+            entity.finders = await opportunity_finder_service.check_session_finders(
+                session, entity.scope, data["finders"] or [])
 
         if data.get("startTime") or data.get("closeTime"):
             ist = ZoneInfo("Asia/Kolkata")

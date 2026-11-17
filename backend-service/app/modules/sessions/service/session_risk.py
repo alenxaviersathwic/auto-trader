@@ -65,7 +65,7 @@ def risk_gate(level: str | None, strategy: str | None, reward_risk: float, risks
     """Why this opportunity is too risky for a session at `level`, or None when the session may take it."""
     prof = profile_for(level)
     if prof.policies is not None:
-        from app.modules.opportunities.service.setups import SETUP_POLICY  # lazy: heavy import
+        from app.modules.opportunity_finder.service.setups import SETUP_POLICY  # lazy: heavy import
 
         pol = SETUP_POLICY.get((strategy or "").strip())
         if pol not in prof.policies:

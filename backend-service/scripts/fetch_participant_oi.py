@@ -9,7 +9,7 @@ import sys
 from datetime import date, timedelta
 
 sys.path.insert(0, "/app")
-from app.modules.opportunities.service import positioning as pos  # noqa: E402
+from app.modules.opportunity_finder.service import positioning as pos  # noqa: E402
 
 START = date(2026, 5, 1)
 

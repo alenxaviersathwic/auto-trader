@@ -79,6 +79,12 @@ def format_headers(headers: dict) -> list[str]:
     return lines
 
 
+def is_stream_response(path: str, response: Response) -> bool:
+    """Server-sent events and other open-ended responses: their body must never be buffered."""
+    ctype = (response.headers.get("content-type") or "").lower()
+    return "text/event-stream" in ctype or path.endswith("/stream") or path.endswith("/events")
+
+
 def is_polling_path(path: str) -> bool:
     if not path:
         return False
@@ -153,6 +159,12 @@ class HttpTrafficLoggingMiddleware(BaseHTTPMiddleware):
 
         # For polling endpoints, skip multi-line terminal inspect box
         if is_polling:
+            LogFlowContext.clear()
+            return response
+
+        # Streams (SSE: session loop, notifications, run events) never end: reading their body to log it would hold
+        # every event back forever, so the client would sit on "connecting". Pass them through untouched.
+        if is_stream_response(path, response):
             LogFlowContext.clear()
             return response
 

@@ -19,8 +19,8 @@ import math
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from app.modules.opportunities.service.costs import round_trip_cost_pct
-from app.modules.opportunities.service.menu_builder import expected_edge_pct
+from app.modules.opportunity_finder.service.costs import round_trip_cost_pct
+from app.modules.opportunity_finder.service.menu_builder import expected_edge_pct
 
 MIN_PICK_WINDOW_SECONDS = 8       # an opportunity that expires within this many seconds cannot be acted on: never offered
 MAX_OPPORTUNITY_AGE_SECONDS = 30  # only opportunities inserted in the last 30 s are read: older entries are stale
@@ -113,7 +113,7 @@ def size_multiplier(strategy: str | None, option_type: str, positioning_bias: in
                     overlay_enabled: bool = False) -> float:
     """Risk multiplier for one candidate (11 Nov 2026 institutional review, Strategies 2 and 4). Only the momentum
     engine (setups.SETUP_POLICY CORE / MERGED) is scaled; everything else stays 1.0."""
-    from app.modules.opportunities.service.setups import (
+    from app.modules.opportunity_finder.service.setups import (
         SETUP_POLICY,  # lazy: avoids a heavy import at module load
     )
 

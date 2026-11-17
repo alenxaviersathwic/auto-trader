@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Expiry-day IRON FLY replay (app/modules/opportunities/service/iron_fly.py) over the days we have index candles for.
+Expiry-day IRON FLY replay (app/modules/opportunity_finder/service/iron_fly.py) over the days we have index candles for.
 Legs are priced from REAL 1-minute option candles in backtest_data/ when all four exist (bid/ask approximated as
 candle price -/+ REAL_HALF_SPREAD_PCT), otherwise from Black-Scholes at a fixed IV -- and on expiry day a fixed IV is
 exactly the model the research says is wrong (theta collapse, smile), so BS rows are labelled and are NOT evidence.
@@ -22,8 +22,8 @@ import backtest_day as bd  # noqa: E402
 import day_data as d9  # noqa: E402
 import day_data_fri as d6  # noqa: E402
 import day_data_wed as d11  # noqa: E402
-from app.modules.opportunities.provider.underlying_config import get_config  # noqa: E402
-from app.modules.opportunities.service import iron_fly as fly  # noqa: E402
+from app.modules.opportunity_finder.provider.underlying_config import get_config  # noqa: E402
+from app.modules.opportunity_finder.service import iron_fly as fly  # noqa: E402
 
 IST = ZoneInfo("Asia/Kolkata")
 # (day, {code: packed 1-min candles}, daily seed, {code: expiry of the series traded that day})

@@ -39,6 +39,10 @@ class TradingSession(BaseEntity):
         nullable=False,
         default=lambda: ["FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER"],
     )
+    # 17 Nov 2026: `traders` holds the session MANAGER (one code); `finders` the opportunity finders that feed the
+    # session -- only finders whose optionTypes include the scope (opportunity_finder_service). Empty = old session:
+    # it uses the finders named in `traders`.
+    finders: Mapped[list[str]] = mapped_column("finders", JSONB, nullable=False, default=list)
     # Entry strictness (sessions/service/session_risk.py): LOW | MEDIUM | HIGH. Editable while the session runs.
     riskLevel: Mapped[str] = mapped_column("risk_level", String(8), nullable=False, default="LOW")
 

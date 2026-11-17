@@ -20,12 +20,12 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.backtest.service import expiry_calendar, premium_sim
-from app.modules.opportunities.provider.underlying_config import get_config
-from app.modules.opportunities.provider.upstox_market_data import market_data
-from app.modules.opportunities.service import day_type, guardrails
-from app.modules.opportunities.service import menu_builder as mb
-from app.modules.opportunities.service import setups as setup_detector
-from app.modules.opportunities.service.market_analysis import _bar_min, _mins, analyze
+from app.modules.opportunity_finder.provider.underlying_config import get_config
+from app.modules.opportunity_finder.provider.upstox_market_data import market_data
+from app.modules.opportunity_finder.service import day_type, guardrails
+from app.modules.opportunity_finder.service import menu_builder as mb
+from app.modules.opportunity_finder.service import setups as setup_detector
+from app.modules.opportunity_finder.service.market_analysis import _bar_min, _mins, analyze
 
 IST = ZoneInfo("Asia/Kolkata")
 HISTORY_LOOKBACK_DAYS = 25  # calendar days fetched before the target date, for the daily-ATR proxy

@@ -41,10 +41,10 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.modules.opportunities.provider.underlying_config import get_config  # noqa: E402
-from app.modules.opportunities.service import day_type, setups as setup_detector  # noqa: E402
-from app.modules.opportunities.service.costs import round_trip_cost_pct  # noqa: E402
-from app.modules.opportunities.service.market_analysis import _bar_min, _mins, analyze  # noqa: E402
+from app.modules.opportunity_finder.provider.underlying_config import get_config  # noqa: E402
+from app.modules.opportunity_finder.service import day_type, setups as setup_detector  # noqa: E402
+from app.modules.opportunity_finder.service.costs import round_trip_cost_pct  # noqa: E402
+from app.modules.opportunity_finder.service.market_analysis import _bar_min, _mins, analyze  # noqa: E402
 
 IST = ZoneInfo("Asia/Kolkata")
 FIELDS = ["t", "o", "h", "l", "c", "v", "oi"]
@@ -395,8 +395,8 @@ def run_backtest(args: argparse.Namespace) -> str:
 # ───────────────────────── fetch (needs the app's DB + Upstox token) ─────────────────────────
 async def fetch(args: argparse.Namespace) -> None:
     from app.core.db.session import async_session_factory
-    from app.modules.opportunities.provider.instrument_catalog import instrument_catalog
-    from app.modules.opportunities.provider.upstox_market_data import market_data
+    from app.modules.opportunity_finder.provider.instrument_catalog import instrument_catalog
+    from app.modules.opportunity_finder.provider.upstox_market_data import market_data
 
     end = date.today() if not args.to else date.fromisoformat(args.to)
     start = (date.fromisoformat(args.start) if args.start else end - timedelta(days=args.days)) - timedelta(days=32)  # + warm-up

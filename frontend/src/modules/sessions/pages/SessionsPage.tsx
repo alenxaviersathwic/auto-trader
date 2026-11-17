@@ -16,11 +16,11 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { TRADER_META, normalizeTraderCodes } from "../../trades/components/traderMeta";
+import { TRADER_META, normalizeTraderCodes } from "../../trade-history/components/traderMeta";
 import { useSessionSearch, useCreateSession, useUpdateSession, useDeleteSession } from "../hooks/useSessions";
 import { TradingSession, TradingSessionSearchFilter } from "../types/sessions.types";
 import { SessionDialog } from "../components/SessionDialog";
-import { formatCompactRupee, formatRupee } from "../../opportunities/components/formatters";
+import { formatCompactRupee, formatRupee } from "../../opportunity-finder/components/formatters";
 
 type ScopeTab = "ALL" | "INDEX" | "COMMODITY";
 type ViewMode = "grid" | "table";

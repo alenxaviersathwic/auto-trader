@@ -197,7 +197,7 @@ The centralized Axios client transparently unwraps backend envelopes:
 - **Strategies Table**: Manual pagination table with columns for Code, Name, Direction (LONG/SHORT pill), Timeframe, Version, Reliability Score progress bar, Status pill (`ACTIVE`, `QUARANTINED`, `DRAFT`), and Quick Actions.
 - **Strategy Detail**: Interactive visual tree of the compiled rule AST, indicator parameter list, backtest trigger button, and quarantine toggle.
 
-### 7.2 AI Master Chat UI (`modules/master`)
+### 7.2 AI Master Chat UI (`modules/ai_master`)
 - **Interactive Chat Thread**: User and Assistant message sequence with markdown rendering.
 - **Tool Execution Timeline**: Expandable micro-panels showing which FastMCP tools the agent called in the background (e.g. `validate_strategy`, `analyze_conflicts`).
 - **Interactive Proposal Review Card**:
@@ -216,7 +216,7 @@ The centralized Axios client transparently unwraps backend envelopes:
   - Factual claim counts and independent publisher coverage count.
   - Expandable **Daily Intelligence Brief** containing the synthesized market thesis and catalyst news citations.
 
-### 7.4 Opportunities Scanner UI (`modules/opportunities`)
+### 7.4 Opportunities Scanner UI (`modules/opportunity_finder`)
 - **Live Card Session Grid**: One card per underlying. Displays current scanning state (`RUNNING` or `STOPPED`), completed iteration count, top confidence score, and stop reason.
 - **Master Action Bar**: **Start All** and **Emergency Stop All** buttons.
 - **Active Trade Opportunity Card**:

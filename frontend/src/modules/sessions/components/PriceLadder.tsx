@@ -1,5 +1,5 @@
 import React from "react";
-import { formatRupee } from "../../opportunities/components/formatters";
+import { formatRupee } from "../../opportunity-finder/components/formatters";
 
 interface Props {
   stop: number;

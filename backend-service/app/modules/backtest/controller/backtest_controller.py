@@ -39,11 +39,10 @@ async def start_range_backtest(body: RangeBacktestRequest) -> ApiResponse[dict[s
         body.capital,
         body.maxLossPct,
         body.sizing,
-        manager_view=body.managerView,
-        trader_filter=body.traderFilter,
+        manager=body.sessionManager,
+        risk_level=body.riskLevel,
         side_filter=body.sideFilter,
         max_parallel=body.maxParallel,
-        guard_enabled=body.guardEnabled,
     )
     return success(data=job, message=f"Backtest started for {body.fromDate} to {body.toDate}")
 

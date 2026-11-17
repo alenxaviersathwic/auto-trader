@@ -19,7 +19,7 @@ def usage_pct(load_avg_1m: float | None, cpu_count: int | None, units: int, capa
 
 def snapshot() -> dict[str, Any]:
     from app.modules.sessions.engine.session_loop_runner import active_counts
-    from app.modules.trades.engine.trade_pilot_runner import active_count
+    from app.modules.trade_history.engine.trade_pilot_runner import active_count
 
     counts = {**active_counts(), "tradePilots": active_count()}
     try:

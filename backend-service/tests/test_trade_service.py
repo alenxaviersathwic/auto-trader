@@ -18,9 +18,9 @@ from app.core.exception.app_exceptions import ConflictException
 from app.modules.sessions.entity.session_pick_entity import SessionPick
 from app.modules.sessions.entity.trading_session_entity import TradingSession
 from app.modules.sessions.service.session_loop_service import SessionLoopService
-from app.modules.trades.entity.trade_entity import ActiveTrade
-from app.modules.trades.schema.trade_schema import TradeCreateRequest, TradeExitRequest
-from app.modules.trades.service.trade_service import TradeService
+from app.modules.trade_history.entity.trade_entity import ActiveTrade
+from app.modules.trade_history.schema.trade_schema import TradeCreateRequest, TradeExitRequest
+from app.modules.trade_history.service.trade_service import TradeService
 
 NOW = lambda: datetime.now(UTC)  # noqa: E731
 TODAY = lambda: datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()  # noqa: E731
@@ -163,13 +163,13 @@ def make_opp(i=1, **kw):
 
 def test_preview_sizing_and_max_3_parallel_trades_and_upstox_orders(monkeypatch):
     import sys
-    from app.modules.opportunities.service import run_service as opp_run_mod
-    from app.modules.trades.engine import trade_pilot_runner as pilot_mod
+    from app.modules.opportunity_finder.service import run_service as opp_run_mod
+    from app.modules.trade_history.engine import trade_pilot_runner as pilot_mod
     import app.modules.sessions.service.session_loop_service  # noqa: F401
-    import app.modules.trades.service.trade_service  # noqa: F401
+    import app.modules.trade_history.service.trade_service  # noqa: F401
 
     sls_mod = sys.modules["app.modules.sessions.service.session_loop_service"]
-    ts_mod = sys.modules["app.modules.trades.service.trade_service"]
+    ts_mod = sys.modules["app.modules.trade_history.service.trade_service"]
 
     async def go():
         s = TradingSession(
@@ -265,13 +265,13 @@ def test_preview_sizing_and_max_3_parallel_trades_and_upstox_orders(monkeypatch)
 
 def test_semi_auto_and_full_auto_session_modes(monkeypatch):
     import sys
-    from app.modules.opportunities.service import run_service as opp_run_mod
-    from app.modules.trades.engine import trade_pilot_runner as pilot_mod
+    from app.modules.opportunity_finder.service import run_service as opp_run_mod
+    from app.modules.trade_history.engine import trade_pilot_runner as pilot_mod
     import app.modules.sessions.service.session_loop_service  # noqa: F401
-    import app.modules.trades.service.trade_service  # noqa: F401
+    import app.modules.trade_history.service.trade_service  # noqa: F401
 
     sls_mod = sys.modules["app.modules.sessions.service.session_loop_service"]
-    ts_mod = sys.modules["app.modules.trades.service.trade_service"]
+    ts_mod = sys.modules["app.modules.trade_history.service.trade_service"]
 
     async def go():
         monkeypatch.setattr(pilot_mod, "start", lambda tid: None)
@@ -334,7 +334,7 @@ def test_semi_auto_and_full_auto_session_modes(monkeypatch):
 
 
 def test_order_client_protects_market_orders_and_tags_the_algo(monkeypatch):
-    from app.modules.trades.service import upstox_order_client as oc
+    from app.modules.trade_history.service import upstox_order_client as oc
 
     sent: dict = {}
 
@@ -377,7 +377,7 @@ def test_order_client_protects_market_orders_and_tags_the_algo(monkeypatch):
 def test_exit_never_sells_more_than_the_entry_filled():
     from types import SimpleNamespace
 
-    from app.modules.trades.service.trade_service import TradeService
+    from app.modules.trade_history.service.trade_service import TradeService
 
     class Orders(FakeOrderClient):
         def __init__(self, filled):
@@ -401,13 +401,13 @@ def test_exit_never_sells_more_than_the_entry_filled():
 def _entry_env(monkeypatch, order_client):
     import sys
 
-    from app.modules.opportunities.service import run_service as opp_run_mod
-    from app.modules.trades.engine import trade_pilot_runner as pilot_mod
+    from app.modules.opportunity_finder.service import run_service as opp_run_mod
+    from app.modules.trade_history.engine import trade_pilot_runner as pilot_mod
     import app.modules.sessions.service.session_loop_service  # noqa: F401
-    import app.modules.trades.service.trade_service  # noqa: F401
+    import app.modules.trade_history.service.trade_service  # noqa: F401
 
     sls_mod = sys.modules["app.modules.sessions.service.session_loop_service"]
-    ts_mod = sys.modules["app.modules.trades.service.trade_service"]
+    ts_mod = sys.modules["app.modules.trade_history.service.trade_service"]
     s = TradingSession(name="Live", tradeDate=TODAY(), userId=1, capital=200000, maxLossPercentage=5, scope="INDEX",
                        underlyings=["NIFTY"], commodityItems=[], sessionType="MANUAL", routeThroughUpstox=True,
                        sessionStatus="ACTIVE", realizedPnl=0, startAt=NOW() - timedelta(hours=1),

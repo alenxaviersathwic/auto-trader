@@ -1,7 +1,10 @@
 import json
 import re
 from typing import Any, Dict, List
-import httpx
+import re
+
+from app.modules.research.service.text_clean import strip_furniture
+from app.modules.ai_master.llm.ollama_client import chat as ollama_chat, pick_model
 from pydantic import BaseModel, Field
 from app.core.config.settings import settings
 from app.core.logging.logger import logger
@@ -43,6 +46,7 @@ class ClaimExtractor:
         """
         Extracts up to max_claims claims from chunk_text.
         """
+        chunk_text = strip_furniture(chunk_text)  # page ticker / fund adverts are not news about the index
         if not chunk_text.strip():
             return []
 
@@ -69,19 +73,20 @@ class ClaimExtractor:
                 "stream": False,
                 "options": {"temperature": 0.0},
             }
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(f"{self.base_url}/api/chat", json=payload)
-                if resp.status_code == 200:
-                    raw_content = resp.json().get("message", {}).get("content", "{}")
-                    parsed = json.loads(raw_content)
-                    raw_claims = parsed.get("claims", [])
-                    validated_claims: List[Dict[str, Any]] = []
-                    for rc in raw_claims[:max_claims]:
-                        u_code = rc.get("underlyingCode", "").upper()
-                        if any(u_code == u.upper() for u in underlyings_in_scope):
-                            validated_claims.append(rc)
-                    if validated_claims:
-                        return validated_claims
+            # shared local-LLM path: queued, thinking off, model kept warm (ai_master/llm/ollama_client.py); the old
+            # direct call left qwen3 thinking and timed out at 8-10 s, so this step silently fell back every time
+            payload["model"] = await pick_model(fast=True)
+            data = await ollama_chat(payload, timeout=settings.LLM_RESEARCH_TIMEOUT_S, cache_ttl=600)
+            raw_content = _strip_think(data.get("message", {}).get("content", "{}"))
+            parsed = json.loads(raw_content)
+            raw_claims = parsed.get("claims", [])
+            validated_claims: List[Dict[str, Any]] = []
+            for rc in raw_claims[:max_claims]:
+                u_code = rc.get("underlyingCode", "").upper()
+                if any(u_code == u.upper() for u in underlyings_in_scope):
+                    validated_claims.append(rc)
+            if validated_claims:
+                return validated_claims
         except Exception as e:
             logger.debug(f"LLM claim extraction call failed: {e}; applying rule-based claim extractor")
 
@@ -165,3 +170,7 @@ class ClaimExtractor:
 
 
 claim_extractor = ClaimExtractor()
+
+
+def _strip_think(content: str) -> str:
+    return re.sub(r"<think>[\s\S]*?</think>", "", content or "").strip() or "{}"

@@ -25,8 +25,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import select  # noqa: E402
 
 from app.core.db.session import async_session_factory  # noqa: E402
-from app.modules.opportunities.entity.opportunity_entity import OptionChainSnapshot  # noqa: E402
-from app.modules.opportunities.service import gamma_regime as gr, positioning  # noqa: E402
+from app.modules.opportunity_finder.entity.opportunity_entity import OptionChainSnapshot  # noqa: E402
+from app.modules.opportunity_finder.service import gamma_regime as gr, positioning  # noqa: E402
 
 IST = ZoneInfo("Asia/Kolkata")
 HORIZON = timedelta(minutes=30)

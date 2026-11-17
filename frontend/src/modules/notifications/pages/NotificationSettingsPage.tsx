@@ -88,7 +88,7 @@ export const NotificationSettingsPage: React.FC = () => {
                 <Bell size={12} /> Allow
               </button>
             )}
-            <Toggle on={s.desktop} label="Desktop notifications" disabled={off || permission !== "granted"}
+            <Toggle on={s.desktop && permission === "granted"} label="Desktop notifications" disabled={off || permission !== "granted"}
               onChange={(on) => set({ desktop: on })} />
           </span>
         </div>

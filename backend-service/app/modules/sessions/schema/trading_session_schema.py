@@ -10,8 +10,20 @@ SCOPE_VALUES = ("INDEX", "COMMODITY")
 SESSION_TYPE_VALUES = ("FULL_AUTO", "SEMI_AUTO", "MANUAL")
 SESSION_STATUS_VALUES = ("ACTIVE", "CLOSED", "EXPIRED")
 RISK_LEVEL_VALUES = ("LOW", "MEDIUM", "HIGH")
-DEFAULT_TRADERS = ("FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER")
+DEFAULT_TRADERS = ("FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER")  # legacy sessions: no / unknown traders = both
+DEFAULT_SESSION_TRADER = "FLOW_MOMENTUM_TRADER"  # new sessions: one session manager, the one that sees most setups
 HHMM_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"  # 24-hour HH:MM, read as IST
+
+
+def _one_trader(codes: list[str]) -> list[str]:
+    """A session is run by exactly one session manager; old codes are mapped (an old Commodity Desk manager becomes
+    the Indian Quant Desk -- there is no commodity manager: the manager's duty is the same for every market)."""
+    from app.modules.trade_history.service.trader_presets import SESSION_MANAGER_CODES, normalize_manager_code
+
+    picked = {normalize_manager_code(c) for c in codes}
+    if None in picked or len(picked) != 1:
+        raise ValueError(f"traders must name exactly one session manager: one of {list(SESSION_MANAGER_CODES)}")
+    return [picked.pop()]
 
 
 class TradingSessionCreateRequest(BaseModel):
@@ -26,12 +38,18 @@ class TradingSessionCreateRequest(BaseModel):
     underlyings: list[str] = Field(default_factory=list, description="Selected index underlyings (scope=INDEX)")
     commodityItems: list[str] = Field(default_factory=list, description="Selected commodities (scope=COMMODITY)")
     traders: list[str] = Field(
-        default_factory=lambda: list(DEFAULT_TRADERS),
-        description="Traders active in this session: FIB_GOLDEN_TRADER and / or FLOW_MOMENTUM_TRADER",
+        default_factory=lambda: [DEFAULT_SESSION_TRADER],
+        description="The session manager (exactly one): [FLOW_MOMENTUM_TRADER] or [FIB_GOLDEN_TRADER]",
+    )
+    finders: list[str] = Field(
+        default_factory=list,
+        description="Opportunity finders feeding the session; each must cover the scope (its optionTypes). "
+                    "Empty = every enabled finder that covers the scope",
     )
     riskLevel: str = Field(default="LOW", description="Entry strictness: LOW | MEDIUM | HIGH")
     sessionType: str = Field(default="MANUAL", description="FULL_AUTO | SEMI_AUTO | MANUAL")
-    routeThroughUpstox: bool = Field(default=False, description="False = fully simulated session")
+    routeThroughUpstox: bool = Field(default=False, description="True = picks are sent to Upstox; False = not sent "
+                                                                  "(you may still take them with another broker)")
     startTime: Optional[str] = Field(default=None, pattern=HHMM_PATTERN, description="HH:MM IST. Blank = now if created at/after 09:25, else 09:15")
     closeTime: Optional[str] = Field(default=None, pattern=HHMM_PATTERN, description="HH:MM IST. Blank = 15:45")
 
@@ -48,6 +66,7 @@ class TradingSessionCreateRequest(BaseModel):
             raise ValueError("underlyings is required when scope is INDEX")
         if scope == "COMMODITY" and not self.commodityItems:
             raise ValueError("commodityItems is required when scope is COMMODITY")
+        self.traders = _one_trader(self.traders)
         return self
 
 
@@ -60,6 +79,7 @@ class TradingSessionUpdateRequest(BaseModel):
     underlyings: Optional[list[str]] = None
     commodityItems: Optional[list[str]] = None
     traders: Optional[list[str]] = None
+    finders: Optional[list[str]] = Field(default=None, description="Finders feeding the session (must cover its scope)")
     riskLevel: Optional[str] = Field(default=None, description="LOW | MEDIUM | HIGH")
     sessionType: Optional[str] = None
     routeThroughUpstox: Optional[bool] = None
@@ -75,6 +95,8 @@ class TradingSessionUpdateRequest(BaseModel):
             raise ValueError(f"riskLevel must be one of {RISK_LEVEL_VALUES}")
         if self.sessionStatus is not None and self.sessionStatus.upper() not in SESSION_STATUS_VALUES:
             raise ValueError(f"sessionStatus must be one of {SESSION_STATUS_VALUES}")
+        if self.traders is not None:
+            self.traders = _one_trader(self.traders)
         return self
 
 
@@ -93,6 +115,7 @@ class TradingSessionResponse(BaseModel):
     underlyings: list[str]
     commodityItems: list[str]
     traders: list[str] = list(DEFAULT_TRADERS)
+    finders: list[str] = list(DEFAULT_TRADERS)
     riskLevel: str = "LOW"
     riskProfile: Optional[dict] = None  # what the level allows (session_risk.RiskProfile.as_dict())
     sessionType: str

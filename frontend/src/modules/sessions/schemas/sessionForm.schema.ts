@@ -10,10 +10,16 @@ export const sessionCreateSchema = z
     scope: z.enum(["INDEX", "COMMODITY"]),
     underlyings: z.array(z.string()).default([]),
     commodityItems: z.array(z.string()).default([]),
+    // exactly one session manager runs a session (same duty for every market)
     traders: z
-      .array(z.string())
-      .min(1, "Select at least one trader")
-      .default(["FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER"]),
+      .array(z.enum(["FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER"]))
+      .length(1, "Pick a session manager")
+      .default(["FLOW_MOMENTUM_TRADER"]),
+    // the opportunity finders feeding the session: only finders whose optionTypes include the scope
+    finders: z
+      .array(z.enum(["FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER", "COMMODITY_DESK_TRADER"]))
+      .min(1, "Pick at least one opportunity finder")
+      .default([]),
     riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]).default("LOW"),
     sessionType: z.enum(["FULL_AUTO", "SEMI_AUTO", "MANUAL"]).default("MANUAL"),
     routeThroughUpstox: z.boolean().default(false),

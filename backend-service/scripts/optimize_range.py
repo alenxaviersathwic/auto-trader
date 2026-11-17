@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import backtest_day as bd  # noqa: E402
 import backtest_range_real as r  # noqa: E402
 from app.modules.backtest.service import edge_stats as es  # noqa: E402
-from app.modules.opportunities.service import menu_builder as mb  # noqa: E402
+from app.modules.opportunity_finder.service import menu_builder as mb  # noqa: E402
 
 SPLIT = "2026-08-17"
 MOMO = ("NOISE_BREAKOUT", "LATE_DAY_MOMENTUM", "RANGE_BREAKOUT", "VWAP_PULLBACK", "GAP_GO")

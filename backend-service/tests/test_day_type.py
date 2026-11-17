@@ -2,9 +2,9 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from app.modules.opportunities.provider.underlying_config import get_config
-from app.modules.opportunities.service import chain_recorder, day_type, menu_builder as mb, setups as su
-from app.modules.opportunities.service.costs import slippage_pct
+from app.modules.opportunity_finder.provider.underlying_config import get_config
+from app.modules.opportunity_finder.service import chain_recorder, day_type, menu_builder as mb, setups as su
+from app.modules.opportunity_finder.service.costs import slippage_pct
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -235,3 +235,15 @@ def test_momo_mode_buys_itm_on_a_non_expiring_series_with_a_wide_r_target(monkey
     assert mb.build_menu(cfg, mk, "BULLISH", 5.0, setups=[_setup()], require_setup=True, atr5=20.0,
                          strike_modes={"CE": "MOMO", "PE": "ATM"}, reasons=reasons) == []
     assert reasons.get("MOMO: expiring series skipped")
+
+
+def test_mcx_strikes_are_picked_against_the_chains_own_future():
+    """MCX: the next expiry's options are written on the next month's future, priced 100 above the front future the
+    candles come from. ATM / one-ITM must be chosen against that chain's own future (25100), not the front (25000)."""
+    cfg = get_config("CRUDEOIL")
+    mk = _market(spot=25100.0)  # the chain (and its deltas) sit on the next-month future
+    mk["spot"] = 25000.0  # the front future: what the setup's levels are measured on
+    menu = mb.build_menu(cfg, mk, "BULLISH", 5.0, setups=[_setup()], require_setup=True, atm_itm_only=True,
+                         min_delta=0.5, atr5=20.0)
+    ce = [m for m in menu if m["side"] == "CE"]
+    assert ce and all(m["strike"] in (25100, 25050) for m in ce)

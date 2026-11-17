@@ -2,7 +2,7 @@
 
 > **Document Type:** Module Specification
 > **Status:** Authoritative
-> **Module path:** `backend-service/app/modules/trades`, `frontend/src/modules/trades`
+> **Module path:** `backend-service/app/modules/trade_history`, `frontend/src/modules/trade-history`
 
 ---
 
@@ -12,7 +12,7 @@ The `trades` module has **two Traders**. A Trader is (1) the setups it may take 
 
 | | `FIB_GOLDEN_TRADER` — Fib Golden-Pocket Trader | `FLOW_MOMENTUM_TRADER` — Flow & Momentum Trader |
 |---|---|---|
-| Takes | Only `FIB_GOLDEN_POCKET` (`opportunities/service/fib_pocket.py`) | Every other setup the policy lets trade: `NOISE_BREAKOUT`, `INSIDE_BAR`, `FII_OPEN_DRIVE`, `LATE_DAY_MOMENTUM`, and `VWAP_PULLBACK` / `RANGE_BREAKOUT` / `GAP_GO` inside an active breakout |
+| Takes | Only `FIB_GOLDEN_POCKET` (`opportunity_finder/service/fib_pocket.py`) | Every other setup the policy lets trade: `NOISE_BREAKOUT`, `INSIDE_BAR`, `FII_OPEN_DRIVE`, `LATE_DAY_MOMENTUM`, and `VWAP_PULLBACK` / `RANGE_BREAKOUT` / `GAP_GO` inside an active breakout |
 | Checks | 1. Impulse swing >= 3 ATR5, pullback into the 0.50-0.618 pocket, 5-minute turn bar. 2. **OI**: no OI wall in the first 60% of the path to target, and the opposite wall behind the pocket or futures buildup agreeing. 3. **Volume**: pullback quieter than the impulse, turn bar >= average volume. All three are required. | Day type, dealer-gamma routing, institutional filters, 15-minute trend and the 1-minute timing gate (unchanged) |
 | Plan | Entry = turn-bar close, stop just beyond 0.786, target = swing high (1.0) | From the setup (chart levels) |
 | Manages | Waits for 80% of the move before locking half, then steps the target to 1.272 and 1.618 | Momentum setups: breakeven at +1.5R, trail 2R under the peak, no fixed target. Others: step guard (+30% at 50% progress, +50% at 80%) and step-wave target expansion on strong momentum |
@@ -29,7 +29,7 @@ The `trades` module has **two Traders**. A Trader is (1) the setups it may take 
 
 ### Option-chain (OI) view on a trade
 
-`marketTelemetry.oaAnalysis` is built by `opportunities/service/chain_view.py` from the newest `option_chain_snapshots` row (recorded about every 15 s while the scanner runs) and refreshed about once a minute. It carries `source: "CHAIN_SNAPSHOT"` and `asOf`. OI change is measured against the snapshot about 15 minutes earlier and is `null` when there is none. When no snapshot is newer than 5 minutes the value is `null` and the UI says so. Until 16 Nov 2026 this field held hard-coded numbers; trades entered before then still carry them and the UI ignores any ladder without `source`.
+`marketTelemetry.oaAnalysis` is built by `opportunity_finder/service/chain_view.py` from the newest `option_chain_snapshots` row (recorded about every 15 s while the scanner runs) and refreshed about once a minute. It carries `source: "CHAIN_SNAPSHOT"` and `asOf`. OI change is measured against the snapshot about 15 minutes earlier and is `null` when there is none. When no snapshot is newer than 5 minutes the value is `null` and the UI says so. Until 16 Nov 2026 this field held hard-coded numbers; trades entered before then still carry them and the UI ignores any ladder without `source`.
 
 ---
 
@@ -67,7 +67,7 @@ Two compiled LangGraph `StateGraph` workflows communicate with the local LLM (`O
 
 ---
 
-## 3. Frontend UI (`frontend/src/modules/trades`)
+## 3. Frontend UI (`frontend/src/modules/trade-history`)
 
 ### 3.1 Traders & Session Manager Hub (`/trades`)
 - **2 Main Tabs** (`?tab=trader` | `?tab=sessions`):
@@ -110,3 +110,136 @@ When creating a session in `SessionDialog.tsx`, the user single-selects one of *
 
 
 
+
+## One session manager per session (17 Nov 2026)
+
+> **Superseded the same day by [14. Opportunity finders](14-opportunity-finders.md):** the manager no longer
+> decides which trader's setups a session gets. `traders` holds only the manager (same duty for every market);
+> the new `finders` field holds the finders, chosen by the scope through each finder's `optionTypes`.
+
+A session is now run by exactly **one** trader, called its session manager:
+
+| Manager (UI name) | Trader | Takes |
+|---|---|---|
+| Indian Quant Desk (default) | FLOW_MOMENTUM_TRADER | every coded setup except the Fib pocket |
+| My Experience | FIB_GOLDEN_TRADER | only FIB_GOLDEN_POCKET (with OI + volume confirmation), so few suggestions |
+
+- `TradingSessionCreateRequest.traders` / `TradingSessionUpdateRequest.traders` must name exactly one trader
+  (old codes are mapped); default `["FLOW_MOMENTUM_TRADER"]`. Validation: `trading_session_schema._one_trader`.
+- The New Session dialog has a single-choice radio group (no chips, no Select all).
+- On the session screen, picking the other trader hands the session over: `traders` becomes `[code]` and the old
+  trader's open offers expire on the next loop tick (existing `no_longer_wanted` rule).
+- Sessions created earlier with both traders keep working unchanged; picking one on the session screen converts them.
+
+## Fib pocket: price action (17 Nov 2026)
+
+`fib_pocket._price_action_check` is the third required confirmation (with OI and volume):
+
+1. **Corrective pullback**: at least `MIN_PULLBACK_BARS` (2) bars, and no pullback body as big as the impulse's
+   biggest body. One big bar into the pocket is a reversal, not a pullback.
+2. **Rejection signal** on the last or previous 5-minute bar, one of:
+   - `PIN_BAR`: wick >= 2x body and >= half the range, close in the top 40% (bottom 40% for PE), wick tip inside the
+     0.45-0.786 zone;
+   - `ENGULFING`: the turn bar's body engulfs the previous pullback-direction body;
+   - `INSIDE_BAR_BREAK`: previous bar inside the one before it, turn bar closes beyond it.
+
+The signal carries `priceActionConfirmed` and `priceAction {pattern, why}`; `setup_meta` saves `priceActionConfirm`
+and `priceActionPattern` on the opportunity, pick and trade.
+
+## Backtest = the session flow
+
+`POST /backtest/range` takes `sessionManager` (`FLOW_MOMENTUM_TRADER` default, `FIB_GOLDEN_TRADER`, or `ALL` to
+compare) and `riskLevel` (`LOW` default). Inside the replay, before a trade is simulated:
+
+- the other trader's setups are out of scope (`range_backtest_service.session_block`);
+- the live `session_risk.risk_gate` applies (setup class, trend side from `trend15`, reward:risk); a blocked signal is
+  simulated as a counterfactual under rule `SESSION <reason>`, so the Rules tab shows what the risk level saved or cost;
+- each trade is managed by its own trader: `premium_sim.simulate_fib` (lock 50% / 70% at 80% / 95% of the move,
+  stop to the swing at Fib 1.0, then 1.272, book at 1.618; outcomes STOP / LOCKED / TARGET / EOD) or `simulate_momo`.
+
+Fib in a replay: `analysis["replay"] = True` makes the OI and volume checks "not replayable" (no option-chain history,
+no futures volume on index candles), so the backtest measures swing + pocket + price action only. Live takes fewer of
+these trades. The report says so in `range.fibNote` and adds `perTrader` and `perPriceAction`.
+
+Removed: `managerView` / `traderFilter` / `guardEnabled`. The old `MY_VIEW` filter dropped trades whose own result was
+worse than -18% (look-ahead: it used the outcome to choose the trades), and the results screen re-filtered trades
+with a keyword guess at the trader.
+
+## 15-minute trend + 1-minute trigger on every opportunity (17 Nov 2026)
+
+Every setup is confirmed on three timeframes before it becomes an opportunity (`setups.confirm_timeframes`):
+15-minute trend (must agree for TREND setups, Fib included; FLAT or agreeing for RANGE setups), the 5-minute setup
+itself, and the 1-minute trigger (`one_minute_check`: EMA9 side, no fresh extreme, stop untouched, not chasing,
+target not reached). FII_OPEN_DRIVE (09:15 opening trade) is the one exception.
+
+- Before about 10:00 fewer than three 15-minute bars have closed today. The 15-minute EMAs then run on the previous
+  session's 15-minute bars followed by today's (`market_analysis.prior_session_15m`, source `15m+prev`) instead of
+  the old 5-minute proxy. Live takes them from the noise-area history; the range backtest passes the previous day's
+  bars (`prevSession5m`) and fetches 5 extra days before FROM for the first day.
+- The evidence travels with the opportunity: `timeframeDetail` on the signal -> `setupMeta.timeframes` ->
+  `SessionPickResponse.timeframes` = `{"15m": {trend, source}, "1m": {close, ema9, trigger}}`. Each opportunity
+  card shows "15m UP" and "1m ✓ > trigger".
+
+Session screen layout: left 60% = the session manager agent (trace, decision, folded autopsy sub-agent) and the
+opportunities; right 40% (sticky) = the session itself: identity, controls, capital, locked picks, running and
+closed trades, agent activity.
+
+## Index view: today's bias and what each trader waits for (17 Nov 2026)
+
+Each scan pass now also saves `spot` and `fibWatch` (`fib_pocket.watch`): per side, the Fib trader's stage --
+`NO_SWING`, `SHALLOW` (impulse found, waiting for the pullback to reach 0.50-0.618), `IN_POCKET` (waiting for a
+rejection candle), `STALE`, `FAILED` (past 0.786) -- with the swing, pocket and invalidation prices.
+
+The opportunity finders ARE the two opportunity traders. On the Traders page (menu "Traders", Opportunity
+traders tab) each trader card has a "Today across indices" strip (`traders/components/TraderTodayStrip.tsx`): one
+line per index scanned today -- the bias and what THIS trader is waiting for there (Fib: the most advanced stage,
+e.g. "CE waiting pocket"; Flow: the latest blocked momentum setup). Clicking it opens that trader's sheet
+(`traders/components/TraderTodaySheet.tsx`) with every index stacked: bias, what the trader waits for (Fib: the
+retracement bar with the pocket shaded; Flow: blocked setups and why), the temporary trend with its votes, and
+recent scans. Both traders read the same per-index scans (`traders/components/useIndexToday.ts`).
+There is no separate per-index strip.
+
+## "Now" vs "day" (17 Nov 2026, after SENSEX showed BULL while falling)
+
+At 15:07 SENSEX had dropped from 82,800 (14:30) to 82,578, yet the trader "today" view said BULL (+4). Every
+input was a whole-day or older read: day type TREND up (set in the morning, +2), price vs the opening noise area
+(still 0.5 pt above it, +1), FII positioning (yesterday's data, +1), 15-min trend (flat, 0). Nothing measured the
+last hour.
+
+Each scan now also saves `now` (`opportunity_finder/service/momentum_now.py`): the last ~60 minutes from 5-minute
+bars -- EMA9/21 stack, futures VWAP side, the 60-minute change in ATRs (>= 0.75 ATR counts), 30-minute swing
+structure (higher/lower highs and lows), and a turn off the 90-minute high/low (>= 1.5 ATR). >= +2 bullish,
+<= -2 bearish.
+
+Rule (user, 17 Nov 2026): the Traders area shows ONLY this temporary (last-hour) trend, per index. The overall /
+whole-day trend is the Research Engine's job, so the old whole-day read (day type, noise area, FII positioning,
+news) was removed from the Traders area (`indexView.ts` deleted). Tests: `tests/test_momentum_now.py` (replays today's SENSEX afternoon shape).
+
+## Why the Fib trader found nothing (17 Nov 2026) -- and what changed
+
+User: "so many Fib zones on NIFTY and SENSEX today, why does the system find none?"
+
+Today (logs + saved scans): FIB_GOLDEN_POCKET fired 71 times after 13:50 IST, all rejected. FINNIFTY PE passed price
+action ~40 times and was blocked only by the OI check ("no call-OI wall behind the pocket, futures NEUTRAL") and the
+volume check ("turn bar volume below average"). The afternoon CE pockets on all four indices (14:50-15:00) never got
+a turn candle and fell through 0.786: those swings failed and correctly did not trade.
+
+6-month replay on real 1-minute data (`logs/realdata6m`, May-Nov 2026, 134 days per index), per swing that reached
+the 0.46-0.70 pocket inside an entry window (~1,370 per index, about 10 a day):
+- 44% died at "reward:risk < 1.3": the stop was fixed at 0.786 and a strong turn candle ate the reward;
+- 29% never turned (failed pockets: correct), 11% turned too late (> 2 bars after the low);
+- only ONE swing per side was ever examined: the one ending at the 3-hour extreme. Every smaller leg + pullback
+  after the day's high was invisible.
+
+Changes in `fib_pocket.py`:
+- `_swings()`: every recent swing, newest first (a real local high/low not exceeded since; the leg starts after the
+  last bar beyond it). `detect()` takes the newest swing that sets up; `watch()` reports the newest live one.
+- stop = just beyond the pocket's rejection extreme (STOP_BUFFER_ATR = 0.15 ATR5), never beyond the 0.786
+  invalidation (`stopBasis` says which).
+- OI and volume confirmations are unchanged (still required live).
+
+Result, same replay with live entry windows + 15-min trend + price action (OI/volume not replayable):
+NIFTY 4 -> 22 trades in 6 months (+0.65R -> +0.09R avg; 4 trades is too few to judge), SENSEX 4 -> 22 (-0.40R ->
+0.00R). It now sees the zones, but the pocket + price action alone is about breakeven on the index -- not an edge
+on its own before option costs. Whether OI / volume add the edge can only be measured once enough option-chain
+snapshots are recorded (chain_recorder). Tests: `tests/test_two_traders.py` (pocket stop, 0.786 cap, newer swing).

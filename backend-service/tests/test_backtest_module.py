@@ -35,7 +35,7 @@ def test_bs_call_put_parity_and_delta_bounds():
 
 
 def test_pick_strike_respects_the_mode_delta_band():
-    from app.modules.opportunities.provider.underlying_config import get_config
+    from app.modules.opportunity_finder.provider.underlying_config import get_config
 
     cfg = get_config("NIFTY")
     got = premium_sim.pick_strike(cfg, 24500, 1, 600, True, "OTM", 0.15)

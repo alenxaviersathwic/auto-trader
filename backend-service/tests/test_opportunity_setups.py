@@ -7,14 +7,14 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from app.modules.opportunities.provider.instrument_catalog import parse_rows
-from app.modules.opportunities.provider.underlying_config import get_config
-from app.modules.opportunities.provider.upstox_market_data import UpstoxMarketData
-from app.modules.opportunities.provider.instrument_catalog import OptionContract
-from app.modules.opportunities.service import setups as setup_detector
-from app.modules.opportunities.service.costs import round_trip_cost_pct
-from app.modules.opportunities.service.market_analysis import analyze, resample, session_info
-from app.modules.opportunities.service.menu_builder import build_menu, expected_edge_pct
+from app.modules.opportunity_finder.provider.instrument_catalog import parse_rows
+from app.modules.opportunity_finder.provider.underlying_config import get_config
+from app.modules.opportunity_finder.provider.upstox_market_data import UpstoxMarketData
+from app.modules.opportunity_finder.provider.instrument_catalog import OptionContract
+from app.modules.opportunity_finder.service import setups as setup_detector
+from app.modules.opportunity_finder.service.costs import round_trip_cost_pct
+from app.modules.opportunity_finder.service.market_analysis import analyze, resample, session_info
+from app.modules.opportunity_finder.service.menu_builder import build_menu, expected_edge_pct
 
 IST = ZoneInfo("Asia/Kolkata")
 DAY = "2026-11-02"
@@ -188,7 +188,7 @@ def _rising_1m(n=8, start=100.0, step=0.5):
 
 
 def _a(**kw):
-    base = {"trend15": "UP", "atr5": 10.0, "bars1": _rising_1m()}
+    base = {"trend15": "UP", "trend5": "UP", "atr5": 10.0, "bars1": _rising_1m()}
     base.update(kw)
     return base
 
@@ -197,7 +197,7 @@ def test_timeframes_must_agree():
     ce = {"name": "NOISE_BREAKOUT", "side": "CE", "strength": 3, "entry": 103.0, "stop": 95.0, "target": 120.0}
     pe = {"name": "NOISE_BREAKOUT", "side": "PE", "strength": 3, "entry": 103.0, "stop": 110.0, "target": 90.0}
     ok, rej = setup_detector.confirm_timeframes(_a(), [ce, pe])
-    assert [s["side"] for s in ok] == ["CE"] and "15-min trend" in rej[0]["reason"]
+    assert [s["side"] for s in ok] == ["CE"] and "15m and 5m both DOWN" in rej[0]["reason"]
     assert ok[0]["timeframes"]["1m"] == "confirmed" and ok[0]["trigger1m"] > ok[0]["entry1m"]
     # one red 1-minute bar above the 1-min EMA9 with no fresh low no longer vetoes a CE (it flickered every 20 s)
     red = _rising_1m()[:-1] + [bar(603, 104.5, 104.6, 103.6, 103.8)]
@@ -283,7 +283,7 @@ def test_ema_cross_retest_and_supertrend():
     pull = (bars[-1]["c"], bars[-1]["c"] + 1, bars[-1]["c"] - 9, bars[-1]["c"] - 6)
     resume = (pull[3], pull[3] + 14, pull[3] - 1, pull[3] + 12)
     bars = _bars5(down + up + [pull, resume])
-    from app.modules.opportunities.service.market_analysis import ema, supertrend
+    from app.modules.opportunity_finder.service.market_analysis import ema, supertrend
     closes = [b["c"] for b in bars]
     a = _setup_input(bars, emaSeries5={"e9": ema(closes, 9)[-14:], "e21": ema(closes, 21)[-14:]},
                      supertrend5=supertrend(bars))
@@ -372,7 +372,7 @@ def test_point_based_exits_follow_the_chart_not_a_fixed_percent():
 
 
 def test_expiry_day_after_1330_is_itm_only(monkeypatch):
-    from app.modules.opportunities.service import menu_builder as mb
+    from app.modules.opportunity_finder.service import menu_builder as mb
 
     cfg = get_config("NIFTY")
     m = _orb_market()
@@ -409,3 +409,107 @@ def test_setup_policy_keeps_only_institutional_momentum_as_option_buys():
     ok, _ = setup_detector.confirm_timeframes(_a(dayType={"type": "EXPANSION", "side": "CE"}),
                                               [{**base, "name": "RANGE_BREAKOUT"}])
     assert [s["name"] for s in ok] == ["RANGE_BREAKOUT"]
+
+
+# ───────────────────────── 15-minute + 1-minute, always (17 Nov 2026) ─────────────────────────
+def test_trend15_uses_real_15m_bars_from_the_first_minute():
+    from app.modules.opportunity_finder.service import market_analysis as ma
+
+    # yesterday: 75 rising 5-minute bars (09:15-15:25) -> 25 rising 15-minute bars
+    prev5 = [{"t": f"2026-11-16T{9 + (15 + 5 * i) // 60:02d}:{(15 + 5 * i) % 60:02d}:00+05:30",
+              "o": 100 + i, "h": 101 + i, "l": 99 + i, "c": 100.5 + i} for i in range(75)]
+    p15 = ma.prior_session_15m({"prevSession5m": prev5}, "2026-11-17", "09:15")
+    assert len(p15) == 25 and p15[0]["o"] == 100 and p15[0]["c"] == 102.5 and p15[0]["h"] == 103
+    sessions5 = [("2026-11-16", {i: b for i, b in enumerate(prev5)}), ("2026-11-17", {0: prev5[0]})]
+    assert len(ma.prior_session_15m({"sessions5": sessions5}, "2026-11-17", "09:15")) == 25  # today's row skipped
+
+
+def test_confirmed_setup_carries_its_15m_and_1m_evidence():
+    from app.modules.opportunity_finder.service import menu_builder as mb
+
+    ce = {"name": "NOISE_BREAKOUT", "side": "CE", "strength": 3, "reason": "x", "entry": 100.0, "stop": 95.0,
+          "target": 115.0}
+    ok, _ = setup_detector.confirm_timeframes({**_a(), "trend15Source": "15m+prev"}, [ce])
+    tf = ok[0]["timeframeDetail"]
+    assert tf["15m"] == {"trend": "UP", "source": "15m+prev"}
+    assert tf["1m"]["trigger"] == ok[0]["trigger1m"] and tf["1m"]["ema9"] == ok[0]["ema1m"]
+    meta = mb._setup_meta(ok[0], 100.0, 50.0, 0.6)
+    assert meta == {"timeframes": tf}  # not a Fib setup: only the timeframes
+    assert mb._setup_meta(None, 100.0, 50.0, 0.6) is None
+
+
+def test_gamma_blast_handles_dict_vwap_without_type_error():
+    cfg = get_config("BANKNIFTY")
+    # 7 bars around 14:00 with tight prior 5 bars and current breakdown
+    bars = [
+        {"t": "2026-11-17T13:30:00+05:30", "o": 50000, "h": 50020, "l": 49990, "c": 50010, "v": 1000},
+        {"t": "2026-11-17T13:35:00+05:30", "o": 50010, "h": 50025, "l": 50000, "c": 50015, "v": 1000},
+        {"t": "2026-11-17T13:40:00+05:30", "o": 50015, "h": 50020, "l": 49995, "c": 50005, "v": 1000},
+        {"t": "2026-11-17T13:45:00+05:30", "o": 50005, "h": 50015, "l": 49990, "c": 50000, "v": 1000},
+        {"t": "2026-11-17T13:50:00+05:30", "o": 50000, "h": 50010, "l": 49985, "c": 49995, "v": 1000},
+        {"t": "2026-11-17T13:55:00+05:30", "o": 49995, "h": 50005, "l": 49980, "c": 49990, "v": 1000},
+        {"t": "2026-11-17T14:00:00+05:30", "o": 49990, "h": 49992, "l": 49900, "c": 49910, "v": 2500},
+    ]
+    a = _setup_input(bars, atr5=50.0, vwap={"value": 50010.0, "above": False, "distPct": -0.2})
+    # Should not raise TypeError: '<' not supported between instances of 'float' and 'dict'
+    found = setup_detector.detect(a, cfg)
+    assert any(s["name"] == "GAMMA_BLAST" for s in found)
+
+
+# ───────────────────────── 1-minute signal, situational 5m / 15m confirmation (17 Nov 2026) ─────────────────────────
+def test_tf_agreement_reads_the_situation():
+    ta = setup_detector.tf_agreement
+    base = {"session": {"minutesSinceOpen": 120}}
+    # no trend-day context: both must agree
+    assert ta({**base, "trend15": "UP", "trend5": "FLAT"}, "CE", "TREND")[0]
+    assert ta({**base, "trend15": "UP", "trend5": "UP"}, "CE", "TREND")[0] is None
+    # trend day on the signal's side: 15m must agree, 5m may be flat (a fresh 1m break leads it) but not against
+    td = {**base, "dayType": {"type": "TREND", "side": "CE"}}
+    assert ta({**td, "trend15": "UP", "trend5": "FLAT"}, "CE", "TREND")[0] is None
+    assert ta({**td, "trend15": "UP", "trend5": "DOWN"}, "CE", "TREND")[0]
+    # opening minutes: 5m must agree, 15m may be flat
+    op = {"session": {"minutesSinceOpen": 20}}
+    assert ta({**op, "trend15": "FLAT", "trend5": "UP"}, "CE", "TREND")[0] is None
+    assert ta({**op, "trend15": "DOWN", "trend5": "UP"}, "CE", "TREND")[0]
+    # volatile tape: both, even on a trend day
+    vol = {**td, "vix": {"changePct": 7.0}}
+    assert ta({**vol, "trend15": "UP", "trend5": "FLAT"}, "CE", "TREND")[0]
+    # reversal: the 5m must have turned; the 15m may still be against
+    assert ta({**base, "trend15": "DOWN", "trend5": "UP"}, "CE", "REVERSAL")[0] is None
+    assert ta({**base, "trend15": "DOWN", "trend5": "DOWN"}, "CE", "REVERSAL")[0]
+
+
+def test_one_minute_trigger_sees_the_pattern_before_the_5m_close():
+    a = {"bars5": [bar(555 + 5 * i, 100 + i * 0.1, 100.5 + i * 0.1, 99.5 + i * 0.1, 100 + i * 0.1) for i in range(10)],
+         "atr5": 1.0, "levels": {}, "regime": "MIXED", "trend15": "UP"}
+    # the forming 5-min bar (built from completed 1-min bars) already closed far above the 10-bar box
+    a["bars5Live"] = a["bars5"] + [bar(605, 101.0, 104.2, 100.9, 104.0)]
+    names5 = {s["name"] for s in setup_detector.detect(a, None, mode="5m")}
+    live = setup_detector.detect(a, None, mode="1m_trigger")
+    assert "RANGE_BREAKOUT" not in names5 and any(s["name"] == "RANGE_BREAKOUT" for s in live)
+    assert all(s.get("signalTf") == "1m_trigger" and "1-min close" in s["reason"] for s in live)
+
+
+# ───────── 17 Nov 2026: INSIDE_BAR dropped, index last entry, FII open drive on all indices ─────────
+def test_inside_bar_is_dropped():
+    assert setup_detector.SETUP_POLICY["INSIDE_BAR"] == "DROPPED"
+
+
+def test_no_new_index_entries_from_last_entry_time(monkeypatch):
+    from app.core.config.settings import settings
+
+    monkeypatch.setattr(settings, "INDEX_LAST_ENTRY_TIME", "15:00")
+    found = [{"name": "NOISE_BREAKOUT", "side": "CE", "strength": 3}]
+    late = {"code": "NIFTY", "session": {"nowMin": 15 * 60}}
+    ok, rej = setup_detector.confirm_timeframes(late, found)
+    assert ok == [] and "15:00" in rej[0]["reason"]
+    assert setup_detector.last_entry_block({"code": "NIFTY", "session": {"nowMin": 14 * 60 + 59}}) is None
+    assert setup_detector.last_entry_block({"code": "CRUDEOIL", "session": {"nowMin": 20 * 60}}) is None  # commodities: no cut
+    monkeypatch.setattr(settings, "INDEX_LAST_ENTRY_TIME", "")
+    assert setup_detector.last_entry_block(late) is None
+
+
+def test_fii_open_drive_on_all_three_indices():
+    from app.modules.opportunity_finder.service import fii_open
+
+    assert fii_open.enabled_codes() == {"NIFTY", "BANKNIFTY", "SENSEX"}

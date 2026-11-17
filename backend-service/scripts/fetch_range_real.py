@@ -45,7 +45,7 @@ async def token() -> str:
     if os.environ.get("UPSTOX_ACCESS_TOKEN"):
         return os.environ["UPSTOX_ACCESS_TOKEN"]
     from app.core.db.session import async_session_factory
-    from app.modules.opportunities.provider.upstox_market_data import market_data
+    from app.modules.opportunity_finder.provider.upstox_market_data import market_data
 
     async with async_session_factory() as s:
         return await market_data._token(s)
@@ -149,7 +149,7 @@ async def base(c, sem):
         except Exception as ex:  # noqa: BLE001
             stats["errors"].append(f"{code} live options: {ex}")
         try:  # live (not yet expired) near-month future, daily with OI, from the app's own instrument catalog
-            from app.modules.opportunities.provider.instrument_catalog import instrument_catalog
+            from app.modules.opportunity_finder.provider.instrument_catalog import instrument_catalog
 
             exch = "BSE" if code == "SENSEX" else "NSE"
             fut = await instrument_catalog.near_future(exch, code, roll_on_expiry_day=False)

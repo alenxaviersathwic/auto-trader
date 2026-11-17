@@ -29,7 +29,7 @@ Key rules:
 | `session_picks` | **Live** table: one row per opportunity offered to a session, for sessions still in their trading hours. Read every second by the loop. |
 | `session_picks_archive` | Same columns plus `archived_at`. Picks of finished sessions are moved here every day (section 8). |
 
-`trading_sessions` main columns: `name`, `trade_date` (IST `YYYY-MM-DD`), `user_id`, `capital`, `max_loss_percentage` (default 3), `scope` (`INDEX` / `COMMODITY`), `underlyings`, `commodity_items`, `session_type`, `route_through_upstox` (false = simulated), `realized_pnl`, `session_status` (`ACTIVE` / `CLOSED` / `EXPIRED`), `start_at`, `close_at`, `halt_reason`, `halted_at`, `closed_at`. `status` is the soft-delete flag and is unrelated to `session_status`.
+`trading_sessions` main columns: `name`, `trade_date` (IST `YYYY-MM-DD`), `user_id`, `capital`, `max_loss_percentage` (default 3), `scope` (`INDEX` / `COMMODITY`), `underlyings`, `commodity_items`, `traders` (the session manager, one code), `finders` (the opportunity finders feeding it, each covering the scope -- see [14](14-opportunity-finders.md)), `session_type`, `route_through_upstox` (false = not sent to Upstox), `realized_pnl`, `session_status` (`ACTIVE` / `CLOSED` / `EXPIRED`), `start_at`, `close_at`, `halt_reason`, `halted_at`, `closed_at`. `status` is the soft-delete flag and is unrelated to `session_status`.
 
 `session_picks` is a **snapshot** of an opportunity sized for the session: `opportunity_id` / `opportunity_ref` (the link back), contract, `entry`, `entry_max`, `stop`, `target`, `lots`, `quantity`, `capital_required`, `risk_amount`, `reward_amount`, `expected_net`, `capital_at_pick`, `available_at_pick`, `reasons`, `risks`, timestamps (`signal_at`, `hold_until`, `offered_at`, `expires_at`, `locked_at`) and `locked_price`.
 
@@ -232,3 +232,16 @@ It changes **entry strictness only** (`sessions/service/session_risk.py`). Posit
 ## One trading screen (`/sessions/$id`)
 
 Top bar: Mode, Risk and Upstox routing switches plus scanner start / stop. Below the capital strip, one column per trader (`TraderColumn.tsx`) shows its running trades (`RunningTradeCard.tsx`: live levels, exit signal, square off), locked picks ready to enter, and open setups with Lock Trade. A trader can be switched off per session. `/trades` is now trade history.
+
+## Opportunity finders at work on the session page (17 Nov 2026)
+
+In the session manager agent's "Scan" step, each index this session scans is a live tile
+(`sessions/components/agents/FinderRadar.tsx`), with a header naming the manager's opportunity trader:
+- **Scanning now**: blue sweep and pulsing dot. It comes from the frontend scan loop's current index
+  (held >= 1.2 s, as a scan takes ~100-300 ms) or from the master's `lastStartedAt` > `lastCompletedAt`.
+- **Just finished**: a green flash that fades over ~2.4 s (within 6 s of `lastCompletedAt`).
+- **Between passes**: "last pass Ns ago · next in ~Ns" with a thin countdown bar (last finish + `loopGapSeconds`;
+  approximate, hence "~").
+- Each tile shows the scanner's note, scan count and last scan duration; a stopped scanner is dimmed, an error is red.
+
+All timing comes from the scanner's own stamps; nothing is simulated. Animations stop under `prefers-reduced-motion`.

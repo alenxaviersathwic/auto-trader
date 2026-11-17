@@ -22,7 +22,7 @@ from urllib.parse import quote
 import httpx
 
 from app.core.logging.logger import logger
-from app.modules.opportunities.provider.underlying_config import get_config
+from app.modules.opportunity_finder.provider.underlying_config import get_config
 
 API = "https://api.upstox.com"
 EXPIRED = f"{API}/v2/expired-instruments"
@@ -39,7 +39,7 @@ async def _token() -> str:
     if tok:
         return tok
     from app.core.db.session import async_session_factory
-    from app.modules.opportunities.provider.upstox_market_data import market_data
+    from app.modules.opportunity_finder.provider.upstox_market_data import market_data
 
     async with async_session_factory() as s:
         return await market_data._token(s)

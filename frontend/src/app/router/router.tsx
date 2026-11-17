@@ -13,15 +13,16 @@ import { StrategiesPage } from "../../modules/strategies/pages/StrategiesPage";
 import { StrategyDetailPage } from "../../modules/strategies/pages/StrategyDetailPage";
 import { StrategyEditorPage } from "../../modules/strategies/pages/StrategyEditorPage";
 import { RulesPage } from "../../modules/strategies/pages/RulesPage";
-import { MasterPage } from "../../modules/master/pages/MasterPage";
+import { MasterPage } from "../../modules/ai-master/pages/MasterPage";
 import { ResearchEnginePage } from "../../modules/research/pages/ResearchEnginePage";
-import { OpportunityDetailPage } from "../../modules/opportunities/pages/OpportunityDetailPage";
-import { OpportunitiesPage } from "../../modules/opportunities/pages/OpportunitiesPage";
+import { OpportunityDetailPage } from "../../modules/opportunity-finder/pages/OpportunityDetailPage";
+import { OpportunitiesPage } from "../../modules/opportunity-finder/pages/OpportunitiesPage";
 import { SessionsPage } from "../../modules/sessions/pages/SessionsPage";
 import { SessionDetailPage } from "../../modules/sessions/pages/SessionDetailPage";
-import { TradesPage } from "../../modules/trades/pages/TradesPage";
-import { TradeDetailPage } from "../../modules/trades/pages/TradeDetailPage";
+import { TradesPage } from "../../modules/trade-history/pages/TradesPage";
+import { TradeDetailPage } from "../../modules/trade-history/pages/TradeDetailPage";
 import { BacktestPage } from "../../modules/backtest/pages/BacktestPage";
+import { TradersPage } from "../../modules/traders/pages/TradersPage";
 
 // Root Route housing AppLayout
 const rootRoute = createRootRoute({
@@ -42,7 +43,7 @@ const NotFoundPage: React.FC = () => {
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: () => <Navigate to="/strategies" replace />,
+  component: () => <Navigate to="/sessions" replace />, // home = the trading sessions
 });
 
 const settingsUsersRoute = createRoute({
@@ -121,6 +122,13 @@ const opportunityDetailRoute = createRoute({
   component: OpportunityDetailPage,
 });
 
+const tradersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/traders",
+  validateSearch: z.object({ tab: z.enum(["traders", "managers"]).optional() }),
+  component: TradersPage,
+});
+
 const sessionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sessions",
@@ -180,6 +188,7 @@ const routeTree = rootRoute.addChildren([
   opportunitiesRoute,
   opportunityDetailRoute,
   sessionsRoute,
+  tradersRoute,
   sessionDetailRoute,
   tradesRoute,
   tradeDetailRoute,

@@ -42,72 +42,24 @@ class MenuRegistry {
   }
 }
 
-import { Users, TrendingUp, BotMessageSquare, Sparkles, CalendarClock, History, Activity, Bell } from "lucide-react";
+import { Users, TrendingUp, BotMessageSquare, Sparkles, History, Activity, Bell, House, Bot } from "lucide-react";
 
 export const menuRegistry = new MenuRegistry();
 
-// Register Strategy & Rules unified navigation item
-menuRegistry.register({
-  id: "strategies-module",
-  label: "Strategies & Rules",
-  path: "/strategies",
-  icon: TrendingUp,
-  order: 1,
-});
-
-// Register Trading Sessions navigation item
-menuRegistry.register({
-  id: "trading-sessions",
-  label: "Sessions",
-  path: "/sessions",
-  icon: CalendarClock,
-  order: 2,
-});
-
-// Trade history: the two traders' results and every trade (trading itself happens on the session screen)
-menuRegistry.register({
-  id: "active-trader",
-  label: "Trade history",
-  path: "/trades",
-  icon: Activity,
-  order: 2.5,
-});
-
-// Register Research Engine navigation item
-menuRegistry.register({
-  id: "research-engine",
-  label: "Research Engine",
-  path: "/research",
-  icon: Sparkles,
-  order: 3,
-});
-
-// Register Backtest navigation item
-menuRegistry.register({
-  id: "backtest",
-  label: "Backtest",
-  path: "/backtest",
-  icon: History,
-  order: 6,
-});
-
-// Register AI Master chat navigation item
-menuRegistry.register({
-  id: "master-chat",
-  label: "AI Master",
-  path: "/master",
-  icon: BotMessageSquare,
-  order: 5,
-});
-
-// Register Users Module navigation item
-menuRegistry.register({
-  id: "users-settings",
-  label: "Users & Accounts",
-  path: "/settings/users",
-  icon: Users,
-  order: 10,
-});
+// Menu, in trading order: Sessions is the home page ("/" opens it), then who trades, then research and testing,
+// then records and settings.
+menuRegistry.register({ id: "trading-sessions", label: "Sessions", path: "/sessions", icon: House, order: 1 });
+// The two opportunity traders and the session managers that run them (two tabs)
+menuRegistry.register({ id: "traders", label: "Traders", path: "/traders", icon: Bot, order: 2 });
+menuRegistry.register({ id: "research-engine", label: "Research Engine", path: "/research", icon: Sparkles, order: 3 });
+menuRegistry.register({ id: "backtest", label: "Backtest", path: "/backtest", icon: History, order: 4 });
+// Trade history: every trade and its autopsy (trading itself happens on the session screen)
+menuRegistry.register({ id: "active-trader", label: "Trade history", path: "/trades", icon: Activity, order: 5 });
+menuRegistry.register({ id: "strategies-module", label: "Strategies & Rules", path: "/strategies", icon: TrendingUp, order: 6 });
+menuRegistry.register({ id: "master-chat", label: "AI Master", path: "/master", icon: BotMessageSquare, order: 7 });
+// Notification settings: which events alert you, and how
+menuRegistry.register({ id: "notification-settings", label: "Notifications", path: "/settings/notifications", icon: Bell, order: 9 });
+menuRegistry.register({ id: "users-settings", label: "Users & Accounts", path: "/settings/users", icon: Users, order: 10 });
 
 /**
  * React hook to access registered menu items dynamically.
@@ -123,12 +75,3 @@ export function useMenuItems(): MenuItem[] {
 
   return items;
 }
-
-// Notification settings: which events alert you, and how
-menuRegistry.register({
-  id: "notification-settings",
-  label: "Notifications",
-  path: "/settings/notifications",
-  icon: Bell,
-  order: 9,
-});

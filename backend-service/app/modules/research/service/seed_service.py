@@ -401,7 +401,7 @@ class ResearchSeedService:
             session.add(cfg)
 
         # 5. Master Tool Server 'research'
-        from app.modules.master.entity.master_tool_server_entity import MasterToolServer
+        from app.modules.ai_master.entity.master_tool_server_entity import MasterToolServer
         existing_ts = await session.execute(
             select(MasterToolServer).where(MasterToolServer.name == "research").where(MasterToolServer.status == 1)
         )

@@ -4,10 +4,10 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from app.modules.learning.service import autopsy_agent as aa
-from app.modules.learning.service import learning_rules as lr
-from app.modules.learning.service.learning_service import LearningService
-from app.modules.opportunities.service import setups as setup_detector
+from app.modules.autopsy.service import autopsy_agent as aa
+from app.modules.autopsy.service import learning_rules as lr
+from app.modules.autopsy.service.learning_service import LearningService
+from app.modules.opportunity_finder.service import setups as setup_detector
 from app.modules.sessions.service import session_manager as sm
 
 T0 = datetime(2026, 11, 16, 5, 0, tzinfo=UTC)  # 10:30 IST
@@ -107,11 +107,11 @@ class FakeRepo:
         if getattr(e, "id", None) is None:
             e.id, self.next = self.next, self.next + 1
             e.createdAt = datetime.now(UTC)
-            from app.modules.learning.entity import SetupGuard, SetupScorecard, TradeAutopsy
+            from app.modules.autopsy.entity import SetupGuard, SetupScorecard, TradeAutopsy
             if isinstance(e, TradeAutopsy):
                 self.autopsies.append(e)
             elif isinstance(e, SetupScorecard):
-                self.cards[e.setup] = e
+                self.cards[(e.managerCode, e.setup)] = e
             elif isinstance(e, SetupGuard):
                 self.guards.append(e)
         return e
@@ -119,11 +119,11 @@ class FakeRepo:
     async def autopsy_for_trade(self, db, tid):
         return next((a for a in self.autopsies if a.tradeId == tid), None)
 
-    async def autopsies_since(self, db, setup, since):
-        return [a for a in self.autopsies if a.setup == setup and a.createdAt >= since]
+    async def autopsies_since(self, db, manager, setup, since):
+        return [a for a in self.autopsies if a.managerCode == manager and a.setup == setup and a.createdAt >= since]
 
-    async def scorecard(self, db, setup):
-        return self.cards.get(setup)
+    async def scorecard(self, db, manager, setup):
+        return self.cards.get((manager, setup))
 
     async def all_scorecards(self, db):
         return list(self.cards.values())
@@ -131,8 +131,8 @@ class FakeRepo:
     async def guard(self, db, gid):
         return next((g for g in self.guards if g.id == gid), None)
 
-    async def guards_for(self, db, setup):
-        return [g for g in self.guards if g.setup == setup]
+    async def guards_for(self, db, manager, setup):
+        return [g for g in self.guards if g.managerCode == manager and g.setup == setup]
 
     async def applied_guards(self, db):
         return [g for g in self.guards if g.guardState == "APPLIED"]
@@ -158,7 +158,7 @@ def test_learning_service_pauses_a_losing_setup_and_proposes_guards():
     for i in range(1, 6):
         row = asyncio.run(svc.on_trade_closed(db, _trade(i), ["Against the bullish trend"], "NSE"))
     assert row.verdict == "NEVER_WORKED" and row.learning["scorecardAfter"] == "PAUSED"
-    assert repo.cards["NOISE_BREAKOUT"].closedTrades == 5
+    assert repo.cards[("FLOW_MOMENTUM_TRADER", "NOISE_BREAKOUT")].closedTrades == 5
     assert "NOISE_BREAKOUT" in svc.view()["paused"]
     assert [g.guardType for g in repo.guards] == ["WITH_TREND_ONLY"]  # proposed once, after the 3rd repeat
     assert repo.guards[0].guardState == "PROPOSED" and not svc.view()["guards"]  # not enforced until applied
@@ -205,3 +205,28 @@ def test_judge_pick_and_batch_verdict():
     assert "missed 1 winner" in b["note"] and "skipped 1 loser" in b["note"]
     assert sm.batch_verdict([j("EXPIRED", {"outcome": "STOP_HIT"}, None)])["verdict"] == "FAILURE"
     assert sm.batch_verdict([j("EXPIRED", None, None)])["verdict"] == "PENDING"
+
+
+# ───────────────────────── autopsy = each session manager's sub-agent (17 Nov 2026) ─────────────────────────
+def test_each_manager_learns_only_from_its_own_trades():
+    from app.modules.sessions.service import manager_agents as ma
+
+    svc, db = LearningService(FakeRepo()), FakeDb()
+    # five losing NOISE_BREAKOUT trades closed in sessions an "Indian Quant Desk" manager ran
+    for i in range(1, 6):
+        asyncio.run(svc.on_trade_closed(db, _trade(i), ["Against the bullish trend"], "NSE", "FLOW_MOMENTUM_TRADER"))
+    assert "NOISE_BREAKOUT" in svc.view_for("FLOW_MOMENTUM_TRADER")["paused"]
+    assert svc.view_for("FIB_GOLDEN_TRADER")["paused"] == {}  # the other manager's sub-agent learned nothing
+    assert "NOISE_BREAKOUT" in svc.view()["paused"]  # the engine-wide merged view still sees it
+    assert all(a.managerCode == "FLOW_MOMENTUM_TRADER" for a in svc.repo.autopsies)
+    assert svc.repo.guards and all(g.managerCode == "FLOW_MOMENTUM_TRADER" for g in svc.repo.guards)
+    # default manager = the trader that owns the setup
+    row = asyncio.run(svc.on_trade_closed(db, _trade(9, strategy="FIB_GOLDEN_POCKET"), [], "NSE"))
+    assert row.managerCode == "FIB_GOLDEN_TRADER"
+
+    one = SimpleNamespace(traders=["FIB_GOLDEN_TRADER"])
+    both = SimpleNamespace(traders=["FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER"])
+    assert ma.manager_for_session(one).code == "FIB_GOLDEN_TRADER" and ma.manager_for_session(both) is None
+    assert ma.manager_for_session(one).name == "My Experience"
+    assert ma.manager_for_trade(both, "NOISE_BREAKOUT").code == "FLOW_MOMENTUM_TRADER"
+    assert ma.manager_for_trade(one, "NOISE_BREAKOUT").code == "FIB_GOLDEN_TRADER"  # the session's manager decides

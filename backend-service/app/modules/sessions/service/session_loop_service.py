@@ -7,11 +7,11 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.settings import settings
-from app.modules.opportunities.service import positioning
+from app.modules.opportunity_finder.service import positioning
 
 from app.core.exception.app_exceptions import ConflictException, NotFoundException
 from app.core.pagination.page_result import PageResult
-from app.modules.opportunities.service.run_service import opportunity_run_service
+from app.modules.opportunity_finder.service.run_service import opportunity_run_service
 from app.modules.sessions.entity.session_pick_entity import SessionPick
 from app.modules.sessions.entity.trading_session_entity import TradingSession
 from app.modules.sessions.repository.session_pick_repository import SessionPickRepository
@@ -36,15 +36,16 @@ from app.modules.sessions.service.session_sizing import (
 )
 from app.core.events import notify as nt
 from app.core.filter.base_filter import BaseFilter
-from app.modules.learning.service import learning_rules
-from app.modules.learning.service.learning_service import learning_service
+from app.modules.autopsy.service import learning_rules
+from app.modules.autopsy.service.learning_service import learning_service
+from app.modules.sessions.service import manager_agents
 from app.modules.sessions.schema.session_pick_schema import SessionBatchResponse, SessionManagerResponse
 from app.modules.sessions.service import session_manager
 from app.modules.sessions.service.session_risk import LEGACY_RISK_LEVEL, profile_for, risk_gate
-from app.modules.trades.service.trader_presets import (
+from app.modules.trade_history.service.trader_presets import (
     assign_trader_for_opportunity,
     get_trader_preset,
-    normalize_trader_codes,
+    session_finder_codes,
 )
 
 _IST = ZoneInfo("Asia/Kolkata")
@@ -71,7 +72,7 @@ def _utc(dt: datetime) -> datetime:
 
 
 def _trade_service():
-    from app.modules.trades.service.trade_service import trade_service
+    from app.modules.trade_history.service.trade_service import trade_service
 
     return trade_service
 
@@ -127,6 +128,7 @@ class SessionLoopService:
             id=p.id, sessionId=p.sessionId, opportunityId=p.opportunityId, opportunityRef=p.opportunityRef,
             underlyingCode=p.underlyingCode, optionType=p.optionType, strike=float(p.strike), expiry=p.expiry,
             instrumentKey=p.instrumentKey, strategy=p.strategy, traderCode=t_code, traderName=t_preset["name"],
+            timeframes=(p.setupMeta or {}).get("timeframes"),
             confidence=p.confidence,
             entry=entry, entryMax=float(p.entryMax), stop=stop, target=target,
             stopPct=round((entry - stop) / entry * 100, 2), targetPct=round((target - entry) / entry * 100, 2),
@@ -213,7 +215,7 @@ class SessionLoopService:
         level = getattr(s, "riskLevel", None) or LEGACY_RISK_LEVEL
         best = session_manager.best_suggestion(
             [p for p in self._ranked(picks or []) if p.pickState == "OFFERED"], cap, level,
-            profile_for(level).summary, learning_service.view(),
+            profile_for(level).summary, manager_agents.learned_view_for_session(s),
             lambda strategy: get_trader_preset(assign_trader_for_opportunity(strategy))["name"],
             len(active_ids), MAX_PARALLEL_TRADES,
         )
@@ -245,7 +247,7 @@ class SessionLoopService:
         async with self._lock_for(session_id):
             s = await self._load(db, session_id)
             await learning_service.ensure_loaded(db)
-            learned_view = learning_service.view()
+            learned_view = manager_agents.learned_view_for_session(s)  # this session's manager only
             now = datetime.now(UTC)
             open_picks = await self.picks.open_picks(db, session_id)
             for p in open_picks:
@@ -329,7 +331,8 @@ class SessionLoopService:
             # (and dropped once a lock elsewhere makes them a second same-direction bet on the correlated index book)
             # ... and dropped when the session's traders or risk level were changed and no longer accept them.
             risk_level = getattr(s, "riskLevel", None) or LEGACY_RISK_LEVEL
-            active_traders = set(normalize_trader_codes(getattr(s, "traders", None)))
+            # the session's finders (their optionTypes cover its scope); the manager in `traders` does not filter
+            active_traders = set(session_finder_codes(getattr(s, "finders", None), getattr(s, "traders", None)))
             live = [p for p in open_picks if p.pickState == "OFFERED"]
             for p in list(live):
                 lots, _ = lots_for(float(p.entry), float(p.stop), p.lotUnits, p.confidence, cap)
@@ -368,7 +371,7 @@ class SessionLoopService:
                     opp.get("strategy"), int(opp.get("confidence") or 70), float(opp.get("rewardRisk") or 1.5)
                 )
                 if opp_trader not in active_traders:
-                    drop("trader not active in session")
+                    drop("finder not in session")
                     continue
                 too_risky = risk_gate(risk_level, opp.get("strategy"), float(opp.get("rewardRisk") or 0.0),
                                       opp.get("risks"))
@@ -448,7 +451,7 @@ class SessionLoopService:
                             f"{best_pick.underlyingCode} {float(best_pick.strike):g} {best_pick.optionType} at "
                             f"₹{fill_px:.2f} · {best_pick.lots} lot(s)",
                             severity="success", session_id=s.id, link=f"/sessions/{s.id}")
-                        from app.modules.trades.schema.trade_schema import TradeCreateRequest
+                        from app.modules.trade_history.schema.trade_schema import TradeCreateRequest
 
                         try:
                             entered = await _trade_service().enter_trade(
