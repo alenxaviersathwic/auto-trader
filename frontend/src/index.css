@@ -9553,9 +9553,38 @@ button {
 }
 
 /* "Now" (last ~60 min) vs "day" (since the open) on the trader today views. Now leads; day is secondary. */
-.tt-row { grid-template-columns: 96px 62px minmax(0, 1fr); }
+.tt-row { grid-template-columns: 96px 62px 118px minmax(0, 1fr); }
+.tt-row__view { font-size: 0.625rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Temporary view (tv-): "bearish, likely 24,500; below it 24,450; wrong above 24,620" */
+.tv { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--bg-panel); border: 1px solid var(--border-subtle); }
+.tv__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tv__text { margin: 0; font-size: 0.75rem; line-height: 1.45; color: var(--text-primary); }
+.tv__steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.tv-step { display: grid; grid-template-columns: 74px 64px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 1px; align-items: center; font-size: 0.6875rem; }
+.tv-step__tag { font-size: 0.5625rem; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-muted); }
+.tv-step__lvl { font-weight: 700; color: var(--text-heading); }
+.tv-step__label { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv-step__dist { font-size: 0.625rem; color: var(--text-muted); }
+.tv-step__if { grid-column: 2 / -1; font-size: 0.625rem; color: var(--text-muted); font-style: italic; }
+.tv-step--down .tv-step__tag { color: var(--bearish-red); }
+.tv-step--up .tv-step__tag { color: var(--bullish-green); }
+.tv-step--range .tv-step__tag { color: var(--warning-amber); }
+.tv-step--wrong .tv-step__tag, .tv-step--wrong .tv-step__lvl { color: var(--warning-amber); }
 .tts-idx__bias { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
 .tts-idx__head .tts-idx__bias .iv-bias { margin-left: 0; }
+/* trader sheet: index list -> click an index for its analysis */
+.tts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.tts-row { display: grid; grid-template-columns: 96px 64px 58px minmax(0, 1fr) auto 14px; grid-template-areas: "code spot bias view conf go" "wait wait wait wait wait go"; column-gap: 8px; row-gap: 3px; align-items: center; width: 100%; padding: 9px 12px; text-align: left; cursor: pointer; font: inherit; font-size: 0.75rem; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-secondary); }
+.tts-row:hover, .tts-row:focus-visible { border-color: var(--kite-blue); outline: none; }
+.tts-row__code { grid-area: code; font-family: var(--font-mono); font-weight: 700; font-size: 0.8125rem; color: var(--text-heading); }
+.tts-row__spot { grid-area: spot; color: var(--text-secondary); }
+.tts-row .tt-bias { grid-area: bias; }
+.tts-row__view { grid-area: view; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tts-row__conf { grid-area: conf; font-size: 0.5625rem; }
+.tts-row__wait { grid-area: wait; font-size: 0.6875rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tts-row__go { grid-area: go; color: var(--text-muted); }
+.tts-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px 3px 4px; font: inherit; font-size: 0.6875rem; color: var(--kite-blue); background: none; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; }
+.tts-back:hover { border-color: var(--border-subtle); }
 .tts-now { font-family: var(--font-mono); font-size: 0.6875rem; }
 .tts-now--up { color: var(--bullish-green); }
 .tts-now--down { color: var(--bearish-red); }
@@ -9718,11 +9747,15 @@ button {
 
 .uc-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(290px, 1fr); overflow: hidden; }
 .uc-chart-pane { display: flex; flex-direction: column; padding: 12px 14px; border-right: 1px solid var(--border-subtle); min-width: 0; min-height: 0; background: var(--bg-card); }
-.uc-ohlc-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 8px; }
-.uc-svg { width: 100%; height: 100%; flex: 1; min-height: 260px; user-select: none; }
+.uc-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 8px; }
+.uc-ohlc-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.uc-overlays { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.uc-svg { width: 100%; height: 100%; flex: 1; min-height: 260px; user-select: none; cursor: crosshair; }
 .uc-empty { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); font-size: 0.8125rem; }
 
 .uc-agent-pane { padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: var(--bg-panel); min-width: 0; }
+.uc-finder-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border-radius: var(--radius-md); background: var(--bg-card); border: 1px solid var(--border-subtle); }
+.uc-finder-tabs .sd-seg-btn { flex: 1; text-align: center; font-size: 0.6875rem; padding: 4px 8px; }
 .uc-box { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-card); border: 1px solid var(--border-subtle); }
 .uc-box__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .uc-list { display: flex; flex-direction: column; gap: 6px; }
@@ -9735,3 +9768,11 @@ button {
   .uc-body { grid-template-columns: 1fr; overflow-y: auto; }
   .uc-chart-pane { border-right: 0; border-bottom: 1px solid var(--border-subtle); min-height: 320px; }
 }
+
+/* Backtest: signals -> trades funnel ("why 0 trades") */
+.bt-funnel { margin-top: var(--space-3); padding: 10px 12px; border-radius: var(--radius-md); background: var(--bg-card); border: 1px solid var(--border-subtle); }
+.bt-funnel summary { cursor: pointer; font-size: 0.8125rem; font-weight: 600; color: var(--text-heading); }
+.bt-funnel[open] summary { margin-bottom: 8px; }
+.bt-funnel__steps { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 3px; max-width: 520px; }
+.bt-funnel__steps li { display: flex; justify-content: space-between; gap: 12px; font-size: 0.75rem; color: var(--text-secondary); }
+.bt-funnel__reasons { margin-bottom: 6px; }

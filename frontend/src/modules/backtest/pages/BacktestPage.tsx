@@ -9,11 +9,13 @@ import { SESSION_MANAGERS, TRADER_META } from "../../trade-history/components/tr
 type SessionManager = "ALL" | Exclude<TraderCode, "COMMODITY_DESK_TRADER">; // the desk is live-only
 type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
-/** The two session managers, as in the New Session dialog; ALL replays both side by side for comparison. */
+/** Which finders' setups the replay takes. 18 Nov 2026: a live session takes opportunities from BOTH index finders
+ *  whichever session manager runs it (the manager only keeps its own autopsy memory), so "both" is what a live
+ *  session does -- My Experience and Indian Quant Desk sessions included. The API field is still `sessionManager`. */
 const MANAGER_OPTIONS: { value: SessionManager; label: string }[] = [
-  // live-only managers (the Commodity Desk: live chain, news, LLM) cannot be replayed
-  ...SESSION_MANAGERS.filter((m) => !m.liveOnly).map((m) => ({ value: m.traderCode as SessionManager, label: `${m.name} · ${TRADER_META[m.traderCode].name}` })),
-  { value: "ALL", label: "Both (compare)" },
+  { value: "ALL", label: `Both finders · as a live session (${SESSION_MANAGERS.map((m) => m.name).join(" / ")})` },
+  // live-only finders (the Commodity Desk: live chain, news, LLM) cannot be replayed
+  ...SESSION_MANAGERS.filter((m) => !m.liveOnly).map((m) => ({ value: m.traderCode as SessionManager, label: `${TRADER_META[m.traderCode].name} only` })),
 ];
 
 const MAX_RANGE_DAYS = 95;
@@ -32,7 +34,7 @@ export const BacktestPage: React.FC = () => {
   const [capital, setCapital] = React.useState(50000);
   const [maxLossPct, setMaxLossPct] = React.useState(4);
   const [sizing, setSizing] = React.useState<"MAX_LOTS" | "RISK">("MAX_LOTS");
-  const [sessionManager, setSessionManager] = React.useState<SessionManager>("FLOW_MOMENTUM_TRADER");
+  const [sessionManager, setSessionManager] = React.useState<SessionManager>("ALL");
   const [riskLevel, setRiskLevel] = React.useState<RiskLevel>("LOW");
   const [maxParallel, setMaxParallel] = React.useState(3);
   const [sideFilter, setSideFilter] = React.useState<"ALL" | "CE" | "PE">("ALL");
@@ -126,7 +128,7 @@ export const BacktestPage: React.FC = () => {
             />
           </div>
           <div className="form-group">
-            <label className="form-label" htmlFor="bt-manager">Session manager</label>
+            <label className="form-label" htmlFor="bt-manager">Finders</label>
             <select
               id="bt-manager"
               className="select"

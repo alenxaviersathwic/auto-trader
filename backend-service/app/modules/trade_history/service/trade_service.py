@@ -27,6 +27,7 @@ from app.modules.sessions.service.session_sizing import (
     correlated_block,
     entry_ceiling,
     one_lot_risk_pct,
+    setup_risk_pct,
 )
 from app.modules.trade_history.entity.trade_entity import ActiveTrade
 from app.modules.trade_history.repository.trade_repository import TradeRepository, trade_repository
@@ -297,12 +298,17 @@ class TradeService:
 
         max_by_risk = int(remaining_loss_budget // risk_per_lot)
         max_by_cash = int(available_capital // premium_per_lot)
+        # a setup with its own risk budget (settings.SETUP_RISK_BUDGET) may take ONE lot as the day's first trade
+        special = setup_risk_pct(pick.strategy) if (float(s.realizedPnl or 0.0) >= 0 and not running) else None
+        if special and risk_per_lot <= float(s.capital) * special / 100.0:
+            max_by_risk = max(max_by_risk, 1)
         max_affordable = max(0, min(max_by_risk, max_by_cash))
 
         win_prob = max(0.0, min(1.0, int(pick.confidence) / 100.0))
         # fixed-fractional (research gap 9): size from the stop distance, never from the uncalibrated confidence
         lots_by_trade = int((float(s.capital) * RISK_PER_TRADE_PCT / 100.0) // risk_per_lot)
-        one_lot_too_risky = lots_by_trade < 1 and risk_per_lot > float(s.capital) * one_lot_risk_pct() / 100.0
+        one_lot_too_risky = lots_by_trade < 1 and risk_per_lot > float(s.capital) * max(
+            one_lot_risk_pct(), special or 0.0) / 100.0
         suggested = max(1, min(max_affordable, max(1, lots_by_trade))) if max_affordable >= 1 else 1
         corr = correlated_block(pick.underlyingCode, pick.optionType,
                                 [(t.underlyingCode, t.optionType) for t in running])

@@ -1,11 +1,21 @@
 import React from "react";
 import { ChevronRight, ScanSearch } from "lucide-react";
-import { OpportunityCardItem } from "../../opportunity-finder/types/opportunities.types";
+import { OpportunityCardItem, TempView } from "../../opportunity-finder/types/opportunities.types";
 import { TraderCode } from "../../trade-history/types/trades.types";
 import { useIndexToday } from "./useIndexToday";
 
 const ARROW = { BULLISH: "▲", BEARISH: "▼", MIXED: "◆" } as const;
 const WORD = { BULLISH: "bull", BEARISH: "bear", MIXED: "mixed" } as const;
+
+const lvl = (v: number) => Math.round(v).toLocaleString("en-IN");
+
+/** "→ 24,500 › 24,450" for a directional view, "24,550–24,600" for a range. */
+const viewShort = (v: TempView | null): string => {
+  if (!v) return "--";
+  if (v.range) return `${lvl(v.range.support.level)}–${lvl(v.range.resistance.level)}`;
+  const [t1, t2] = v.steps;
+  return `${v.bias === "BEARISH" ? "↓" : "↑"} ${lvl(t1.level)}${t2 ? ` › ${lvl(t2.level)}` : ""}`;
+};
 
 const Row: React.FC<{ card: OpportunityCardItem; trader: TraderCode }> = ({ card, trader }) => {
   const t = useIndexToday(card, trader);
@@ -18,6 +28,9 @@ const Row: React.FC<{ card: OpportunityCardItem; trader: TraderCode }> = ({ card
         title={t.now ? `Last ${t.now.minutes} min: ${t.now.change >= 0 ? "+" : ""}${Math.round(t.now.change)} pts` : "No last-hour read yet"}
       >
         {now ? `${ARROW[now]} ${WORD[now]}` : "--"}
+      </span>
+      <span className="tt-row__view mono" title={t.view?.text ?? "No temporary view yet"}>
+        {viewShort(t.view)}
       </span>
       <span className={`tt-row__wait ${t.wait.tone ? `tt-tone--${t.wait.tone}` : ""}`}>{t.loading ? "…" : t.wait.short}</span>
     </li>

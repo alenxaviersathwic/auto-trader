@@ -4,6 +4,10 @@ review, gap 2) instead of Black-Scholes at a fixed IV.
 
   fetch_day(day, codes)            1-minute candles of today's / a recent day's LIVE series, +-DAY_STRIKES around
                                    the ATM -> backtest_data/options/<day>/<CODE>/<strike><CE|PE>.csv
+  fetch_futures_day(day, codes)    1-minute candles (with VOLUME and OI) of the front index future and the index spot
+                                   -> backtest_data/futures/<day>/<CODE>.csv and backtest_data/spot/<day>/<CODE>.csv
+                                   (18 Nov 2026: replays had no futures volume / OI, so VWAP, volume and OI-buildup
+                                   checks -- the Fib trader's confirmations -- could not be backtested)
   backfill_expired(codes, n)       1-minute candles of the last n EXPIRED series (Upstox Plus "Expired Instruments"
                                    API) -> backtest_data/expired/<CODE>/<expiry>/<strike><CE|PE>.csv
 
@@ -114,6 +118,40 @@ async def fetch_day(day: str | None = None, codes: tuple[str, ...] | list[str] =
                 out[code] = n
             except Exception as e:  # noqa: BLE001 -- one underlying failing must not stop the others
                 logger.warning(f"[OPTION_HISTORY] {code} {day}: {type(e).__name__}: {e}")
+                out[code] = -1
+    return out
+
+
+async def fetch_futures_day(day: str | None = None,
+                            codes: tuple[str, ...] | list[str] = DEFAULT_CODES) -> dict[str, int]:
+    """Bars written per underlying: the front future (volume + OI) and the index spot, 1-minute, for `day`."""
+    from app.modules.opportunity_finder.provider.instrument_catalog import instrument_catalog  # same future as live
+
+    day = day or date.today().isoformat()
+    today = day == date.today().isoformat()
+    out: dict[str, int] = {}
+    headers = {"Authorization": f"Bearer {await _token()}", "Accept": "application/json"}
+    async with httpx.AsyncClient(timeout=30.0, headers=headers) as c:
+        for code in codes:
+            cfg = get_config(code)
+            n = 0
+            try:
+                fut = await instrument_catalog.near_future(cfg.exchange, cfg.code)
+                for kind, key in (("futures", fut.key if fut else None), ("spot", cfg.instrumentKey)):
+                    f = DATA_DIR / kind / day / f"{code}.csv"
+                    if not key or f.exists():
+                        continue
+                    k = quote(key, safe="")
+                    url = (f"{API}/v2/historical-candle/intraday/{k}/1minute" if today
+                           else f"{API}/v2/historical-candle/{k}/1minute/{day}/{day}")
+                    d = await _data(c, url)
+                    candles = d.get("candles", []) if isinstance(d, dict) else []
+                    if candles:
+                        _write(f, candles)
+                        n += len(candles)
+                out[code] = n
+            except Exception as e:  # noqa: BLE001 -- one underlying failing must not stop the others
+                logger.warning(f"[FUTURES_HISTORY] {code} {day}: {type(e).__name__}: {e}")
                 out[code] = -1
     return out
 

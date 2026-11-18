@@ -1,5 +1,5 @@
 import { useRecentIterations } from "../../opportunity-finder/hooks/useOpportunities";
-import { FibWatch, NowRead, OpportunityCardItem } from "../../opportunity-finder/types/opportunities.types";
+import { FibWatch, NowRead, OpportunityCardItem, TempView } from "../../opportunity-finder/types/opportunities.types";
 import { TraderCode } from "../../trade-history/types/trades.types";
 
 export const FIB_STAGE: Record<FibWatch["stage"], { label: string; short: string; tone: string; rank: number }> = {
@@ -27,6 +27,8 @@ export interface IndexToday {
   /** The temporary trend: the last ~60 minutes (null on scans from before the backend had it). The overall
    *  trend is the Research Engine's job, so the Traders area shows only this. */
   now: NowRead | null;
+  /** Human-style view on top of `now`: target, next target on a break, where it is wrong. */
+  view: TempView | null;
   wait: TraderWait;
   scans: { id: number; at: string; result: string; text: string }[];
 }
@@ -68,6 +70,7 @@ export function useIndexToday(card: OpportunityCardItem, trader: TraderCode): In
     hasScan: !!last,
     spot: d?.spot ?? null,
     now: d?.now ?? null,
+    view: d?.view ?? null,
     wait: { short, tone, fib, flow, idle },
     scans: list.slice(0, 6).map((it) => ({
       id: it.id,

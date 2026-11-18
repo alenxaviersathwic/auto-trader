@@ -43,9 +43,9 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 # Restore the dump (supporting both compressed .sql.gz and plain .sql)
 if [[ "$BACKUP_FILE" == *.gz ]]; then
-    gzip -dc "$BACKUP_FILE" | docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" > /dev/null 2>&1
+    gzip -dc "$BACKUP_FILE" | docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=0 >/dev/null
 else
-    cat "$BACKUP_FILE" | docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" > /dev/null 2>&1
+    cat "$BACKUP_FILE" | docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=0 >/dev/null
 fi
 
 # Ensure alembic_version column width and opportunity table names are up to date
@@ -79,7 +79,9 @@ SELECT '   * Upstox Configurations:           ' || count(*) FROM upstox_configs
 UNION ALL
 SELECT '   * Strategies & Rules:              ' || (SELECT count(*) FROM strategies) || ' strategies / ' || (SELECT count(*) FROM rules) || ' rules'
 UNION ALL
-SELECT '   * Opportunity Masters & Trades:    ' || (SELECT count(*) FROM opportunity_masters) || ' masters / ' || (SELECT count(*) FROM trade_opportunities) || ' trades'
+SELECT '   * Sessions & Active Trades:        ' || (SELECT count(*) FROM trading_sessions) || ' sessions / ' || (SELECT count(*) FROM trades) || ' trades'
+UNION ALL
+SELECT '   * Opportunity Masters & Signals:   ' || (SELECT count(*) FROM opportunity_masters) || ' masters / ' || (SELECT count(*) FROM trade_opportunities) || ' signals'
 UNION ALL
 SELECT '   * Vector Memory (Research Chunks): ' || count(*) FROM research_chunks WHERE embedding IS NOT NULL
 UNION ALL

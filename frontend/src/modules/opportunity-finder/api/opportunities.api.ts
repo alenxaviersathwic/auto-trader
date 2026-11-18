@@ -78,9 +78,9 @@ export const opportunitiesApi = {
     return httpClient.post(`/opportunities/${opportunityId}/check`, {});
   },
 
-  /** Live 5-minute chart data, key levels, and latest scanner diagnostics for an underlying. */
-  async getUnderlyingChart(code: string): Promise<UnderlyingChartData> {
-    return httpClient.get(`/opportunities/chart/${encodeURIComponent(code)}`);
+  /** Live chart data (1m/5m/15m/1h), key levels, and latest scanner diagnostics for an underlying. */
+  async getUnderlyingChart(code: string, timeframe = "5m"): Promise<UnderlyingChartData> {
+    return httpClient.get(`/opportunities/chart/${encodeURIComponent(code)}?timeframe=${encodeURIComponent(timeframe)}`);
   },
 };
 

@@ -5,6 +5,9 @@ import { opportunitiesQueryKeys } from "../queryKeys/opportunitiesQueryKeys";
 import { LoopSnapshot } from "../types/opportunities.types";
 
 const DEFAULT_GAP_SECONDS = 20;
+/** One loop per browser: every tab asks for this Web Lock and only the holder iterates (18 Nov 2026: two tabs each
+ *  ran the loop, so every card was iterated twice and the backend answered 409 ITERATION_IN_PROGRESS). */
+const LOOP_LOCK = "ordergrid-opportunity-loop";
 
 /**
  * Client-driven opportunities loop. Lives at module level (not inside a component) so it keeps running
@@ -50,12 +53,43 @@ class OpportunityLoopRunner {
     });
   }
 
-  /** Starts the loop if it is not already going. A new card session is picked up on the next round. */
+  private waiting: AbortController | null = null;
+
+  /** Starts the loop if it is not already going. A new card session is picked up on the next round. When another
+   *  tab already runs the loop, this tab waits for the lock (and takes over if that tab closes). */
   async run(): Promise<void> {
     if (this.snap.running) {
       this.wake?.(); // a card was just started: skip the rest of the gap and pick it up now
       return;
     }
+    if (this.waiting) return;
+    const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+    if (!locks) return this.loop();
+    this.waiting = new AbortController();
+    try {
+      await locks.request(LOOP_LOCK, { ifAvailable: true }, async (lock) => {
+        if (lock) {
+          this.waiting = null;
+          await this.loop();
+          return;
+        }
+        // another tab owns the loop: show it, then queue for the lock (taken over when that tab closes)
+        this.set({ inOtherTab: true });
+        await locks.request(LOOP_LOCK, { signal: this.waiting?.signal }, async () => {
+          this.waiting = null;
+          this.set({ inOtherTab: false });
+          await this.loop();
+        });
+      });
+    } catch {
+      // aborted by stop(): nothing to do
+    } finally {
+      this.waiting = null;
+      if (this.snap.inOtherTab) this.set({ inOtherTab: false });
+    }
+  }
+
+  private async loop(): Promise<void> {
     this.stopRequested = false;
     this.set({ running: true, lastError: null });
     let failures = 0;
@@ -76,7 +110,13 @@ class OpportunityLoopRunner {
         if (this.snap.lastError?.startsWith("cards unavailable")) this.set({ lastError: null });
         const queue = today.list.filter((m) => m.state === "RUNNING");
         if (queue.length === 0) break;
-        this.set({ round: this.snap.round + 1 });
+        this.set({ round: this.snap.round + 1, backend: !!today.backendLoop });
+        if (today.backendLoop) {
+          // the backend iterates every card (opportunity_finder/job/scanner_job.py): just keep the page fresh
+          await this.refresh();
+          await this.sleep((queue[0].params?.loopGapSeconds ?? DEFAULT_GAP_SECONDS) * 1000);
+          continue;
+        }
         for (const m of queue) {
           if (this.stopRequested) break;
           this.set({ currentMasterId: m.id, currentCode: m.underlyingCode });
@@ -104,6 +144,7 @@ class OpportunityLoopRunner {
 
   /** Stops after the card currently iterating finishes (an in-flight request is not aborted). */
   stop() {
+    this.waiting?.abort();
     this.stopRequested = true;
     this.wake?.();
   }

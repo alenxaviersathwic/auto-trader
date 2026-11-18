@@ -29,4 +29,4 @@ COPY backend-service/app /app/app
 EXPOSE 8000
 
 # Execute migrations and start single uvicorn worker
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log"]

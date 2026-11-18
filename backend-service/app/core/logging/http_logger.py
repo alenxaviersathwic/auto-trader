@@ -30,6 +30,15 @@ HIGH_FREQUENCY_POLLING_PREFIXES: Set[str] = {
     "/actuator",
     "/api/v1/health",
     "/health",
+    "/api/v1/opportunities/masters/today",
+    "/api/v1/opportunities/masters/",
+    "/api/v1/opportunities/iterations",
+    "/api/v1/opportunities/research-top",
+    "/api/v1/users/default",
+    "/api/v1/research/run-status",
+    "/api/v1/system/",
+    "/stream",
+    "/events",
 }
 
 FLOW_ID_HEADER = "X-Flow-Id"

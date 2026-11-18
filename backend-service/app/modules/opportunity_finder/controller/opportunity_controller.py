@@ -173,6 +173,8 @@ async def search_iterations(
 
 
 @opportunity_router.get("/opportunities/chart/{code}", response_model=ApiResponse[dict[str, Any]], status_code=OK)
-async def get_underlying_chart(code: str, session: AsyncSession = Depends(get_db)) -> ApiResponse[dict[str, Any]]:
-    """Live 5-minute chart data, key levels, and latest scanner diagnostics for an underlying."""
-    return success(data=await svc.chart_view(session, code), message="Underlying chart retrieved")
+async def get_underlying_chart(
+    code: str, timeframe: str = "5m", session: AsyncSession = Depends(get_db)
+) -> ApiResponse[dict[str, Any]]:
+    """Live chart data (1m/5m/15m/1h), key levels, and latest scanner diagnostics for an underlying."""
+    return success(data=await svc.chart_view(session, code, timeframe), message="Underlying chart retrieved")

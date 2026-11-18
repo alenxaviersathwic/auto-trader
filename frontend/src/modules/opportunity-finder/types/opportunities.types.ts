@@ -141,6 +141,8 @@ export interface TodayMaster extends OpportunityMaster {
 export interface TodayMasters {
   tradeDate: string;
   list: TodayMaster[];
+  /** The backend iterates the scanners itself (18 Nov 2026): the browser loop only refreshes the page. */
+  backendLoop?: boolean;
 }
 
 /** A card on the page, merged on the client from API 1 + API 2. */
@@ -161,6 +163,10 @@ export interface LoopSnapshot {
   currentMasterId: number | null;
   currentCode: string | null;
   lastError: string | null;
+  /** Another browser tab runs the loop; this one waits to take over. */
+  inOtherTab?: boolean;
+  /** The backend runs the scanners; this tab only refreshes. */
+  backend?: boolean;
 }
 
 
@@ -227,10 +233,32 @@ export interface NowRead {
   votes: { label: string; value: string; vote: number }[];
 }
 
+/** One level in the temporary view: a target, the next target on a break, or where the view is wrong. */
+export interface TempViewStep {
+  /** Condition that unlocks this step (e.g. "5-min close below 24,500"); null for the first target. */
+  if: string | null;
+  level: number;
+  label: string;
+  distance: number;
+  distanceAtr: number | null;
+}
+
+/** Human-style temporary view: "bearish, likely 24,500; below it 24,450; wrong above 24,620". */
+export interface TempView {
+  bias: "BULLISH" | "BEARISH" | "MIXED";
+  confidence: "LOW" | "MEDIUM" | "HIGH";
+  spot: number;
+  text: string;
+  steps: TempViewStep[];
+  invalidation: TempViewStep | null;
+  range: { support: TempViewStep; resistance: TempViewStep } | null;
+}
+
 export interface IterationDetails {
   result?: IterationResult;
   spot?: number | null;
   now?: NowRead | null;
+  view?: TempView | null;
   dte?: number | null;
   dayType?: { type?: string; side?: "CE" | "PE" | null; reasons?: string[] } | null;
   dayBias?: { type?: string; side?: "CE" | "PE" | null; rank?: number } | null;
@@ -248,6 +276,7 @@ export interface IterationDetails {
   setupsRejected?: { name: string; side: "CE" | "PE"; reason: string }[];
   menuSize?: number;
   menuDropped?: Record<string, number>;
+  nearestContracts?: NearestContractInfo[];
   picks?: number;
   kept?: number;
   dropped?: Record<string, number>;
@@ -331,6 +360,17 @@ export interface BatchCheckResult {
   batches: Record<number, BatchCheckSummary>;
 }
 
+export type ChartTimeframe = "1m" | "5m" | "15m" | "1h";
+
+export interface NearestContractInfo {
+  strike: number;
+  side: "CE" | "PE";
+  ltp: number;
+  spreadPct: number | null;
+  delta: number | null;
+  oi: number;
+}
+
 export interface UnderlyingBar5 {
   t: string;
   o: number;
@@ -340,9 +380,23 @@ export interface UnderlyingBar5 {
   v?: number;
 }
 
+export interface ActiveSetupPlan {
+  name: string;
+  side: "CE" | "PE";
+  strength?: number;
+  entry?: number;
+  stop?: number;
+  target?: number;
+  targetLevel?: string;
+  rr?: number;
+  reason?: string;
+}
+
 export interface UnderlyingChartData {
   code: string;
   type: "INDEX" | "COMMODITY";
+  timeframe?: ChartTimeframe;
+  masterId?: number | null;
   spot: number | null;
   bars5: UnderlyingBar5[];
   ema9: number[];
@@ -363,6 +417,8 @@ export interface UnderlyingChartData {
   trend15: string | null;
   dayType: { type?: string; side?: "CE" | "PE" | null; reasons?: string[] } | null;
   fibWatch: FibWatch[];
+  activeSetups?: ActiveSetupPlan[];
+  oi?: { pcr?: number | null; support?: number | null; resistance?: number | null } | null;
   lastScan: OpportunityIteration | null;
   marketError: string | null;
 }

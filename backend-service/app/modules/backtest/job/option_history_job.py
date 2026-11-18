@@ -1,6 +1,7 @@
 """Scheduled real-option-price downloads (research gap 2): Upstox keeps 1-minute history for about a month, so it
 has to be collected continuously or it is gone.
-  daily   Mon-Fri 16:05 IST  fetch_day(today)      -- after the 15:40 NSE close; holidays just write nothing
+  daily   Mon-Fri 16:05 IST  fetch_day(today) + fetch_futures_day(today) -- after the 15:40 NSE close; holidays
+                             just write nothing
   weekly  Saturday 10:15 IST backfill_expired(4)  -- needs Upstox Plus; logs and moves on without it"""
 from zoneinfo import ZoneInfo
 
@@ -20,6 +21,10 @@ async def _daily() -> None:
         logger.info(f"[OPTION_HISTORY] daily fetch: {await ohs.fetch_day()}")
     except Exception as e:  # noqa: BLE001 -- e.g. no Upstox login today
         logger.error(f"[OPTION_HISTORY] daily fetch failed: {type(e).__name__}: {e}")
+    try:  # futures volume / OI + spot, for replays of the volume / OI checks (18 Nov 2026)
+        logger.info(f"[FUTURES_HISTORY] daily fetch: {await ohs.fetch_futures_day()}")
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[FUTURES_HISTORY] daily fetch failed: {type(e).__name__}: {e}")
 
 
 async def _weekly() -> None:

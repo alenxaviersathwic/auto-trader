@@ -201,7 +201,8 @@ echo "==> Starting Docker Compose..."
 docker compose -p autotrader -f "$COMPOSE_FILE" up -d "$@"
 
 echo "==> Streaming live logs (Press Ctrl+C anytime to stop and auto-backup)..."
-docker compose -p autotrader -f "$COMPOSE_FILE" logs -f &
+# Filter out noisy internal polling endpoints and raw heartbeat spam
+docker compose -p autotrader -f "$COMPOSE_FILE" logs -f | grep --line-buffered -vE 'HTTP Request: GET|/api/v1/health|/actuator|/api/v1/opportunities/masters/today|/api/v1/users/default|/api/v1/opportunities/iterations' &
 LOGS_PID=$!
 
 wait "$LOGS_PID" 2>/dev/null || cleanup

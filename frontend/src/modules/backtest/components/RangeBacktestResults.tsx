@@ -1,6 +1,6 @@
 import React from "react";
 import { AlertTriangle } from "lucide-react";
-import { RangeBacktestResult, RangeSetupStats, RangeStats } from "../types/backtest.types";
+import { RangeBacktestResult, RangeFunnel, RangeSetupStats, RangeStats } from "../types/backtest.types";
 import { TRADER_META } from "../../trade-history/components/traderMeta";
 import { TraderCode } from "../../trade-history/types/trades.types";
 
@@ -20,6 +20,74 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "trades", label: "Trades" },
   { key: "portfolio", label: "With capital" },
 ];
+
+const STAGE_LABEL: Record<string, string> = {
+  rejected: "Setup check",
+  session: "Session rules",
+  guardrail: "Guardrail",
+  whileBusy: "Trade already open",
+  unpriced: "No strike",
+};
+
+/** Signals -> where each one stopped -> trades. Opens by itself when the run took no trades. */
+const FunnelPanel: React.FC<{ f: RangeFunnel; open: boolean }> = ({ f, open }) => {
+  const steps = [
+    { label: "Signals found", n: f.signals, tone: "" },
+    { label: "Stopped by setup checks", n: f.rejected, tone: "text-amber" },
+    { label: "Stopped by session rules (manager / risk level)", n: f.sessionBlocked, tone: "text-amber" },
+    { label: "Stopped by guardrails", n: f.guardrail, tone: "text-amber" },
+    { label: "Skipped: a trade on that index was open", n: f.whileBusy, tone: "text-secondary" },
+    { label: "No option strike to price", n: f.unpriced, tone: "text-secondary" },
+    { label: "Trades taken", n: f.taken, tone: f.taken ? "text-bullish" : "text-bearish" },
+  ];
+  return (
+    <details className="bt-funnel" open={open}>
+      <summary>
+        {f.taken === 0 ? "Why 0 trades" : "From signals to trades"} · {f.signals} signal{f.signals === 1 ? "" : "s"} → {f.taken} trade
+        {f.taken === 1 ? "" : "s"}
+      </summary>
+      {f.signals === 0 ? (
+        <p className="micro text-secondary">
+          No setup in this session manager&apos;s scope fired on any index in the range. Try another manager, both CE &amp; PE, or a longer range.
+        </p>
+      ) : (
+        <>
+          <ul className="bt-funnel__steps">
+            {steps.map((s) => (
+              <li key={s.label}>
+                <span>{s.label}</span>
+                <span className={`mono ${s.tone}`}>{s.n.toLocaleString("en-IN")}</span>
+              </li>
+            ))}
+          </ul>
+          {f.topReasons.length > 0 && (
+            <table className="data-table bt-funnel__reasons">
+              <thead>
+                <tr>
+                  <th>Stopped at</th>
+                  <th>Setup</th>
+                  <th>Reason</th>
+                  <th>Signals</th>
+                </tr>
+              </thead>
+              <tbody>
+                {f.topReasons.map((r) => (
+                  <tr key={`${r.stage}|${r.setup}|${r.reason}`}>
+                    <td>{STAGE_LABEL[r.stage] ?? r.stage}</td>
+                    <td className="ticker">{r.setup}</td>
+                    <td className="text-secondary">{r.reason}</td>
+                    <td className="mono">{r.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="micro text-muted">Each signal is counted once per 5-minute bar, at the first check that stopped it.</p>
+        </>
+      )}
+    </details>
+  );
+};
 
 function pnlClass(v: number | null | undefined): string {
   if (v === null || v === undefined) return "text-secondary";
@@ -132,11 +200,11 @@ export const RangeBacktestResults: React.FC<{ result: RangeBacktestResult }> = (
         {result.range.pricing}
       </p>
       <p className="text-secondary micro">
-        Session manager:{" "}
+        Finders:{" "}
         <span className="ticker">
           {result.range.sessionManager === "ALL"
-            ? "both traders (comparison)"
-            : TRADER_META[result.range.sessionManager as TraderCode]?.name ?? result.range.sessionManager}
+            ? "both (as a live session)"
+            : `${TRADER_META[result.range.sessionManager as TraderCode]?.name ?? result.range.sessionManager} only`}
         </span>{" "}
         · risk <span className="ticker">{result.range.riskLevel}</span> · side {result.range.sideFilter} · max{" "}
         {result.range.maxParallel} open
@@ -169,6 +237,8 @@ export const RangeBacktestResults: React.FC<{ result: RangeBacktestResult }> = (
           {result.errors.length} date/index could not be replayed: {result.errors.slice(0, 3).map((e) => `${e.code} ${e.date}: ${e.error}`).join("; ")}
         </p>
       )}
+
+      {result.funnel && <FunnelPanel f={result.funnel} open={result.totals.trades === 0} />}
 
       <div className="tab-bar" style={{ marginTop: "var(--space-4)" }}>
         {TABS.map((x) => (

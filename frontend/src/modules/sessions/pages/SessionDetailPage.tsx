@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -77,7 +77,7 @@ export const SessionDetailPage: React.FC = () => {
 
   // The scanner creates the opportunities this session picks from; the session never calls the engine itself.
   const oppLoop = useOpportunityLoop();
-  const { cards: oppCards, hasResearch, isLoading: oppCardsLoading } = useOpportunityCards(oppLoop.running);
+  const { cards: oppCards, hasResearch, isLoading: oppCardsLoading } = useOpportunityCards(oppLoop.running || !!oppLoop.inOtherTab);
   const startScanner = useStartOpportunity();
   const stopScanner = useStopAll();
   const autoStartedScannerRef = useRef<boolean>(false);
@@ -102,21 +102,29 @@ export const SessionDetailPage: React.FC = () => {
 
   useEffect(() => () => window.clearTimeout(failureTimer.current), []);
 
-  // Resume or start the scanner for this session's underlyings when an ACTIVE session is opened.
+  // The finders scan the WHOLE market of this session's scope (every Research card of that type plus this session's
+  // own codes), not only what this session trades: the Traders area and every session read the same scans, and a
+  // session still picks only from its own underlyings (session_loop_service._codes). 18 Nov 2026.
+  const marketCodes = useMemo(() => {
+    if (!session) return [];
+    const own = (session.scope === "INDEX" ? session.underlyings : session.commodityItems) ?? [];
+    const type = session.scope === "INDEX" ? "INDEX" : "COMMODITY";
+    return Array.from(new Set([...own, ...oppCards.filter((c) => c.type === type).map((c) => c.code)]));
+  }, [session, oppCards]);
+  const notScanning = useMemo(
+    () => marketCodes.filter((code) => oppCards.find((c) => c.code === code)?.master?.state !== "RUNNING"),
+    [marketCodes, oppCards],
+  );
+
+  // Resume the loop, and start a scanner for every market code that has none, when an ACTIVE session is opened.
   useEffect(() => {
-    if (!session || session.sessionStatus !== "ACTIVE" || oppCardsLoading) return;
-    const codes = session.scope === "INDEX" ? session.underlyings : session.commodityItems;
-    if (!codes || codes.length === 0) return;
-    const running = oppCards.filter((c) => codes.includes(c.code) && c.master?.state === "RUNNING");
-    if (running.length > 0) {
-      if (!oppLoop.running) resumeOpportunityLoop();
-      return;
-    }
-    if (!autoStartedScannerRef.current && hasResearch && !startScanner.isPending) {
+    if (!session || session.sessionStatus !== "ACTIVE" || oppCardsLoading || marketCodes.length === 0) return;
+    if (notScanning.length < marketCodes.length && !oppLoop.running) resumeOpportunityLoop();
+    if (notScanning.length > 0 && !autoStartedScannerRef.current && hasResearch && !startScanner.isPending) {
       autoStartedScannerRef.current = true;
-      startScanner.mutate({ underlyings: codes });
+      startScanner.mutate({ underlyings: notScanning });
     }
-  }, [session, oppCards, oppCardsLoading, oppLoop.running, hasResearch, startScanner]);
+  }, [session, marketCodes, notScanning, oppCardsLoading, oppLoop.running, hasResearch, startScanner]);
 
   const handleLock = (pid: number) => {
     lockMutation.mutate(pid, {
@@ -425,8 +433,8 @@ export const SessionDetailPage: React.FC = () => {
                 <button
                   type="button"
                   className="te-btn te-btn--primary te-btn--xs"
-                  onClick={() => startScanner.mutate({ underlyings })}
-                  disabled={startScanner.isPending || underlyings.length === 0}
+                  onClick={() => startScanner.mutate({ underlyings: notScanning.length ? notScanning : marketCodes })}
+                  disabled={startScanner.isPending || marketCodes.length === 0}
                 >
                   <Play size={10} /> {startScanner.isPending ? "Starting…" : "Start"}
                 </button>
@@ -437,7 +445,10 @@ export const SessionDetailPage: React.FC = () => {
             {finders.map((f) => (
               <div key={f.code} className="sd-finder-row">
                 <span className={`badge ${f.badgeClass} mono`}>{f.tag}</span>
-                <span className="micro text-primary">{f.name}</span>
+                <span className="micro text-primary" style={{ flex: 1 }}>{f.name}</span>
+                <span className={`te-pill ${scannersRunning > 0 ? "te-pill--green" : ""}`}>
+                  {scannersRunning > 0 ? "ACTIVE" : "IDLE"}
+                </span>
               </div>
             ))}
           </div>
@@ -502,7 +513,7 @@ export const SessionDetailPage: React.FC = () => {
           onClose={() => setEditOpen(false)}
         />
       )}
-      {chartCode && <UnderlyingChartModal code={chartCode} onClose={() => setChartCode(null)} />}
+      {chartCode && <UnderlyingChartModal code={chartCode} finderCodes={sessionFinders} onClose={() => setChartCode(null)} />}
       {lockedPick && <TradeLockModal pick={lockedPick} onClose={() => setLockedPick(null)} />}
     </div>
   );

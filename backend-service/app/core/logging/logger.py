@@ -221,11 +221,14 @@ def setup_logging() -> None:
     file_handler.addFilter(flow_filter)
     root_logger.addHandler(file_handler)
 
-    # Silence excessively noisy internal libraries
+    # Silence excessively noisy internal libraries and repetitive traffic
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.error").setLevel(logging.INFO)
     logging.getLogger("apscheduler").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("http.traffic").setLevel(logging.WARNING)
 
 
 logger = logging.getLogger("auto-trader")

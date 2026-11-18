@@ -7,6 +7,6 @@ export const opportunitiesQueryKeys = {
   recentIterations: (masterId: number, limit: number) =>
     [...opportunitiesQueryKeys.all, "recentIterations", masterId, limit] as const,
   masterHistory: (masterId: number) => [...opportunitiesQueryKeys.all, "masterHistory", masterId] as const,
-  chart: (code: string) => [...opportunitiesQueryKeys.all, "chart", code] as const,
+  chart: (code: string, timeframe = "5m") => [...opportunitiesQueryKeys.all, "chart", code, timeframe] as const,
 };
 

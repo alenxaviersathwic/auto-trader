@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # When CODE, the LLM still runs in SHADOW (its pick is logged for A/B) if OPPORTUNITY_LLM_SHADOW is true.
     OPPORTUNITY_RANKER: str = "CODE"
     OPPORTUNITY_LLM_SHADOW: bool = False  # off 13 Nov 2026: no side/paper modes, live flow only
+    # 18 Nov 2026: the backend starts the scanners at 09:14 IST and iterates them itself (job/scanner_job.py), so
+    # scanning no longer waits for someone to open a session page -- the 09:20-09:35 FII_OPEN_DRIVE window was missed
+    # on every day of 11-18 Nov because the first scan came at 09:42-12:06. False = the old browser-driven loop only.
+    OPPORTUNITY_BACKEND_LOOP: bool = True
 
     # Institutional overlays (11 Nov 2026 review). Both are COMPUTED and logged always; they only change trading when
     # enabled, after their validation scripts pass (gamma: scripts/validate_gamma_regime.py t > 2; positioning: A/B).
@@ -92,6 +96,11 @@ class Settings(BaseSettings):
 
     # Autopsy guards (modules/autopsy): False = proposed, you apply them; True = applied as soon as proposed
     AUTOPSY_AUTO_APPLY_GUARDS: bool = False
+    # 18 Nov 2026 research review: a fixed % cap silently removed the one validated setup (FII_OPEN_DRIVE, Rs 4.0-4.7k
+    # risk per lot vs Rs 4k at Rs 1L: all 18 signals of 18 Sep-17 Nov skipped). "SETUP:PCT,..." lets a named setup
+    # risk up to PCT % of capital on ONE lot, as the session's first trade of the day only (nothing lost or committed
+    # yet), so the day's worst case on such a day is PCT % instead of maxLossPercentage. Empty = off.
+    SETUP_RISK_BUDGET: str = "FII_OPEN_DRIVE:5"
     MAX_ONE_LOT_RISK_PCT: float = 4.0  # one lot may risk up to this % of session capital when 0.5% buys < 1 lot (4% = Rs 2,000 at Rs 50k, set 13 Nov 2026)
 
     # Logging

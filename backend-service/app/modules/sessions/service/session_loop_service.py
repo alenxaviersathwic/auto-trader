@@ -335,7 +335,7 @@ class SessionLoopService:
             active_traders = set(session_finder_codes(getattr(s, "finders", None), getattr(s, "traders", None)))
             live = [p for p in open_picks if p.pickState == "OFFERED"]
             for p in list(live):
-                lots, _ = lots_for(float(p.entry), float(p.stop), p.lotUnits, p.confidence, cap)
+                lots, _ = lots_for(float(p.entry), float(p.stop), p.lotUnits, p.confidence, cap, strategy=p.strategy)
                 no_longer_wanted = (
                     assign_trader_for_opportunity(p.strategy) not in active_traders
                     or risk_gate(risk_level, p.strategy, float(p.rewardRisk), p.risks) is not None

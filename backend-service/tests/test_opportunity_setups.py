@@ -399,16 +399,19 @@ def test_vwap_band_fade_on_a_flat_vwap_day():
 
 def test_setup_policy_keeps_only_institutional_momentum_as_option_buys():
     base = {"side": "CE", "strength": 3, "entry": 103.0, "stop": 95.0, "target": 120.0}
-    names = ["NOISE_BREAKOUT", "ORB", "PDH_PDL_RETEST", "FAILED_BREAK_RECLAIM", "RANGE_BREAKOUT", "BRAND_NEW_SETUP"]
+    names = ["NOISE_BREAKOUT", "ORB", "PDH_PDL_RETEST", "FAILED_BREAK_RECLAIM", "VWAP_PULLBACK", "BRAND_NEW_SETUP",
+             "RANGE_BREAKOUT", "LATE_DAY_MOMENTUM"]
     ok, rej = setup_detector.confirm_timeframes(_a(), [{**base, "name": n} for n in names])
     assert [s["name"] for s in ok] == ["NOISE_BREAKOUT"]
     why = {r["name"]: r["reason"] for r in rej}
     assert "dropped" in why["ORB"] and "dropped" in why["PDH_PDL_RETEST"] and "dropped" in why["BRAND_NEW_SETUP"]
+    # 18 Nov 2026: negative in both halves of the May-Nov replay -> dropped
+    assert "dropped" in why["RANGE_BREAKOUT"] and "dropped" in why["LATE_DAY_MOMENTUM"]
     assert "short-premium placement only" in why["FAILED_BREAK_RECLAIM"]
-    assert "only inside an active CE noise breakout" in why["RANGE_BREAKOUT"]
+    assert "only inside an active CE noise breakout" in why["VWAP_PULLBACK"]
     ok, _ = setup_detector.confirm_timeframes(_a(dayType={"type": "EXPANSION", "side": "CE"}),
-                                              [{**base, "name": "RANGE_BREAKOUT"}])
-    assert [s["name"] for s in ok] == ["RANGE_BREAKOUT"]
+                                              [{**base, "name": "VWAP_PULLBACK"}])
+    assert [s["name"] for s in ok] == ["VWAP_PULLBACK"]
 
 
 # ───────────────────────── 15-minute + 1-minute, always (17 Nov 2026) ─────────────────────────

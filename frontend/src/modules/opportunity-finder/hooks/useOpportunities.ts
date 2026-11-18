@@ -170,12 +170,12 @@ export function useRecentIterations(masterId: number | null, limit = 12, refetch
   });
 }
 
-/** Live 5-minute chart + key levels + latest scanner diagnostics for a clicked underlying. */
-export function useUnderlyingChart(code: string | null) {
+/** Live chart (1m/5m/15m/1h) + key levels + latest scanner diagnostics for a clicked underlying. */
+export function useUnderlyingChart(code: string | null, timeframe = "5m") {
   return useQuery({
-    queryKey: opportunitiesQueryKeys.chart(code ?? ""),
-    queryFn: () => opportunitiesApi.getUnderlyingChart(code!),
+    queryKey: opportunitiesQueryKeys.chart(code ?? "", timeframe),
+    queryFn: () => opportunitiesApi.getUnderlyingChart(code!, timeframe),
     enabled: Boolean(code),
-    refetchInterval: 15000,
+    refetchInterval: 5000,
   });
 }

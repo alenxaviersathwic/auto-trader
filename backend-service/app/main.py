@@ -153,6 +153,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Participant OI job setup failed: {e}")
 
+    # 3d2. Opportunity scanners run by the backend: auto-start 09:14 IST + iterate every 20 s (18 Nov 2026)
+    try:
+        from app.modules.opportunity_finder.job import register_scanner_job
+
+        register_scanner_job()
+    except Exception as e:
+        logger.error(f"Scanner loop setup failed: {e}")
+
     # 3e. Research Engine at start-up and every 30 min while system usage < 50% (research/job/research_schedule_job.py)
     try:
         from app.modules.research.job import register_research_schedule
@@ -160,6 +168,14 @@ async def lifespan(app: FastAPI):
         register_research_schedule()
     except Exception as e:
         logger.error(f"Research schedule setup failed: {e}")
+
+    # 3f. Pre-market health check at 09:05 IST Mon-Fri
+    try:
+        from app.modules.system.job import register_premarket_health_job
+
+        register_premarket_health_job()
+    except Exception as e:
+        logger.error(f"Pre-market health job setup failed: {e}")
 
     # 4. Start scheduler
     start_scheduler()

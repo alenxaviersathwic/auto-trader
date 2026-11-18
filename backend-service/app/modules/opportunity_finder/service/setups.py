@@ -632,8 +632,13 @@ def unfilled_gap_block(lv: dict[str, Any], fam: str) -> str | None:
 #   CONFIRMED            a pattern setup that may trade only with its own OI + volume confirmations (fib_pocket.py)
 #   DROPPED              no entry at all (kept detectable for research replays / the funnel report)
 SETUP_POLICY: dict[str, str] = {
-    "NOISE_BREAKOUT": "CORE", "LATE_DAY_MOMENTUM": "CORE",
-    "RANGE_BREAKOUT": "MERGED", "VWAP_PULLBACK": "MERGED", "GAP_GO": "MERGED",
+    "NOISE_BREAKOUT": "CORE",
+    # 18 Nov 2026 live-pipeline replay, 4 May - 11 Nov (132 days, NIFTY/BANKNIFTY/SENSEX, both managers, HIGH risk):
+    # RANGE_BREAKOUT 67 trades -23.4k (H1 -22.2k / H2 -1.2k), LATE_DAY_MOMENTUM 18 trades -11.0k (H1 -9.1k / H2 -1.9k):
+    # negative in BOTH halves -> dropped. Re-run without them: 421 -> 357 trades, net +79.0k -> +113.6k, PF 1.17 -> 1.30,
+    # H1 -20.9k -> +6.4k, max drawdown 81.0k -> 69.6k (Black-Scholes premiums, per lot).
+    "LATE_DAY_MOMENTUM": "DROPPED",
+    "RANGE_BREAKOUT": "DROPPED", "VWAP_PULLBACK": "MERGED", "GAP_GO": "MERGED",
     "FAILED_BREAK_RECLAIM": "SHORT_PREMIUM_ONLY", "VWAP_BAND_REVERT": "SHORT_PREMIUM_ONLY",
     "OI_WALL_REJECT": "SHORT_PREMIUM_ONLY",
     # 12 Nov 2026 price-action study: INSIDE_BAR alone 14 trades PF 14.7. 17 Nov 2026 live-pipeline replay (May-Nov,

@@ -45,7 +45,7 @@ from app.modules.opportunity_finder.service import setups as su
 from app.modules.opportunity_finder.service.market_analysis import _bar_min, _mins, analyze, resample
 from app.modules.opportunity_finder.service import fib_pocket
 from app.modules.sessions.service.session_risk import normalize_risk_level, risk_gate
-from app.modules.sessions.service.session_sizing import one_lot_risk_pct
+from app.modules.sessions.service.session_sizing import one_lot_risk_pct, setup_risk_pct
 from app.modules.trade_history.service.trader_presets import assign_trader_for_opportunity, normalize_trader_code
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -78,6 +78,29 @@ def _rule_of(reason: str) -> str:
         if key in r:
             return label
     return re.sub(r"[\d.,+\-%]+", "#", reason)[:48]
+
+
+def _reason_label(reason: str) -> str:
+    """Short, stable label for the funnel: the rule name when the reason has one, else its text without numbers."""
+    m = re.match(r"^([A-Z][A-Z0-9_]+):", reason)
+    if m:
+        return m.group(1)
+    return re.sub(r"\s+", " ", re.sub(r"-?\d[\d.,]*", "#", reason)).strip()[:140]
+
+
+def _funnel_new() -> dict[str, Any]:
+    return {"seen": set(), "stage": {}, "reasons": defaultdict(int)}
+
+
+def _funnel_hit(f: dict[str, Any], s: dict[str, Any], m: int, stage: str, reason: str | None = None) -> None:
+    """Count a signal once (setup x side x 5-minute bar) at the first stage that stopped it -- or 'taken'."""
+    key = (s["name"], s["side"], m // 5)
+    if key in f["seen"]:
+        return
+    f["seen"].add(key)
+    f["stage"][stage] = f["stage"].get(stage, 0) + 1
+    if reason:
+        f["reasons"][(stage, s["name"], _reason_label(reason))] += 1
 
 
 def _stats(pnls: list[float]) -> dict[str, Any]:
@@ -187,6 +210,7 @@ def _replay_day(code: str, day: str, bars: list[dict[str, Any]], daily: list[dic
     cf_last: dict[tuple[str, str], int] = {}
     bias_state: dict[str, Any] = {}
     last_vix = None
+    funnel = _funnel_new()  # why signals did not become trades (the "why 0 trades" panel)
 
     def cf(s: dict[str, Any], k: int, atr5: float, rule: str, m: int) -> None:
         key = (s["name"], s["side"])
@@ -222,13 +246,17 @@ def _replay_day(code: str, day: str, bars: list[dict[str, Any]], daily: list[dic
         fo = fii_open.signal(code, a["spot"], now, change=fii) if fii else None
         if fo:
             ok = [fo, *ok]
-        if k <= busy:
-            continue  # a trade is open on this index: the live loop would not offer another
         mine = lambda x: (side_filter == "ALL" or x["side"] == side_filter) and session_block(  # noqa: E731
             x, manager, risk_level, a.get("trend15"))[0]
+        if k <= busy:
+            for s in ok:
+                if mine(s):
+                    _funnel_hit(funnel, s, m, "whileBusy", "a trade on this index was still open")
+            continue  # a trade is open on this index: the live loop would not offer another
         for rj in rejected:
             s = next((x for x in raw if x["name"] == rj["name"] and x["side"] == rj["side"]), None)
             if s and mine(s):
+                _funnel_hit(funnel, s, m, "rejected", rj["reason"])
                 cf(s, k, a.get("atr5") or 0.0, _rule_of(rj["reason"]), m)
         session_ok = []
         for s in ok:
@@ -236,6 +264,7 @@ def _replay_day(code: str, day: str, bars: list[dict[str, Any]], daily: list[dic
                 continue
             _, why = session_block(s, manager, risk_level, a.get("trend15"))
             if why:
+                _funnel_hit(funnel, s, m, "session", why)
                 cf(s, k, a.get("atr5") or 0.0, "SESSION " + why, m)
             else:
                 session_ok.append(s)
@@ -247,6 +276,7 @@ def _replay_day(code: str, day: str, bars: list[dict[str, Any]], daily: list[dic
         kept, why = guardrails.apply(rows, [{"side": s["side"], "setup": s["name"], "s": s} for s in ok], now)
         if not kept:
             for s in ok:
+                _funnel_hit(funnel, s, m, "guardrail", why or "guardrail limit")
                 cf(s, k, a.get("atr5") or 0.0, "GUARDRAIL: " + _rule_of(why or "limit"), m)
             continue
         for pk in sorted(kept, key=lambda p: -p["s"].get("strength", 0)):
@@ -256,7 +286,9 @@ def _replay_day(code: str, day: str, bars: list[dict[str, Any]], daily: list[dic
             r = _simulate(cfg, bars, k, s, a.get("atr5") or 0.0, dte_next, bm, close_m,
                           exit_by_min=exit_by.hour * 60 + exit_by.minute if exit_by else None)
             if r is None:
+                _funnel_hit(funnel, s, m, "unpriced", "no option strike / premium for this setup")
                 continue
+            _funnel_hit(funnel, s, m, "taken")
             busy = r.exitIdx
             until = datetime(as_of.year, as_of.month, as_of.day, r.exitMinute // 60, r.exitMinute % 60, tzinfo=IST)
             row = guardrails_row(s["side"], now, until, "STOP_HIT" if r.outcome == "STOP" else "EXPIRED", s["name"])
@@ -271,7 +303,8 @@ def _replay_day(code: str, day: str, bars: list[dict[str, Any]], daily: list[dic
                            "priceAction": (s.get("priceAction") or {}).get("pattern"),
                            "reason": s.get("reason", "")})
             break
-    return {"trades": trades, "blocked": blocked}
+    return {"trades": trades, "blocked": blocked,
+            "funnel": {"stage": funnel["stage"], "reasons": [[st, su_, rs_, n] for (st, su_, rs_), n in funnel["reasons"].items()]}}
 
 
 class guardrails_row:  # noqa: N801 -- what guardrails.apply() reads off a saved opportunity row
@@ -316,8 +349,12 @@ def _portfolio(trades: list[dict[str, Any]], capital: float, max_loss_pct: float
                 skipped["premium above available capital"] += 1
                 continue
             if not max_lots_mode:
-                if t["riskPerLot"] > capital * one_lot_risk_pct() / 100:
-                    skipped[f"1 lot risks more than {one_lot_risk_pct():g}% of capital"] += 1
+                # live session_sizing.lots_for: a setup with its own budget (settings.SETUP_RISK_BUDGET) may take one
+                # lot as the day's first trade (nothing lost, nothing open); everything else the 1-lot cap
+                special = setup_risk_pct(t.get("setup")) if (pnl >= 0 and not open_pos and n == 0) else None
+                cap_pct = special if special else one_lot_risk_pct()
+                if t["riskPerLot"] > capital * cap_pct / 100:
+                    skipped[f"1 lot risks more than {cap_pct:g}% of capital"] += 1
                     continue
                 lots = 1
             row = {**t, "lots": lots, "qty": lots * t["lotSize"], "capitalUsed": round(lots * t["premiumPerLot"], 2),
@@ -354,6 +391,7 @@ async def _run(job: dict[str, Any], d0: date, d1: date, codes: list[str], capita
         if not days:
             raise ValueError("Upstox returned no 1-minute candles for this range (holidays only, too old, or token)")
         trades, blocked, errors = [], [], []
+        funnel: dict[str, Any] = {"stage": defaultdict(int), "reasons": defaultdict(int)}
         total = len(days) * len(codes)
         done = 0
         for code in codes:
@@ -373,10 +411,14 @@ async def _run(job: dict[str, Any], d0: date, d1: date, codes: list[str], capita
                     continue
                 trades += res["trades"]
                 blocked += [{"date": d, "code": code, **b} for b in res["blocked"]]
+                for st, n in (res.get("funnel") or {}).get("stage", {}).items():
+                    funnel["stage"][st] += n
+                for st, su_, rs_, n in (res.get("funnel") or {}).get("reasons", []):
+                    funnel["reasons"][(st, su_, rs_)] += n
         trades.sort(key=lambda t: (t["date"], t["time"]))
         job["result"] = _report(trades, blocked, days, codes, capital, max_loss_pct, errors, sizing,
                                 manager=manager, risk_level=risk_level, side_filter=side_filter,
-                                max_parallel=max_parallel)
+                                max_parallel=max_parallel, funnel=funnel)
         job.update(state="DONE", stage="done", progressPct=100.0, finishedAt=datetime.now(IST).isoformat())
     except Exception as e:  # noqa: BLE001
         logger.error(f"[RANGE_BACKTEST] {type(e).__name__}: {e}")
@@ -386,8 +428,17 @@ async def _run(job: dict[str, Any], d0: date, d1: date, codes: list[str], capita
 
 def _report(trades, blocked, days, codes, capital, max_loss_pct, errors, sizing="MAX_LOTS",
             manager: str = ALL_MANAGERS, risk_level: str = "LOW", side_filter: str = "ALL",
-            max_parallel: int = 3) -> dict[str, Any]:
+            max_parallel: int = 3, funnel: dict[str, Any] | None = None) -> dict[str, Any]:
     pnls = [t["netPnl"] for t in trades]
+    fs = dict((funnel or {}).get("stage") or {})
+    funnel_out = {
+        # each signal counted once (setup x side x 5-minute bar) at the first stage that stopped it
+        "signals": sum(fs.values()), "rejected": fs.get("rejected", 0), "sessionBlocked": fs.get("session", 0),
+        "guardrail": fs.get("guardrail", 0), "whileBusy": fs.get("whileBusy", 0), "unpriced": fs.get("unpriced", 0),
+        "taken": fs.get("taken", 0),
+        "topReasons": [{"stage": st, "setup": su_, "reason": rs_, "count": n} for (st, su_, rs_), n in
+                       sorted(((funnel or {}).get("reasons") or {}).items(), key=lambda kv: -kv[1])[:10]],
+    }
     mid = days[len(days) // 2] if days else ""
     by = lambda key, rows: {k: [r for r in rows if r[key] == k] for k in sorted({r[key] for r in rows})}  # noqa: E731
     per_index = [{"code": c, **_stats([t["netPnl"] for t in ts])} for c, ts in by("code", trades).items()]
@@ -428,6 +479,7 @@ def _report(trades, blocked, days, codes, capital, max_loss_pct, errors, sizing=
                    "tradesPerDay": round(len(trades) / len(days), 2) if days else 0, "splitNote": SPLIT_NOTE},
         "perIndex": per_index, "perSetup": per_setup, "perTrader": per_trader, "perPriceAction": per_pattern, "ruleImpact": rules, "blockedSetups": off,
         "daily": daily, "portfolio": _portfolio(trades, capital, max_loss_pct, sizing, max_parallel),
+        "funnel": funnel_out,
         "trades": trades, "errors": errors,
     }
 

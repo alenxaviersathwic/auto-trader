@@ -56,7 +56,9 @@ SELECT '   * Upstox Configurations:           ' || count(*) FROM upstox_configs
 UNION ALL
 SELECT '   * Strategies & Rules:              ' || (SELECT count(*) FROM strategies) || ' strategies / ' || (SELECT count(*) FROM rules) || ' rules'
 UNION ALL
-SELECT '   * Opportunity Masters & Trades:    ' || (SELECT count(*) FROM opportunity_masters) || ' masters / ' || (SELECT count(*) FROM trade_opportunities) || ' trades'
+SELECT '   * Sessions & Active Trades:        ' || (SELECT count(*) FROM trading_sessions) || ' sessions / ' || (SELECT count(*) FROM trades) || ' trades'
+UNION ALL
+SELECT '   * Opportunity Masters & Signals:   ' || (SELECT count(*) FROM opportunity_masters) || ' masters / ' || (SELECT count(*) FROM trade_opportunities) || ' signals'
 UNION ALL
 SELECT '   * Vector Memory (Research Chunks): ' || count(*) FROM research_chunks WHERE embedding IS NOT NULL
 UNION ALL

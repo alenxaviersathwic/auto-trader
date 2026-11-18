@@ -11,7 +11,7 @@ from app.core.logging.logger import logger
 from app.modules.ai_master.llm.ollama_client import OllamaClient
 from app.modules.autopsy.service.learning_service import learning_service
 from app.modules.opportunity_finder.service import fib_pocket
-from app.modules.opportunity_finder.service import momentum_now
+from app.modules.opportunity_finder.service import momentum_now, temp_view
 from app.modules.commodity_desk.service import desk_service, move_watch
 from app.modules.opportunity_finder.graph.prompts import SELECT_SYSTEM_PROMPT
 from app.modules.opportunity_finder.graph.state import UnderlyingState
@@ -194,6 +194,7 @@ async def gather(state: UnderlyingState) -> dict[str, Any]:
         rejected = [*rejected, *({"name": x["name"], "side": x["side"],
                                   "reason": f"its finder does not work on {cfg.type} (optionTypes)"}  # type: ignore[union-attr]
                                  for x in off)]
+    now_read = momentum_now.read(analysis)
     diag = {"regime": analysis.get("regime"), "dayType": analysis.get("dayType"), "dayBias": analysis.get("dayBias"),
             "gamma": analysis.get("gamma"), "positioning": analysis.get("positioning"),
             "noise": analysis.get("noise"),
@@ -201,7 +202,9 @@ async def gather(state: UnderlyingState) -> dict[str, Any]:
             "trend15": analysis.get("trend15"), "trend15Source": analysis.get("trend15Source"),
             "spot": analysis.get("spot") or market.get("spot"),
             # the last ~60 minutes, separate from the whole-day read (day type, noise area, FII positioning)
-            "now": momentum_now.read(analysis),
+            "now": now_read,
+            # the human-style temporary view on top of it: target, next target on a break, where the view is wrong
+            "view": temp_view.build(analysis, now_read),
             # what the Fib trader is waiting for on each side (index view on the session screen)
             "fibWatch": fib_pocket.watch(analysis.get("bars5") or [], analysis.get("atr5") or 0.0),
             "setupsFired": [{"name": s["name"], "side": s["side"], "strength": s["strength"]} for s in raw],
@@ -367,7 +370,25 @@ async def make_menu(state: UnderlyingState) -> dict[str, Any]:
         else:
             why = ", ".join(f"{n} {k}" for k, n in sorted(drop_reasons.items(), key=lambda x: -x[1]))
             out["error"] = f"no executable contract -- dropped: {why}"
-        out["diag"] = {**diag, "result": "NO_CONTRACT", "reason": out["error"]}
+        nearest: list[dict[str, Any]] = []
+        if chains and state["market"].get("spot"):
+            sp = float(state["market"]["spot"])
+            sides_wanted = {s["side"] for s in setups if not s.get("conflict")} or {"CE", "PE"}
+            for row in sorted(chains[0].get("strikes") or [], key=lambda r: abs(float(r.get("strike", 0)) - sp))[:2]:
+                for sd in sorted(sides_wanted):
+                    leg = row.get(sd) or {}
+                    ltp = float(leg.get("ltp") or 0)
+                    bid, ask = float(leg.get("bid") or 0), float(leg.get("ask") or 0)
+                    spread = round((ask - bid) / ltp * 100, 2) if ltp > 0 and ask >= bid > 0 else None
+                    nearest.append({
+                        "strike": row.get("strike"),
+                        "side": sd,
+                        "ltp": round(ltp, 2),
+                        "spreadPct": spread,
+                        "delta": round(abs(float(leg.get("delta") or 0)), 2) if leg.get("delta") else None,
+                        "oi": int(leg.get("oi") or 0),
+                    })
+        out["diag"] = {**diag, "result": "NO_CONTRACT", "reason": out["error"], "nearestContracts": nearest}
         logger.info(f"[MENU_EMPTY] {state['code']} spot={state['market'].get('spot')} "
                     f"chains={[len(c['strikes']) for c in chains]} dropped={drop_reasons}")
     return out

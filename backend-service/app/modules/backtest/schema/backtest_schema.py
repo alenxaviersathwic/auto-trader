@@ -17,8 +17,9 @@ class RangeBacktestRequest(BaseModel):
     sizing: Literal["MAX_LOTS", "RISK"] = Field(
         default="MAX_LOTS", description="MAX_LOTS = as many lots as current equity buys; RISK = live 1-lot risk sizer")
     sessionManager: Literal["ALL", "FIB_GOLDEN_TRADER", "FLOW_MOMENTUM_TRADER"] = Field(
-        default="FLOW_MOMENTUM_TRADER",
-        description="The session manager to replay, as in a live session (one trader); ALL = both, for comparison")
+        default="ALL",
+        description="Which finders' setups to replay. ALL = both index finders, which is what a live session takes "
+                    "whichever manager runs it (18 Nov 2026); FIB_GOLDEN_TRADER / FLOW_MOMENTUM_TRADER = that finder only")
     riskLevel: Literal["LOW", "MEDIUM", "HIGH"] = Field(
         default="LOW", description="Session risk level: the same entry gate as live (session_risk.risk_gate)")
     sideFilter: Literal["ALL", "CE", "PE"] = Field(default="ALL", description="Option side filter")

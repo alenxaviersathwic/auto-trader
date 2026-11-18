@@ -1,6 +1,6 @@
-import React, { useEffect } from "react";
-import { Clock, TrendingDown, TrendingUp, X } from "lucide-react";
-import { FibWatch, OpportunityCardItem } from "../../opportunity-finder/types/opportunities.types";
+import React, { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, Clock, TrendingDown, TrendingUp, X } from "lucide-react";
+import { FibWatch, OpportunityCardItem, TempView } from "../../opportunity-finder/types/opportunities.types";
 import { TRADER_META } from "../../trade-history/components/traderMeta";
 import { TraderCode } from "../../trade-history/types/trades.types";
 import { FIB_STAGE, useIndexToday } from "./useIndexToday";
@@ -28,6 +28,42 @@ const RetraceBar: React.FC<{ w: FibWatch }> = ({ w }) => {
         <span style={{ left: pct(0.618) }}>.618</span>
         <span style={{ left: pct(0.786) }}>.786</span>
       </div>
+    </div>
+  );
+};
+
+const CONF_TONE = { HIGH: "green", MEDIUM: "blue", LOW: "amber" } as const;
+
+/** The human-style temporary view: what it expects, what happens on a break, where it is wrong. */
+const ViewBlock: React.FC<{ v: TempView }> = ({ v }) => {
+  const row = (tag: string, cls: string, s: TempView["steps"][number]) => (
+    <li key={`${tag}-${s.level}`} className={`tv-step tv-step--${cls}`}>
+      <span className="tv-step__tag">{tag}</span>
+      <span className="tv-step__lvl mono">{n0(s.level)}</span>
+      <span className="tv-step__label">{s.label}</span>
+      <span className="tv-step__dist mono">
+        {s.distance >= 0 ? "+" : ""}
+        {Math.round(s.distance)}
+        {s.distanceAtr != null ? ` · ${Math.abs(s.distanceAtr).toFixed(1)} ATR` : ""}
+      </span>
+      {s.if && <span className="tv-step__if">if {s.if}</span>}
+    </li>
+  );
+  return (
+    <div className="tv">
+      <div className="tv__top">
+        <span className="ag-label">Temporary view</span>
+        <span className={`te-pill te-pill--${CONF_TONE[v.confidence]}`}>{v.confidence} confidence</span>
+      </div>
+      <p className="tv__text">{v.text}</p>
+      <ol className="tv__steps">
+        {v.range && row("support", "range", v.range.support)}
+        {v.range && row("resistance", "range", v.range.resistance)}
+        {v.range
+          ? v.steps.map((s, i) => row(i === 0 ? "breakdown" : "breakout", i === 0 ? "down" : "up", s))
+          : v.steps.map((s, i) => row(i === 0 ? "target" : "next", v.bias === "BEARISH" ? "down" : "up", s))}
+        {v.invalidation && row("wrong", "wrong", v.invalidation)}
+      </ol>
     </div>
   );
 };
@@ -61,6 +97,8 @@ const IndexBlock: React.FC<{ card: OpportunityCardItem; trader: TraderCode }> = 
           {t.now.changePct.toFixed(2)}%)
         </span>
       )}
+
+      {t.view && <ViewBlock v={t.view} />}
 
       {!t.hasScan ? (
         <span className="micro text-muted">{t.loading ? "Loading the latest scan…" : "No scan for this index yet today."}</span>
@@ -150,6 +188,33 @@ const IndexBlock: React.FC<{ card: OpportunityCardItem; trader: TraderCode }> = 
   );
 };
 
+/** One row of the index list: code, price, last-hour bias, the view's levels and what the trader waits for. */
+const IndexRow: React.FC<{ card: OpportunityCardItem; trader: TraderCode; onOpen: () => void }> = ({ card, trader, onOpen }) => {
+  const t = useIndexToday(card, trader);
+  const nb = t.now?.bias;
+  const v = t.view;
+  const levels = !v
+    ? "--"
+    : v.range
+      ? `${n0(v.range.support.level)} – ${n0(v.range.resistance.level)}`
+      : `${v.bias === "BEARISH" ? "↓" : "↑"} ${n0(v.steps[0]?.level)}${v.steps[1] ? ` › ${n0(v.steps[1].level)}` : ""}`;
+  return (
+    <li>
+      <button type="button" className="tts-row" onClick={onOpen} aria-label={`Open ${card.code} analysis`}>
+        <span className="tts-row__code">{card.code}</span>
+        <span className="tts-row__spot mono">{n0(t.spot)}</span>
+        <span className={`tt-bias tt-bias--${nb ? nb.toLowerCase() : "none"}`}>
+          {nb === "BULLISH" ? "▲ bull" : nb === "BEARISH" ? "▼ bear" : nb === "MIXED" ? "◆ mixed" : "--"}
+        </span>
+        <span className="tts-row__view mono" title={v?.text}>{levels}</span>
+        {v && <span className={`te-pill te-pill--${CONF_TONE[v.confidence]} tts-row__conf`}>{v.confidence}</span>}
+        <span className={`tts-row__wait ${t.wait.tone ? `tt-tone--${t.wait.tone}` : ""}`}>{t.loading ? "…" : t.wait.short}</span>
+        <ChevronRight size={14} className="tts-row__go" />
+      </button>
+    </li>
+  );
+};
+
 interface Props {
   trader: TraderCode;
   cards: OpportunityCardItem[];
@@ -159,12 +224,15 @@ interface Props {
 /** One opportunity trader's view of today: every index it scans, the bias there and what it is waiting for. */
 export const TraderTodaySheet: React.FC<Props> = ({ trader, cards, onClose }) => {
   const meta = TRADER_META[trader];
+  const [selected, setSelected] = useState<string | null>(null);
+  const card = cards.find((c) => c.code === selected) ?? null;
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // Escape steps back from an index to the list first, then closes the sheet
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (selected ? setSelected(null) : onClose());
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, selected]);
 
   return (
     <div className="drawer-overlay open" onClick={onClose}>
@@ -180,20 +248,22 @@ export const TraderTodaySheet: React.FC<Props> = ({ trader, cards, onClose }) =>
             <X size={15} />
           </button>
         </header>
-        {cards.length > 1 && (
-          <nav className="tts-jump" aria-label="Jump to index">
-            {cards.map((c) => (
-              <a key={c.code} href={`#tts-${c.code}`}>
-                {c.code}
-              </a>
-            ))}
-          </nav>
-        )}
         <div className="drawer-body iv-body">
           {cards.length === 0 ? (
             <span className="micro text-muted">No index is being scanned today.</span>
+          ) : card ? (
+            <>
+              <button type="button" className="tts-back" onClick={() => setSelected(null)}>
+                <ChevronLeft size={13} /> All indices
+              </button>
+              <IndexBlock key={card.code} card={card} trader={trader} />
+            </>
           ) : (
-            cards.map((c) => <IndexBlock key={c.code} card={c} trader={trader} />)
+            <ul className="tts-list" aria-label="Indices">
+              {cards.map((c) => (
+                <IndexRow key={c.code} card={c} trader={trader} onOpen={() => setSelected(c.code)} />
+              ))}
+            </ul>
           )}
         </div>
       </aside>

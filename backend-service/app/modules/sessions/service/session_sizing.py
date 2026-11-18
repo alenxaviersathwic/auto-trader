@@ -40,6 +40,35 @@ def one_lot_risk_pct() -> float:
         return float(getattr(settings, "MAX_ONE_LOT_RISK_PCT", MAX_ONE_LOT_RISK_PCT))
     except Exception:  # noqa: BLE001
         return MAX_ONE_LOT_RISK_PCT
+def setup_risk_pct(strategy: str | None) -> float | None:
+    """settings.SETUP_RISK_BUDGET ("FII_OPEN_DRIVE:5,...") for this strategy, or None."""
+    if not strategy:
+        return None
+    try:
+        from app.core.config.settings import settings
+
+        raw = getattr(settings, "SETUP_RISK_BUDGET", "") or ""
+    except Exception:  # noqa: BLE001
+        return None
+    for part in raw.split(","):
+        name, _, pct = part.partition(":")
+        if name.strip().upper() == strategy.strip().upper():
+            try:
+                return float(pct)
+            except ValueError:
+                return None
+    return None
+
+
+def setup_budget_applies(strategy: str | None, cap: "CapitalState") -> float | None:
+    """The setup's risk budget (% of capital) when it may be used now: only as the first trade of the day, with
+    nothing lost and nothing committed. None otherwise -- the normal caps apply."""
+    pct = setup_risk_pct(strategy)
+    if pct and pct > 0 and cap.lossUsed <= 0 and cap.committedRisk <= 0:
+        return pct
+    return None
+
+
 CORRELATED_INDEX_GROUP = frozenset({"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX"})
 MAX_SAME_DIRECTION_CORRELATED = 1  # open same-direction positions across the group (CE = long, PE = short)
 
@@ -127,14 +156,22 @@ def size_multiplier(strategy: str | None, option_type: str, positioning_bias: in
 
 
 def lots_for(entry: float, stop: float, lot_units: int, confidence: int, cap: CapitalState,
-             size_mult: float = 1.0) -> tuple[int | None, str | None]:
+             size_mult: float = 1.0, strategy: str | None = None) -> tuple[int | None, str | None]:
     """Fixed-fractional lots: risk <= RISK_PER_TRADE_PCT x size_mult of capital, within free cash and the loss
-    budget. `confidence` is accepted for call compatibility but no longer changes the size (see module docstring)."""
+    budget. `confidence` is accepted for call compatibility but no longer changes the size (see module docstring).
+    A setup with a SETUP_RISK_BUDGET may take ONE lot risking up to that % as the day's first trade."""
     del confidence
     risk_per_lot = (entry - stop) * lot_units
     premium_per_lot = entry * lot_units
     if risk_per_lot <= 0 or premium_per_lot <= 0:
         return None, "invalid levels"
+    special = setup_budget_applies(strategy, cap)
+    if special is not None:
+        if risk_per_lot > cap.capital * special / 100.0:
+            return None, f"1 lot risks more than the {special:g}% {strategy} budget"
+        if cap.availableCapital < premium_per_lot:
+            return None, "not enough free capital"
+        return 1, None
     lots_by_budget = int(cap.remainingLossBudget // risk_per_lot)
     lots_by_cash = int(cap.availableCapital // premium_per_lot)
     if lots_by_budget < 1:
@@ -170,7 +207,8 @@ def size_candidate(opp: dict[str, Any], cap: CapitalState) -> tuple[SizedCandida
     lot_units = int(opp.get("lotUnits") or 0)
     if lot_units <= 0:
         return None, "unknown lot size"
-    lots, why = lots_for(entry, stop, lot_units, int(opp["confidence"]), cap, float(opp.get("sizeMult") or 1.0))
+    lots, why = lots_for(entry, stop, lot_units, int(opp["confidence"]), cap, float(opp.get("sizeMult") or 1.0),
+                         strategy=opp.get("strategy"))
     if lots is None:
         return None, why
     qty = lots * lot_units

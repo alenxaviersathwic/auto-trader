@@ -11,7 +11,10 @@ from app.modules.opportunity_finder.service.costs import CHEAP_PREMIUM, TICK, ro
 # 11 Nov 2026 research review (gap 5): at ~1% round-trip charges a 1.5% spread made a +5% target need a ~65% win
 # rate. Index ATM/ITM quotes are normally 0.1-0.5% wide, so anything above 0.75% is a liquidity problem, not a price.
 MAX_SPREAD_PCT = 0.75
-MIN_TOUCH_LOTS = 3  # at least this many lots on the ask (entry side) when the feed reports quantities
+MIN_TOUCH_LOTS = 1  # at least this many lots on the ask (entry side) when the feed reports quantities
+# 18 Nov 2026: was 3. Upstox reports TOP-of-book quantity only; in-the-money MOMO strikes routinely show 1-2 lots at
+# the touch with depth behind it, so 3 lots emptied every MOMO menu (10:45 NIFTY PE setups: all dropped). Sessions
+# trade 1 lot at ~Rs 50k capital; the spread checks below still guard the price.
 MIN_STOP_PCT = 2.5  # stops tighter than this get hit by normal option noise
 VOLUME_BONUS = 6
 SETUP_BONUS = 4  # confidence points per setup strength step above 2
@@ -333,10 +336,14 @@ def build_menu(
             allowed["CE"] = {atm_strike} | ({by_strike[i - 1]["strike"]} if i > 0 else set())
             allowed["PE"] = {atm_strike} | ({by_strike[i + 1]["strike"]} if i + 1 < len(by_strike) else set())
         modes = strike_modes or {}
-        rows = by_strike if any(m in PREMIUM_EXITS for m in modes.values()) else atm_rows
+        # MOMO walks the whole in-the-money side: its 0.60-0.80 delta strikes sit 100-350 points ITM on a 1-week
+        # NIFTY series, past the 9 strikes nearest the money (18 Nov 2026)
+        rows = by_strike if any(m in PREMIUM_EXITS or m == "MOMO" for m in modes.values()) else atm_rows
         for row in rows:
             for side in sides:
                 if require_setup and not best_setup[side]:
+                    if row is rows[0] and any(s["side"] == side and s.get("conflict") for s in setups):
+                        _d("setup conflicts with futures buildup")  # once per chain: why the menu came out empty
                     continue  # no validated setup on this side: nothing to rank
                 mode = modes.get(side)
                 if mode == "MOMO" and momo_0dte:
@@ -349,7 +356,7 @@ def build_menu(
                     continue
                 elif mode == "MOMO" and not ((row["strike"] <= cspot) == (side == "CE")) and row["strike"] != atm_strike:
                     continue  # MOMO: in-the-money side (or ATM) only; the delta band does the rest
-                elif row not in atm_rows:
+                elif mode != "MOMO" and row not in atm_rows:
                     continue
                 leg = row[side]
                 ltp, bid, ask = leg["ltp"], leg["bid"], leg["ask"]

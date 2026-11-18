@@ -158,6 +158,19 @@ export interface RangePortfolio extends RangeStats {
   tradeList: RangePortfolioTrade[];
 }
 
+/** Why signals did not become trades: each signal (setup x side x 5-minute bar) counted once, at the first stage
+ *  that stopped it. */
+export interface RangeFunnel {
+  signals: number;
+  rejected: number;
+  sessionBlocked: number;
+  guardrail: number;
+  whileBusy: number;
+  unpriced: number;
+  taken: number;
+  topReasons: { stage: string; setup: string; reason: string; count: number }[];
+}
+
 export interface RangeBacktestResult {
   range: {
     from: string | null;
@@ -181,6 +194,8 @@ export interface RangeBacktestResult {
     splitNote: string;
   };
   perIndex: (RangeStats & { code: string })[];
+  /** Missing on results from before 18 Nov 2026. */
+  funnel?: RangeFunnel;
   perSetup: RangeSetupStats[];
   perTrader: (RangeStats & { trader: string })[];
   perPriceAction: (RangeStats & { pattern: string })[];
